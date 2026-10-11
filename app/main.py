@@ -21,6 +21,24 @@ from ezstudio.distributed.capabilities import detect_capabilities
 from ezstudio.distributed.model_resolver import ModelResolver
 from ezstudio.distributed.worker_protocol import JobRequirements, compatibility_report
 
+from gate import evaluate_profile_gate
+from transport import AnalysisApiClient
+from worker import observe_queue, watch_queue
+
+
+def _client_from_args(args: argparse.Namespace) -> AnalysisApiClient:
+    base_url = args.base_url or os.getenv("EZSTUDIOLAB_ASSISTANT_BASE_URL")
+    token = args.token or os.getenv("EZSTUDIOLAB_ASSISTANT_TOKEN")
+    if not base_url:
+        raise RuntimeError(
+            "analysis_base_url_required:set EZSTUDIOLAB_ASSISTANT_BASE_URL or --base-url"
+        )
+    if not token:
+        raise RuntimeError(
+            "analysis_token_required:set EZSTUDIOLAB_ASSISTANT_TOKEN or --token"
+        )
+    return AnalysisApiClient(base_url=base_url, token=token)
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(
@@ -39,6 +57,17 @@ def main() -> int:
     check.add_argument("--min-vram-mb", type=int, default=0)
     check.add_argument("--min-ram-mb", type=int, default=0)
     check.add_argument("--model", default=None)
+
+    for name in ("queue", "watch"):
+        cmd = sub.add_parser(name)
+        cmd.add_argument("--base-url", default=None)
+        cmd.add_argument("--token", default=None)
+        if name == "watch":
+            cmd.add_argument("--poll-seconds", type=float, default=5.0)
+            cmd.add_argument("--iterations", type=int, default=0)
+
+    gate = sub.add_parser("evaluate-gate")
+    gate.add_argument("report_json")
 
     args = parser.parse_args()
 
@@ -79,6 +108,26 @@ def main() -> int:
         )
         print(json.dumps(report, ensure_ascii=False, indent=2))
         return 0 if report["compatible"] else 2
+
+    if args.command == "queue":
+        payload = observe_queue(_client_from_args(args), detect_capabilities())
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.command == "watch":
+        return watch_queue(
+            _client_from_args(args),
+            detect_capabilities(),
+            poll_seconds=max(1.0, float(args.poll_seconds)),
+            iterations=max(0, int(args.iterations)),
+        )
+
+    if args.command == "evaluate-gate":
+        source = Path(args.report_json)
+        payload = json.loads(source.read_text(encoding="utf-8"))
+        result = evaluate_profile_gate(payload)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0 if result["decision"] == "READY_FOR_STEMS" else 3
 
     raise RuntimeError("unsupported_command")
 
