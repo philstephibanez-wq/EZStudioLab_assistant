@@ -11,42 +11,25 @@ class AnalysisApiError(RuntimeError):
 
 
 class AnalysisApiClient:
-    """Small read-mostly client for the EZStudio analysis API.
+    """HTTP client for EZStudio analysis/distributed endpoints.
 
-    V1B deliberately does not expose claim/complete/fail methods. The historic
-    claim endpoint selects the first queued job without worker capability or
-    lease semantics; a 4 GB node must not claim work blindly.
+    The historic /jobs/claim endpoint remains deliberately unused.
+    Distributed claim methods exist only under explicit names and are not
+    exposed by the CLI in V1C1.
     """
 
-    def __init__(self, base_url: str, token: str, user_agent: str = "EZStudioLab_assistant/1B"):
+    def __init__(self, base_url: str, token: str, user_agent: str = "EZStudioLab_assistant/1C1"):
         self.base_url = str(base_url).rstrip("/")
         self.token = str(token)
         self.user_agent = user_agent
 
-    def request(
-        self,
-        method: str,
-        path: str,
-        payload: dict[str, Any] | None = None,
-        *,
-        timeout: float = 10.0,
-    ) -> dict[str, Any]:
+    def request(self, method: str, path: str, payload: dict[str, Any] | None = None, *, timeout: float = 10.0) -> dict[str, Any]:
         body = None
-        headers = {
-            "Accept": "application/json",
-            "X-EZScore-Analysis-Token": self.token,
-            "User-Agent": self.user_agent,
-        }
+        headers = {"Accept": "application/json", "X-EZScore-Analysis-Token": self.token, "User-Agent": self.user_agent}
         if payload is not None:
             body = json.dumps(payload).encode("utf-8")
             headers["Content-Type"] = "application/json"
-
-        req = urllib.request.Request(
-            self.base_url + path,
-            data=body,
-            headers=headers,
-            method=method,
-        )
+        req = urllib.request.Request(self.base_url + path, data=body, headers=headers, method=method)
         try:
             with urllib.request.urlopen(req, timeout=timeout) as response:
                 raw = response.read()
@@ -65,8 +48,7 @@ class AnalysisApiClient:
     def queue(self) -> list[dict[str, Any]]:
         payload = self.request("GET", "/internal/analysis/desktop/jobs/queue")
         jobs = payload.get("jobs") or []
-        if not isinstance(jobs, list):
-            raise AnalysisApiError("queue_jobs_not_list")
+        if not isinstance(jobs, list): raise AnalysisApiError("queue_jobs_not_list")
         return [row for row in jobs if isinstance(row, dict)]
 
     def hello(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -74,3 +56,33 @@ class AnalysisApiClient:
 
     def heartbeat(self, payload: dict[str, Any]) -> dict[str, Any]:
         return self.request("POST", "/internal/analysis/desktop/heartbeat", payload)
+
+    def distributed_worker_heartbeat(self, worker_id: str, capabilities: dict[str, Any], *, state: str = "idle") -> dict[str, Any]:
+        return self.request("POST", "/internal/analysis/desktop/distributed/workers/heartbeat", {"worker_id": worker_id, "capabilities": capabilities, "state": state})
+
+    def distributed_eligible_jobs(self, worker_id: str, *, limit: int = 100) -> list[dict[str, Any]]:
+        payload = self.request("POST", "/internal/analysis/desktop/distributed/jobs/eligible", {"worker_id": worker_id, "limit": max(1, min(500, int(limit)))})
+        jobs = payload.get("jobs") or []
+        if not isinstance(jobs, list): raise AnalysisApiError("distributed_jobs_not_list")
+        return [row for row in jobs if isinstance(row, dict)]
+
+    def distributed_claim_job(self, job_id: int, worker_id: str, *, lease_seconds: int = 60) -> dict[str, Any]:
+        return self.request("POST", f"/internal/analysis/desktop/distributed/jobs/{int(job_id)}/claim", {"worker_id": worker_id, "lease_seconds": max(30, min(300, int(lease_seconds)))})
+
+    def distributed_lease_heartbeat(self, job_id: int, worker_id: str, lease_token: str, *, lease_seconds: int = 60) -> dict[str, Any]:
+        return self.request("POST", f"/internal/analysis/desktop/distributed/jobs/{int(job_id)}/lease-heartbeat", {"worker_id": worker_id, "lease_token": lease_token, "lease_seconds": max(30, min(300, int(lease_seconds)))})
+
+    def distributed_context(self, job_id: int, worker_id: str, lease_token: str) -> dict[str, Any]:
+        return self.request("POST", f"/internal/analysis/desktop/distributed/jobs/{int(job_id)}/context", {"worker_id": worker_id, "lease_token": lease_token})
+
+    def distributed_progress(self, job_id: int, worker_id: str, lease_token: str, progress: int) -> dict[str, Any]:
+        return self.request("POST", f"/internal/analysis/desktop/distributed/jobs/{int(job_id)}/progress", {"worker_id": worker_id, "lease_token": lease_token, "progress": max(0, min(100, int(progress)))})
+
+    def distributed_complete(self, job_id: int, worker_id: str, lease_token: str) -> dict[str, Any]:
+        return self.request("POST", f"/internal/analysis/desktop/distributed/jobs/{int(job_id)}/complete", {"worker_id": worker_id, "lease_token": lease_token})
+
+    def distributed_cancelled(self, job_id: int, worker_id: str, lease_token: str) -> dict[str, Any]:
+        return self.request("POST", f"/internal/analysis/desktop/distributed/jobs/{int(job_id)}/cancelled", {"worker_id": worker_id, "lease_token": lease_token})
+
+    def distributed_fail(self, job_id: int, worker_id: str, lease_token: str, error: str) -> dict[str, Any]:
+        return self.request("POST", f"/internal/analysis/desktop/distributed/jobs/{int(job_id)}/fail", {"worker_id": worker_id, "lease_token": lease_token, "error": str(error)[:400]})
