@@ -1,0 +1,87 @@
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+from pathlib import Path
+
+ASSISTANT_ROOT = Path(__file__).resolve().parents[1]
+HOST_REPO = Path(os.getenv("EZSTUDIOLAB_HOST_REPO", ASSISTANT_ROOT.parent)).resolve()
+PYTHON_ROOT = HOST_REPO / "python"
+if not PYTHON_ROOT.is_dir():
+    raise RuntimeError(
+        "EZStudio_lab python root not found. "
+        "Set EZSTUDIOLAB_HOST_REPO to the EZStudio_lab repository root."
+    )
+if str(PYTHON_ROOT) not in sys.path:
+    sys.path.insert(0, str(PYTHON_ROOT))
+
+from ezstudio.distributed.capabilities import detect_capabilities
+from ezstudio.distributed.model_resolver import ModelResolver
+from ezstudio.distributed.worker_protocol import JobRequirements, compatibility_report
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        prog="EZStudioLab_assistant",
+        description="EZStudio_lab distributed assistant node.",
+    )
+    sub = parser.add_subparsers(dest="command", required=True)
+    sub.add_parser("capabilities")
+
+    resolve = sub.add_parser("resolve-model")
+    resolve.add_argument("relative_path")
+    resolve.add_argument("--cache", action="store_true")
+
+    check = sub.add_parser("check-job")
+    check.add_argument("--requires-cuda", action="store_true")
+    check.add_argument("--min-vram-mb", type=int, default=0)
+    check.add_argument("--min-ram-mb", type=int, default=0)
+    check.add_argument("--model", default=None)
+
+    args = parser.parse_args()
+
+    if args.command == "capabilities":
+        print(detect_capabilities().to_json())
+        return 0
+
+    resolver = None
+    if args.command in {"resolve-model", "check-job"}:
+        resolver = ModelResolver()
+
+    if args.command == "resolve-model":
+        resolved = resolver.resolve(args.relative_path, use_cache=bool(args.cache))
+        print(
+            json.dumps(
+                {
+                    "schema": "EZStudioLab_assistant.model-resolution.v1",
+                    "relative_path": args.relative_path,
+                    "resolved_path": str(resolved),
+                    "cached": bool(args.cache),
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0
+
+    if args.command == "check-job":
+        report = compatibility_report(
+            detect_capabilities(),
+            JobRequirements(
+                requires_cuda=bool(args.requires_cuda),
+                min_vram_mb=max(0, int(args.min_vram_mb)),
+                min_ram_mb=max(0, int(args.min_ram_mb)),
+                model_relative_path=args.model,
+            ),
+            model_resolver=resolver if args.model else None,
+        )
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+        return 0 if report["compatible"] else 2
+
+    raise RuntimeError("unsupported_command")
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,11 @@
+{
+  "schema": "EZStudioLab_assistant.config.v1",
+  "node_id": "EZStudioLab_assistant-xps9570",
+  "shared_model_root": "\\\\EZSTUDIO-MAIN\\EZModels",
+  "local_model_cache": "C:\\EZStudioLab_assistant\\models",
+  "policy": {
+    "shared_models_read_only": true,
+    "cache_on_demand": true,
+    "allow_silent_model_fallback": false
+  }
+}
