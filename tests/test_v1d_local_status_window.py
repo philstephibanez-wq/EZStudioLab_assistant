@@ -1,13 +1,15 @@
 from __future__ import annotations
+
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKER = (ROOT / "app" / "worker.py").read_text(encoding="utf-8")
 STATUS = (ROOT / "app" / "runtime_status.py").read_text(encoding="utf-8")
-WINDOW = (ROOT / "app" / "status_window.ps1").read_text(encoding="utf-8-sig")
+WINDOW = (ROOT / "app" / "status_window.pyw").read_text(encoding="utf-8")
 
-class V1DLocalWindowContract(unittest.TestCase):
+
+class V1D5ALocalStatusContract(unittest.TestCase):
     def test_atomic_status(self):
         self.assertIn("assistant.status.json", STATUS)
         self.assertIn("os.replace(tmp, path)", STATUS)
@@ -20,28 +22,35 @@ class V1DLocalWindowContract(unittest.TestCase):
         self.assertIn("En veille — aucun job compatible", tail)
         self.assertNotIn("distributed_claim_job(", tail)
 
-    def test_window_reads_status_as_utf8(self):
-        self.assertIn(
-            "Get-Content -LiteralPath $statusPath -Raw -Encoding UTF8",
-            WINDOW,
-        )
-        self.assertIn(
-            "Get-Content -LiteralPath $commitPath -Raw -Encoding UTF8",
-            WINDOW,
-        )
-
-    def test_close_hides_to_tray_without_stopping_worker(self):
-        self.assertIn("System.Windows.Forms.NotifyIcon", WINDOW)
-        self.assertIn("UserClosing", WINDOW)
-        self.assertIn("$e.Cancel = $true", WINDOW)
-        self.assertIn("$form.Hide()", WINDOW)
-        self.assertIn("Afficher EZStudioLab Assistant", WINDOW)
+    def test_pythonw_window_has_no_worker_control(self):
+        self.assertIn('APP_TITLE = "EZStudioLab Assistant"', WINDOW)
+        self.assertIn('self.root.protocol("WM_DELETE_WINDOW", self.hide)', WINDOW)
+        self.assertIn("self.root.withdraw()", WINDOW)
+        self.assertIn("self.root.deiconify()", WINDOW)
+        self.assertNotIn("subprocess", WINDOW)
         self.assertNotIn("Stop-Process", WINDOW)
         self.assertNotIn("taskkill", WINDOW.lower())
 
+    def test_native_tray_is_dependency_free(self):
+        self.assertIn("Shell_NotifyIconW", WINDOW)
+        self.assertIn("NIM_ADD", WINDOW)
+        self.assertIn("NIM_DELETE", WINDOW)
+        self.assertIn("WM_LBUTTONDBLCLK", WINDOW)
+        self.assertIn("TRAY_ADD_OK", WINDOW)
+        self.assertNotIn("pystray", WINDOW)
+
     def test_operator_information(self):
-        for value in ("Version :", "Dernier contact :", "ARRÊTÉ", "EN LIGNE", "OCCUPÉ", "ERREUR"):
+        for value in (
+            "Version :",
+            "Dernier contact :",
+            "ARRÊTÉ",
+            "EN LIGNE",
+            "OCCUPÉ",
+            "ERREUR",
+            "PÉRIMÉ",
+        ):
             self.assertIn(value, WINDOW)
+
 
 if __name__ == "__main__":
     unittest.main()
