@@ -18,7 +18,7 @@ Avant tout commit/push :
 Le fichier `VERSION` fait partie des composants durables du produit et doit être versionné intentionnellement.
 
 - Toute livraison poussée doit incrémenter `VERSION`.
-- `release` : `MAJOR.MINOR.PATCH`.
-- `fix` : suffixe lettre minuscule sur la release courante (`1.5.0a`, `1.5.0b`, ...).
+- `release` : `MAJOR.MINOR`.
+- `fix` : suffixe lettre minuscule sur la release courante (`1.5a`, `1.5b`, ...).
 - Le SHA Git est une révision technique séparée et ne remplace jamais la version humaine.
 - Un commit destiné au push qui ne met pas à jour `VERSION` est non conforme.

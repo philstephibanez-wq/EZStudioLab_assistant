@@ -17,8 +17,8 @@ Voir aussi `REPOSITORY_HYGIENE.md`.
 Le dépôt utilise un fichier canonique `VERSION`.
 
 Format :
-- release : `MAJOR.MINOR.PATCH` (ex. `1.5.0`)
-- fix : suffixe lettre minuscule ajouté à la release courante (ex. `1.5.0a`, `1.5.0b`, ..., puis `aa`, `ab` si nécessaire)
+- release : `MAJOR.MINOR` (ex. `1.5`)
+- fix : suffixe lettre minuscule ajouté à la release courante (ex. `1.5a`, `1.5b`, ..., puis `aa`, `ab` si nécessaire)
 - nouvelle release : incrément d'une composante numérique selon la portée et suppression du suffixe
 - rupture majeure : incrément explicite de `MAJOR`
 
