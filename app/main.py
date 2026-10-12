@@ -3,9 +3,12 @@ import argparse, json, os, sys
 from pathlib import Path
 ASSISTANT_ROOT=Path(__file__).resolve().parents[1]
 HOST_REPO=Path(os.getenv("EZSTUDIOLAB_HOST_REPO",ASSISTANT_ROOT.parent)).resolve()
+APP_ROOT=Path(__file__).resolve().parent
 PYTHON_ROOT=HOST_REPO/"python"
 if not PYTHON_ROOT.is_dir(): raise RuntimeError("EZStudio_lab python root not found. Set EZSTUDIOLAB_HOST_REPO to the EZStudio_lab repository root.")
-if str(PYTHON_ROOT) not in sys.path: sys.path.insert(0,str(PYTHON_ROOT))
+if str(APP_ROOT) in sys.path: sys.path.remove(str(APP_ROOT))
+sys.path.insert(0,str(APP_ROOT))
+if str(PYTHON_ROOT) not in sys.path: sys.path.insert(1,str(PYTHON_ROOT))
 from ezstudio.distributed.capabilities import detect_capabilities
 from ezstudio.distributed.model_resolver import ModelResolver
 from ezstudio.distributed.worker_protocol import JobRequirements, compatibility_report
@@ -50,7 +53,7 @@ def main():
         result=distributed_claim_once(_client_from_args(args),detect_capabilities(),job_id=max(1,int(args.job_id)),lease_seconds=max(30,min(300,int(args.lease_seconds))),limit=max(1,min(500,int(args.limit))))
         print(json.dumps(result,ensure_ascii=False,indent=2)); return 0
     if args.command=="profile-review-queue":
-        print(json.dumps(profile_review_queue_snapshot(_client_from_args(args),limit=max(1,min(500,int(args.limit)))),ensure_ascii=False,indent=2)); return 0
+        print(json.dumps(profile_review_queue_snapshot(_client_from_args(args),limit=max(1,min(500,int(args.limit)))),ensure_ascii=True,indent=2)); return 0
     if args.command=="profile-review-submit":
         payload=load_review_payload(args.review_json); result=_client_from_args(args).submit_profile_review(payload); print(json.dumps(result,ensure_ascii=False,indent=2)); return 0
     if args.command=="profile-guard":

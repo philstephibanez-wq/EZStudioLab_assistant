@@ -9,6 +9,8 @@ SEPARATORS = (" - ", " – ", " — ")
 
 
 def normalize_track_identity(row: dict[str, Any]) -> dict[str, Any]:
+    import re
+
     raw_title = str(row.get("title") or "").strip()
     raw_artist = str(row.get("artist") or "").strip()
 
@@ -23,21 +25,56 @@ def normalize_track_identity(row: dict[str, Any]) -> dict[str, Any]:
             "requires_verification": False,
         }
 
-    for separator in SEPARATORS:
-        if separator not in raw_title:
-            continue
-        title, artist = raw_title.rsplit(separator, 1)
-        title = title.strip()
-        artist = artist.strip()
+    working = re.sub(r"\s+", " ", raw_title).strip()
+    metadata_removed: list[str] = []
+
+    # Remove trailing technical metadata segments such as "- 121bpm - G#min".
+    technical_segment = re.compile(
+        r"^(?:\d{2,3}\s*bpm|[A-G](?:#|b)?(?:maj|min|major|minor|m)?)$",
+        re.IGNORECASE,
+    )
+    while True:
+        match = re.search(r"\s+[-–—]\s*([^-–—]+?)\s*$", working)
+        if not match:
+            break
+        tail = match.group(1).strip()
+        if not technical_segment.fullmatch(tail):
+            break
+        metadata_removed.insert(0, tail)
+        working = working[:match.start()].rstrip()
+
+    # A title/artist delimiter is accepted when the dash has whitespace
+    # on at least one side. This preserves ordinary hyphenated names.
+    matches = list(re.finditer(r"(?:\s+[-–—]\s*|[-–—]\s+)", working))
+    if matches:
+        split = matches[-1]
+        title = working[:split.start()].strip()
+        artist = working[split.end():].strip()
+
+        artist_before_cleanup = artist
+        artist = re.sub(
+            r"\s*\((?:[A-G](?:#|b)?(?:maj|min|major|minor|m)?|(?:19|20)\d{2})\)\s*$",
+            "",
+            artist,
+            flags=re.IGNORECASE,
+        ).strip()
+        if artist != artist_before_cleanup:
+            metadata_removed.append(artist_before_cleanup[len(artist):].strip())
+
         if title and artist:
             return {
                 "title": title,
                 "artist": artist,
                 "raw_title": raw_title,
                 "raw_artist": raw_artist,
-                "method": "title_suffix_heuristic",
+                "method": (
+                    "title_artist_metadata_heuristic"
+                    if metadata_removed
+                    else "title_suffix_heuristic"
+                ),
                 "confidence": 0.65,
                 "requires_verification": True,
+                "metadata_removed": metadata_removed,
             }
 
     return {
@@ -48,9 +85,8 @@ def normalize_track_identity(row: dict[str, Any]) -> dict[str, Any]:
         "method": "catalog_incomplete",
         "confidence": 0.25,
         "requires_verification": True,
+        "metadata_removed": metadata_removed,
     }
-
-
 def profile_review_queue_snapshot(client: Any, *, limit: int = 100) -> dict[str, Any]:
     jobs = client.profile_review_queue(limit=limit)
     normalized = []
