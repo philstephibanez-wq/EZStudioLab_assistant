@@ -11,6 +11,8 @@ from ezstudio.distributed.model_resolver import ModelResolver
 from ezstudio.distributed.worker_protocol import JobRequirements, compatibility_report
 from gate import evaluate_profile_gate
 from transport import AnalysisApiClient
+from profile_review import load_review_payload, profile_review_queue_snapshot
+from preset_guard import evaluate_preset_candidate
 from worker import distributed_claim_once, distributed_probe, observe_queue, watch_distributed, watch_queue
 def _client_from_args(args):
     base_url=args.base_url or os.getenv("EZSTUDIOLAB_ASSISTANT_BASE_URL"); token=args.token or os.getenv("EZSTUDIOLAB_ASSISTANT_TOKEN")
@@ -29,6 +31,9 @@ def main():
     probe=sub.add_parser("distributed-probe"); _network_args(probe); probe.add_argument("--limit",type=int,default=100)
     dwatch=sub.add_parser("distributed-watch"); _network_args(dwatch); dwatch.add_argument("--poll-seconds",type=float,default=5.0); dwatch.add_argument("--iterations",type=int,default=0); dwatch.add_argument("--limit",type=int,default=100)
     claim=sub.add_parser("distributed-claim-once"); _network_args(claim); claim.add_argument("--job-id",type=int,required=True); claim.add_argument("--lease-seconds",type=int,default=60); claim.add_argument("--limit",type=int,default=100)
+    reviewq=sub.add_parser("profile-review-queue"); _network_args(reviewq); reviewq.add_argument("--limit",type=int,default=100)
+    reviews=sub.add_parser("profile-review-submit"); _network_args(reviews); reviews.add_argument("review_json")
+    guard=sub.add_parser("profile-guard"); guard.add_argument("baseline_json"); guard.add_argument("candidate_json"); guard.add_argument("--threshold",type=float,default=0.75); guard.add_argument("--metric-tolerance",type=float,default=0.0); guard.add_argument("--max-song-regression",type=float,default=0.10)
     gate=sub.add_parser("evaluate-gate"); gate.add_argument("report_json"); args=parser.parse_args()
     if args.command=="capabilities": print(detect_capabilities().to_json()); return 0
     resolver=ModelResolver() if args.command in {"resolve-model","check-job"} else None
@@ -44,6 +49,14 @@ def main():
     if args.command=="distributed-claim-once":
         result=distributed_claim_once(_client_from_args(args),detect_capabilities(),job_id=max(1,int(args.job_id)),lease_seconds=max(30,min(300,int(args.lease_seconds))),limit=max(1,min(500,int(args.limit))))
         print(json.dumps(result,ensure_ascii=False,indent=2)); return 0
+    if args.command=="profile-review-queue":
+        print(json.dumps(profile_review_queue_snapshot(_client_from_args(args),limit=max(1,min(500,int(args.limit)))),ensure_ascii=False,indent=2)); return 0
+    if args.command=="profile-review-submit":
+        payload=load_review_payload(args.review_json); result=_client_from_args(args).submit_profile_review(payload); print(json.dumps(result,ensure_ascii=False,indent=2)); return 0
+    if args.command=="profile-guard":
+        baseline=json.loads(Path(args.baseline_json).read_text(encoding="utf-8")); candidate=json.loads(Path(args.candidate_json).read_text(encoding="utf-8"))
+        result=evaluate_preset_candidate(baseline,candidate,threshold=float(args.threshold),metric_tolerance=max(0.0,float(args.metric_tolerance)),max_song_regression=max(0.0,float(args.max_song_regression)))
+        print(json.dumps(result,ensure_ascii=False,indent=2)); return 0 if result["decision"]=="CANDIDATE_ACCEPTABLE" else 4
     if args.command=="evaluate-gate":
         payload=json.loads(Path(args.report_json).read_text(encoding="utf-8")); result=evaluate_profile_gate(payload); print(json.dumps(result,ensure_ascii=False,indent=2)); return 0 if result["decision"]=="READY_FOR_STEMS" else 3
     raise RuntimeError("unsupported_command")
