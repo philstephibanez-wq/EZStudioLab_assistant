@@ -40,8 +40,15 @@ class V1D5ALocalStatusContract(unittest.TestCase):
         self.assertNotIn("pystray", WINDOW)
 
     def test_operator_information(self):
+        self.assertIn(
+            'self.root.title(f"{APP_TITLE} v{self._read_version()}")',
+            WINDOW,
+        )
+        self.assertIn(
+            'text=f"{APP_TITLE} v{self._read_version()}"',
+            WINDOW,
+        )
         for value in (
-            "Version :",
             "Dernier contact :",
             "ARRÊTÉ",
             "EN LIGNE",

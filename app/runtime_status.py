@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import socket
+import tempfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -44,10 +45,38 @@ def write_status(
 
     path = status_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(
-        json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n",
+
+    # Each writer gets its own temporary file. Distributed and profile workers
+    # can publish status concurrently, so a shared ".tmp" pathname is unsafe.
+    with tempfile.NamedTemporaryFile(
+        mode="w",
         encoding="utf-8",
-    )
-    os.replace(tmp, path)
+        newline="\n",
+        dir=path.parent,
+        prefix=path.name + ".",
+        suffix=".tmp",
+        delete=False,
+    ) as handle:
+        handle.write(
+            json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n"
+        )
+        handle.flush()
+        os.fsync(handle.fileno())
+        tmp = Path(handle.name)
+
+    try:
+        # Windows may transiently deny replacement while the status window is
+        # reading the destination. Retry briefly; keep the final operation atomic.
+        for attempt in range(8):
+            try:
+                os.replace(tmp, path)
+                break
+            except PermissionError:
+                if attempt == 7:
+                    raise
+                time.sleep(0.025 * (attempt + 1))
+    finally:
+        if tmp.exists():
+            tmp.unlink(missing_ok=True)
+
     return payload
