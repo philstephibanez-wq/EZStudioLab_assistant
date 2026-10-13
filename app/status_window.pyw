@@ -202,14 +202,14 @@ class StatusWindow:
         self.ui_events: queue.Queue[str] = queue.Queue()
 
         self.root = tk.Tk()
-        self.root.title(APP_TITLE)
+        self.root.title(f"{APP_TITLE} v{self._read_version()}")
         self.root.geometry("420x245")
         self.root.resizable(False, False)
         self.root.protocol("WM_DELETE_WINDOW", self.hide)
 
         tk.Label(
             self.root,
-            text=APP_TITLE,
+            text=f"{APP_TITLE} v{self._read_version()}",
             font=("Segoe UI", 14, "bold"),
             anchor="w",
         ).place(x=18, y=16)
@@ -232,13 +232,13 @@ class StatusWindow:
         )
         self.activity_label.place(x=18, y=89)
 
-        self.version_label = tk.Label(
+        self.build_label = tk.Label(
             self.root,
-            text="Version : -",
+            text="Build : -",
             font=("Segoe UI", 9),
             anchor="w",
         )
-        self.version_label.place(x=18, y=143)
+        self.build_label.place(x=18, y=143)
 
         self.contact_label = tk.Label(
             self.root,
@@ -316,7 +316,7 @@ class StatusWindow:
         return payload
 
     def _refresh_status(self) -> None:
-        self.version_label.configure(text=f"Version : {self._read_version()} · {self._read_commit()}")
+        self.build_label.configure(text=f"Build : {self._read_commit()}")
 
         payload = self._read_status()
 
