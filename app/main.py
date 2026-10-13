@@ -15,6 +15,7 @@ from ezstudio.distributed.worker_protocol import JobRequirements, compatibility_
 from gate import evaluate_profile_gate
 from transport import AnalysisApiClient
 from profile_review import load_review_payload, profile_review_queue_snapshot
+from profile_auto_review import NetworkBudget, auto_review_once, auto_review_sweep, auto_review_watch
 from preset_guard import evaluate_preset_candidate
 from worker import distributed_claim_once, distributed_probe, observe_queue, watch_distributed, watch_queue
 def _client_from_args(args):
@@ -35,6 +36,9 @@ def main():
     dwatch=sub.add_parser("distributed-watch"); _network_args(dwatch); dwatch.add_argument("--poll-seconds",type=float,default=5.0); dwatch.add_argument("--iterations",type=int,default=0); dwatch.add_argument("--limit",type=int,default=100)
     claim=sub.add_parser("distributed-claim-once"); _network_args(claim); claim.add_argument("--job-id",type=int,required=True); claim.add_argument("--lease-seconds",type=int,default=60); claim.add_argument("--limit",type=int,default=100)
     reviewq=sub.add_parser("profile-review-queue"); _network_args(reviewq); reviewq.add_argument("--limit",type=int,default=100)
+    auto=sub.add_parser("profile-review-auto-once"); _network_args(auto); auto.add_argument("--limit",type=int,default=100); auto.add_argument("--dry-run",action="store_true"); auto.add_argument("--min-confidence",type=float,default=0.75); auto.add_argument("--network-min-interval",type=float,default=2.0); auto.add_argument("--network-max-response-kb",type=int,default=256); auto.add_argument("--network-max-requests",type=int,default=6)
+    sweep=sub.add_parser("profile-review-auto-sweep"); _network_args(sweep); sweep.add_argument("--limit",type=int,default=100); sweep.add_argument("--max-items",type=int,default=5); sweep.add_argument("--dry-run",action="store_true"); sweep.add_argument("--min-confidence",type=float,default=0.75); sweep.add_argument("--network-min-interval",type=float,default=2.0); sweep.add_argument("--network-max-response-kb",type=int,default=256); sweep.add_argument("--network-max-requests",type=int,default=6)
+    paw=sub.add_parser("profile-review-auto-watch"); _network_args(paw); paw.add_argument("--state-file",required=True); paw.add_argument("--poll-seconds",type=float,default=900.0); paw.add_argument("--draft-cooldown-hours",type=float,default=24.0); paw.add_argument("--abstain-cooldown-hours",type=float,default=168.0); paw.add_argument("--limit",type=int,default=100); paw.add_argument("--max-items",type=int,default=5); paw.add_argument("--iterations",type=int,default=0); paw.add_argument("--min-confidence",type=float,default=0.75); paw.add_argument("--network-min-interval",type=float,default=2.0); paw.add_argument("--network-max-response-kb",type=int,default=256); paw.add_argument("--network-max-requests",type=int,default=6)
     reviews=sub.add_parser("profile-review-submit"); _network_args(reviews); reviews.add_argument("review_json")
     guard=sub.add_parser("profile-guard"); guard.add_argument("baseline_json"); guard.add_argument("candidate_json"); guard.add_argument("--threshold",type=float,default=0.75); guard.add_argument("--metric-tolerance",type=float,default=0.0); guard.add_argument("--max-song-regression",type=float,default=0.10)
     gate=sub.add_parser("evaluate-gate"); gate.add_argument("report_json"); args=parser.parse_args()
@@ -52,6 +56,20 @@ def main():
     if args.command=="distributed-claim-once":
         result=distributed_claim_once(_client_from_args(args),detect_capabilities(),job_id=max(1,int(args.job_id)),lease_seconds=max(30,min(300,int(args.lease_seconds))),limit=max(1,min(500,int(args.limit))))
         print(json.dumps(result,ensure_ascii=False,indent=2)); return 0
+    if args.command=="profile-review-auto-watch":
+        def make_watch_budget():
+            return NetworkBudget(min_interval_seconds=max(1.0,float(args.network_min_interval)),max_response_bytes=max(64,min(512,int(args.network_max_response_kb)))*1024,timeout_seconds=8.0,max_requests_per_item=max(2,min(8,int(args.network_max_requests))))
+        result=auto_review_watch(_client_from_args(args),state_file=args.state_file,poll_seconds=max(60.0,float(args.poll_seconds)),draft_cooldown_seconds=max(60.0,float(args.draft_cooldown_hours)*3600.0),abstain_cooldown_seconds=max(60.0,float(args.abstain_cooldown_hours)*3600.0),limit=max(1,min(500,int(args.limit))),max_items=max(1,min(100,int(args.max_items))),iterations=max(0,int(args.iterations)),min_confidence=max(0.0,min(1.0,float(args.min_confidence))),budget_factory=make_watch_budget)
+        print(json.dumps(result,ensure_ascii=True,indent=2)); return 0
+    if args.command=="profile-review-auto-sweep":
+        def make_budget():
+            return NetworkBudget(min_interval_seconds=max(1.0,float(args.network_min_interval)),max_response_bytes=max(64,min(512,int(args.network_max_response_kb)))*1024,timeout_seconds=8.0,max_requests_per_item=max(2,min(8,int(args.network_max_requests))))
+        result=auto_review_sweep(_client_from_args(args),limit=max(1,min(500,int(args.limit))),max_items=max(1,min(100,int(args.max_items))),dry_run=bool(args.dry_run),min_confidence=max(0.0,min(1.0,float(args.min_confidence))),budget_factory=make_budget)
+        print(json.dumps(result,ensure_ascii=True,indent=2)); return 0
+    if args.command=="profile-review-auto-once":
+        budget=NetworkBudget(min_interval_seconds=max(1.0,float(args.network_min_interval)),max_response_bytes=max(64,min(512,int(args.network_max_response_kb)))*1024,timeout_seconds=8.0,max_requests_per_item=max(2,min(8,int(args.network_max_requests))))
+        result=auto_review_once(_client_from_args(args),limit=max(1,min(500,int(args.limit))),dry_run=bool(args.dry_run),min_confidence=max(0.0,min(1.0,float(args.min_confidence))),budget=budget)
+        print(json.dumps(result,ensure_ascii=True,indent=2)); return 0 if result.get("status") in {"completed","draft","abstain","idle"} else 5
     if args.command=="profile-review-queue":
         print(json.dumps(profile_review_queue_snapshot(_client_from_args(args),limit=max(1,min(500,int(args.limit)))),ensure_ascii=True,indent=2)); return 0
     if args.command=="profile-review-submit":

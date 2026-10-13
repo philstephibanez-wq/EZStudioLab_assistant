@@ -1,0 +1,1068 @@
+from __future__ import annotations
+
+import html
+import json
+from pathlib import Path
+import re
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+from dataclasses import dataclass
+from typing import Any
+
+from profile_review import normalize_track_identity, profile_review_queue_snapshot
+
+
+@dataclass(frozen=True)
+class NetworkBudget:
+    min_interval_seconds: float = 2.0
+    max_response_bytes: int = 262_144
+    timeout_seconds: float = 8.0
+    max_requests_per_item: int = 6
+
+
+class ThrottledPublicHttp:
+    def __init__(self, budget: NetworkBudget, user_agent: str = "EZStudioLab_assistant/1.2 (PROFILE research)"):
+        self.budget = budget
+        self.user_agent = user_agent
+        self.request_count = 0
+        self._last_request_at = 0.0
+
+    def get_json(self, url: str, *, retries: int = 1) -> dict[str, Any]:
+        attempts = 0
+        while True:
+            if self.request_count >= self.budget.max_requests_per_item:
+                raise RuntimeError("profile_research_network_request_budget_exhausted")
+
+            now = time.monotonic()
+            wait = self.budget.min_interval_seconds - (now - self._last_request_at)
+            if wait > 0:
+                time.sleep(wait)
+
+            req = urllib.request.Request(
+                url,
+                headers={
+                    "Accept": "application/json",
+                    "User-Agent": self.user_agent,
+                },
+                method="GET",
+            )
+            self._last_request_at = time.monotonic()
+            self.request_count += 1
+
+            try:
+                with urllib.request.urlopen(req, timeout=self.budget.timeout_seconds) as response:
+                    content_length = response.headers.get("Content-Length")
+                    if content_length:
+                        try:
+                            if int(content_length) > self.budget.max_response_bytes:
+                                raise RuntimeError("profile_research_response_too_large")
+                        except ValueError:
+                            pass
+
+                    raw = response.read(self.budget.max_response_bytes + 1)
+                    if len(raw) > self.budget.max_response_bytes:
+                        raise RuntimeError("profile_research_response_too_large")
+
+                value = json.loads(raw.decode("utf-8"))
+                if not isinstance(value, dict):
+                    raise RuntimeError("profile_research_json_object_required")
+                return value
+            except urllib.error.HTTPError as exc:
+                transient = int(getattr(exc, "code", 0)) in {429, 500, 502, 503, 504}
+                if transient and attempts < max(0, int(retries)):
+                    attempts += 1
+                    time.sleep(min(8.0, 1.5 * (2 ** (attempts - 1))))
+                    continue
+                raise
+
+
+def _compact(value: Any) -> str:
+    return re.sub(r"\s+", " ", str(value or "")).strip()
+
+
+def _query(params: dict[str, Any]) -> str:
+    return urllib.parse.urlencode(params, doseq=True, quote_via=urllib.parse.quote)
+
+
+def _musicbrainz(http: ThrottledPublicHttp, title: str, artist: str) -> dict[str, Any]:
+    query = f'recording:"{title}" AND artist:"{artist}"'
+    search_url = "https://musicbrainz.org/ws/2/recording/?" + _query(
+        {"query": query, "fmt": "json", "limit": 5}
+    )
+    data = http.get_json(search_url)
+    recordings = data.get("recordings") or []
+    if not isinstance(recordings, list) or not recordings:
+        return {"source": "MusicBrainz", "available": False}
+
+    best = None
+    for row in recordings:
+        if not isinstance(row, dict):
+            continue
+        score = int(row.get("score") or 0)
+        credits = row.get("artist-credit") or []
+        names = []
+        for credit in credits:
+            if isinstance(credit, dict):
+                names.append(_compact(credit.get("name") or (credit.get("artist") or {}).get("name")))
+        candidate_artist = ", ".join(x for x in names if x)
+        title_match = _compact(row.get("title")).casefold() == title.casefold()
+        artist_match = artist.casefold() in candidate_artist.casefold()
+        rank = (1 if title_match else 0, 1 if artist_match else 0, score)
+        if best is None or rank > best[0]:
+            best = (rank, row, candidate_artist)
+
+    if best is None:
+        return {"source": "MusicBrainz", "available": False}
+
+    row = best[1]
+    mbid = _compact(row.get("id"))
+    detail_url = "https://musicbrainz.org/ws/2/recording/" + urllib.parse.quote(mbid) + "?" + _query(
+        {
+            "fmt": "json",
+            "inc": "artist-credits+releases+tags+genres+url-rels+work-rels+instrument-rels",
+        }
+    )
+    try:
+        detail = http.get_json(detail_url)
+    except Exception:
+        detail = row
+
+    genres = []
+    for g in detail.get("genres") or []:
+        if isinstance(g, dict) and _compact(g.get("name")):
+            genres.append(_compact(g.get("name")))
+    tags = []
+    for t in detail.get("tags") or []:
+        if isinstance(t, dict) and _compact(t.get("name")):
+            tags.append(_compact(t.get("name")))
+
+    performers = []
+    instruments = []
+    backing_vocals = False
+    lead_vocals = False
+    for rel in detail.get("relations") or []:
+        if not isinstance(rel, dict):
+            continue
+        rel_type = _compact(rel.get("type")).casefold()
+        target_type = _compact(rel.get("target-type")).casefold()
+        artist_obj = rel.get("artist") if isinstance(rel.get("artist"), dict) else {}
+        target_artist = _compact(artist_obj.get("name"))
+        attrs = [_compact(x) for x in (rel.get("attributes") or []) if _compact(x)]
+        if target_type == "artist" and target_artist:
+            performers.append({"artist": target_artist, "type": rel_type, "attributes": attrs})
+        attrs_cf = " ".join(attrs).casefold()
+        if "instrument" in rel_type or attrs:
+            for a in attrs:
+                acf = a.casefold()
+                if acf not in {"additional", "guest"} and a not in instruments:
+                    instruments.append(a)
+        if "background vocal" in attrs_cf or "backing vocal" in attrs_cf:
+            backing_vocals = True
+        if "lead vocal" in attrs_cf or rel_type == "vocal":
+            lead_vocals = True
+
+    # Enrichment: release-group and primary artist metadata can carry genre/style
+    # even when the recording object itself has no genre tags.
+    enrichment_sources = []
+    release_group_ids = []
+    for release in detail.get("releases") or []:
+        if not isinstance(release, dict):
+            continue
+        rg = release.get("release-group") if isinstance(release.get("release-group"), dict) else {}
+        rgid = _compact(rg.get("id"))
+        if rgid and rgid not in release_group_ids:
+            release_group_ids.append(rgid)
+
+    if release_group_ids and http.request_count < http.budget.max_requests_per_item:
+        try:
+            rgid = release_group_ids[0]
+            rg = http.get_json(
+                "https://musicbrainz.org/ws/2/release-group/" + urllib.parse.quote(rgid) + "?" + _query(
+                    {"fmt": "json", "inc": "genres+tags"}
+                ),
+                retries=1,
+            )
+            for g in rg.get("genres") or []:
+                if isinstance(g, dict) and _compact(g.get("name")):
+                    genres.append(_compact(g.get("name")))
+            for t in rg.get("tags") or []:
+                if isinstance(t, dict) and _compact(t.get("name")):
+                    tags.append(_compact(t.get("name")))
+            enrichment_sources.append("release-group")
+        except Exception:
+            pass
+
+    artist_ids = []
+    for credit in detail.get("artist-credit") or row.get("artist-credit") or []:
+        if not isinstance(credit, dict):
+            continue
+        artist_obj = credit.get("artist") if isinstance(credit.get("artist"), dict) else {}
+        aid = _compact(artist_obj.get("id"))
+        if aid and aid not in artist_ids:
+            artist_ids.append(aid)
+
+    if artist_ids and http.request_count < http.budget.max_requests_per_item:
+        try:
+            artist = http.get_json(
+                "https://musicbrainz.org/ws/2/artist/" + urllib.parse.quote(artist_ids[0]) + "?" + _query(
+                    {"fmt": "json", "inc": "genres+tags"}
+                ),
+                retries=1,
+            )
+            for g in artist.get("genres") or []:
+                if isinstance(g, dict) and _compact(g.get("name")):
+                    genres.append(_compact(g.get("name")))
+            for t in artist.get("tags") or []:
+                if isinstance(t, dict) and _compact(t.get("name")):
+                    tags.append(_compact(t.get("name")))
+            enrichment_sources.append("artist")
+        except Exception:
+            pass
+
+    return {
+        "source": "MusicBrainz",
+        "available": True,
+        "url": f"https://musicbrainz.org/recording/{mbid}" if mbid else None,
+        "score": int(row.get("score") or 0),
+        "canonical_title": _compact(detail.get("title") or row.get("title")),
+        "canonical_artist": best[2],
+        "genres": sorted(set(genres)),
+        "tags": sorted(set(tags)),
+        "performers": performers[:30],
+        "instruments": sorted(set(instruments)),
+        "lead_vocals": lead_vocals,
+        "backing_vocals": backing_vocals,
+        "enrichment_sources": enrichment_sources,
+    }
+
+
+def _wikidata(http: ThrottledPublicHttp, title: str, artist: str) -> dict[str, Any]:
+    search = http.get_json(
+        "https://www.wikidata.org/w/api.php?" + _query(
+            {
+                "action": "wbsearchentities",
+                "search": f"{title} {artist}",
+                "language": "en",
+                "format": "json",
+                "limit": 5,
+                "type": "item",
+            }
+        )
+    )
+    candidates = search.get("search") or []
+    if not isinstance(candidates, list) or not candidates:
+        return {"source": "Wikidata", "available": False}
+
+    best = None
+    for row in candidates:
+        if not isinstance(row, dict):
+            continue
+        label = _compact(row.get("label"))
+        description = _compact(row.get("description"))
+        blob = f"{label} {description}".casefold()
+        rank = (
+            1 if title.casefold() in blob else 0,
+            1 if artist.casefold() in blob else 0,
+        )
+        if best is None or rank > best[0]:
+            best = (rank, row)
+    if best is None:
+        return {"source": "Wikidata", "available": False}
+
+    qid = _compact(best[1].get("id"))
+    entity = http.get_json(
+        "https://www.wikidata.org/w/api.php?" + _query(
+            {
+                "action": "wbgetentities",
+                "ids": qid,
+                "props": "labels|descriptions|claims|sitelinks",
+                "languages": "en",
+                "format": "json",
+            }
+        )
+    )
+    item = (entity.get("entities") or {}).get(qid) or {}
+    claims = item.get("claims") or {}
+
+    def claim_ids(prop: str) -> list[str]:
+        out = []
+        for claim in claims.get(prop) or []:
+            if not isinstance(claim, dict):
+                continue
+            value = (((claim.get("mainsnak") or {}).get("datavalue") or {}).get("value"))
+            if isinstance(value, dict) and _compact(value.get("id")):
+                out.append(_compact(value.get("id")))
+        return out
+
+    genre_ids = claim_ids("P136")
+    performer_ids = claim_ids("P175")
+    ids = list(dict.fromkeys(genre_ids + performer_ids))
+    labels: dict[str, str] = {}
+    if ids:
+        label_data = http.get_json(
+            "https://www.wikidata.org/w/api.php?" + _query(
+                {
+                    "action": "wbgetentities",
+                    "ids": "|".join(ids[:40]),
+                    "props": "labels",
+                    "languages": "en",
+                    "format": "json",
+                }
+            )
+        )
+        for key, val in (label_data.get("entities") or {}).items():
+            if isinstance(val, dict):
+                labels[key] = _compact(((val.get("labels") or {}).get("en") or {}).get("value"))
+
+    enwiki = _compact((((item.get("sitelinks") or {}).get("enwiki") or {}).get("title")))
+    canonical_label = _compact(((item.get("labels") or {}).get("en") or {}).get("value")) or _compact(best[1].get("label"))
+    return {
+        "source": "Wikidata",
+        "available": True,
+        "url": f"https://www.wikidata.org/wiki/{qid}" if qid else None,
+        "entity_id": qid,
+        "label": canonical_label,
+        "genres": [labels[x] for x in genre_ids if labels.get(x)],
+        "performers": [labels[x] for x in performer_ids if labels.get(x)],
+        "wikipedia_title": enwiki or None,
+        "description": _compact(((item.get("descriptions") or {}).get("en") or {}).get("value")),
+    }
+
+
+def _wikipedia(http: ThrottledPublicHttp, title: str, artist: str, preferred_title: str | None) -> dict[str, Any]:
+    query = preferred_title or f"{title} {artist}"
+    data = http.get_json(
+        "https://en.wikipedia.org/w/api.php?" + _query(
+            {
+                "action": "query",
+                "generator": "search",
+                "gsrsearch": query,
+                "gsrlimit": 3,
+                "prop": "extracts|info",
+                "exintro": 1,
+                "explaintext": 1,
+                "inprop": "url",
+                "format": "json",
+                "formatversion": 2,
+            }
+        )
+    )
+    pages = ((data.get("query") or {}).get("pages") or [])
+    if not isinstance(pages, list) or not pages:
+        return {"source": "Wikipedia", "available": False}
+    page = pages[0] if isinstance(pages[0], dict) else {}
+    extract = _compact(page.get("extract"))
+    return {
+        "source": "Wikipedia",
+        "available": bool(extract),
+        "url": _compact(page.get("fullurl")) or None,
+        "title": _compact(page.get("title")),
+        "extract": extract[:8000],
+    }
+
+
+
+def _normalize_identity_text(value: Any) -> str:
+    text = _compact(value).casefold()
+    text = re.sub(r"\s*\([^)]*\)\s*$", "", text).strip()
+    text = re.sub(r"[^a-z0-9]+", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _source_matches_identity(source: dict[str, Any], title: str, artist: str) -> bool:
+    name = _compact(source.get("source"))
+    expected_title = _normalize_identity_text(title)
+    expected_artist = _normalize_identity_text(artist)
+    if not expected_title or not expected_artist:
+        return False
+
+    if name == "MusicBrainz":
+        canonical_title = _normalize_identity_text(source.get("canonical_title"))
+        canonical_artist = _normalize_identity_text(source.get("canonical_artist"))
+        score = int(source.get("score") or 0)
+        return (
+            canonical_title == expected_title
+            and expected_artist in canonical_artist
+            and score >= 90
+        )
+
+    if name == "Wikidata":
+        label = _normalize_identity_text(source.get("label"))
+        performers = " ".join(
+            _normalize_identity_text(x) for x in source.get("performers") or []
+        )
+        description = _normalize_identity_text(source.get("description"))
+        artist_supported = expected_artist in performers or expected_artist in description
+        return label == expected_title and artist_supported
+
+    if name == "Wikipedia":
+        page_title = _normalize_identity_text(source.get("title"))
+        extract = _normalize_identity_text(source.get("extract"))
+        title_supported = page_title == expected_title or expected_title in extract
+        artist_supported = expected_artist in page_title or expected_artist in extract
+        return title_supported and artist_supported
+
+    return False
+
+
+def research_public_sources(identity: dict[str, Any], budget: NetworkBudget) -> dict[str, Any]:
+    title = _compact(identity.get("title"))
+    artist = _compact(identity.get("artist"))
+    if not title or not artist:
+        return {
+            "schema": "EZStudioLab_assistant.profile-public-research.v1",
+            "status": "abstain",
+            "reason": "identity_incomplete",
+            "sources": [],
+            "request_count": 0,
+        }
+
+    http = ThrottledPublicHttp(budget)
+    sources = []
+    warnings = []
+
+    try:
+        mb = _musicbrainz(http, title, artist)
+        sources.append(mb)
+    except Exception as exc:
+        warnings.append(f"MusicBrainz:{type(exc).__name__}:{exc}")
+        mb = {"source": "MusicBrainz", "available": False}
+
+    try:
+        wd = _wikidata(http, title, artist)
+        sources.append(wd)
+    except Exception as exc:
+        warnings.append(f"Wikidata:{type(exc).__name__}:{exc}")
+        wd = {"source": "Wikidata", "available": False}
+
+    try:
+        wp = _wikipedia(http, title, artist, wd.get("wikipedia_title") if isinstance(wd, dict) else None)
+        sources.append(wp)
+    except Exception as exc:
+        warnings.append(f"Wikipedia:{type(exc).__name__}:{exc}")
+
+    available = [x for x in sources if isinstance(x, dict) and x.get("available")]
+    relevant = []
+    for source in available:
+        is_relevant = _source_matches_identity(source, title, artist)
+        source["identity_relevant"] = is_relevant
+        if is_relevant:
+            relevant.append(source)
+        else:
+            warnings.append(f"irrelevant_external_source:{_compact(source.get('source'))}")
+
+    return {
+        "schema": "EZStudioLab_assistant.profile-public-research.v1",
+        "status": "available" if relevant else "unavailable",
+        "reason": None if relevant else "no_reliable_external_reference",
+        "sources": sources,
+        "warnings": warnings,
+        "request_count": http.request_count,
+        "relevant_source_count": len(relevant),
+    }
+
+
+def _genre_tokens(labels: list[str]) -> set[str]:
+    tokens: set[str] = set()
+    vocabulary = {
+        "rock": "rock",
+        "pop": "pop",
+        "progressive": "progressive",
+        "prog": "progressive",
+        "folk": "folk",
+        "country": "country",
+        "jazz": "jazz",
+        "blues": "blues",
+        "soul": "soul",
+        "funk": "funk",
+        "metal": "metal",
+        "punk": "punk",
+        "electronic": "electronic",
+        "disco": "disco",
+        "reggae": "reggae",
+        "singer-songwriter": "singer-songwriter",
+    }
+    for label in labels:
+        lc = _compact(label).casefold()
+        for key, canonical in vocabulary.items():
+            if key in lc:
+                tokens.add(canonical)
+    return tokens
+
+
+
+_NON_INSTRUMENT_ATTRIBUTES = {
+    "live",
+    "additional",
+    "guest",
+    "solo",
+    "lead",
+    "rhythm",
+    "background",
+    "backing",
+}
+
+
+def _filter_instruments(values: list[Any]) -> list[str]:
+    out = []
+    for value in values:
+        label = _compact(value)
+        if not label:
+            continue
+        if label.casefold() in _NON_INSTRUMENT_ATTRIBUTES:
+            continue
+        if label not in out:
+            out.append(label)
+    return out
+
+
+def _contains_profile_term(text: str) -> bool:
+    normalized = _normalize_identity_text(text)
+    if not normalized:
+        return False
+    terms = (
+        "genre", "rock", "pop", "folk", "jazz", "blues", "country",
+        "guitar", "drum", "drums", "bass", "keyboard", "piano", "organ",
+        "vocal", "vocals", "choir", "backing vocal", "background vocal",
+    )
+    padded = f" {normalized} "
+    for term in terms:
+        term_norm = _normalize_identity_text(term)
+        if f" {term_norm} " in padded:
+            return True
+    return False
+
+
+def _source_profile_evidence(source: dict[str, Any], identity_title: str) -> dict[str, Any]:
+    name = _compact(source.get("source"))
+    genres = [_compact(x) for x in source.get("genres") or [] if _compact(x)]
+    if name == "MusicBrainz":
+        genres = sorted(set(genres + [_compact(x) for x in source.get("tags") or [] if _compact(x)]))
+    instruments = _filter_instruments(source.get("instruments") or [])
+    lead = bool(source.get("lead_vocals"))
+    backing = bool(source.get("backing_vocals"))
+
+    textual_profile_signal = False
+    if name == "Wikipedia":
+        page_title = _normalize_identity_text(source.get("title"))
+        expected_title = _normalize_identity_text(identity_title)
+        extract = _compact(source.get("extract"))
+        is_song_page = bool(page_title and expected_title and page_title == expected_title)
+        textual_profile_signal = is_song_page and _contains_profile_term(extract)
+
+    return {
+        "genres": genres,
+        "instruments": instruments,
+        "lead_vocals": lead,
+        "backing_vocals": backing,
+        "textual_profile_signal": textual_profile_signal,
+        "has_profile_evidence": bool(genres or instruments or lead or backing or textual_profile_signal),
+    }
+
+
+def build_review_payload(row: dict[str, Any], research: dict[str, Any], *, min_confidence: float = 0.75) -> dict[str, Any]:
+    identity = normalize_track_identity(row)
+    identity_rows = [
+        x
+        for x in research.get("sources") or []
+        if isinstance(x, dict)
+        and x.get("available")
+        and _source_matches_identity(
+            x,
+            _compact(identity.get("title")),
+            _compact(identity.get("artist")),
+        )
+    ]
+    source_rows = [
+        x
+        for x in identity_rows
+        if _source_profile_evidence(x, _compact(identity.get("title")))["has_profile_evidence"]
+    ]
+
+    external_genres: list[str] = []
+    external_instruments: list[str] = []
+    external_lead = False
+    external_backing = False
+    source_payload = []
+
+    for source in source_rows:
+        name = _compact(source.get("source"))
+        profile_evidence = _source_profile_evidence(source, _compact(identity.get("title")))
+        genres = profile_evidence["genres"]
+        if name == "MusicBrainz":
+            genres = sorted(set(genres + [_compact(x) for x in source.get("tags") or [] if _compact(x)]))
+        external_genres.extend(genres)
+
+        if name == "MusicBrainz":
+            external_instruments.extend(profile_evidence["instruments"])
+            external_lead = bool(profile_evidence["lead_vocals"])
+            external_backing = bool(profile_evidence["backing_vocals"])
+
+        source_payload.append(
+            {
+                "name": name,
+                "type": "public_reference",
+                "url": source.get("url"),
+                "identity_relevant": True,
+                "evidence": {
+                    "genres": genres,
+                    "instruments": source.get("instruments") or [],
+                    "performers": source.get("performers") or [],
+                    "description": source.get("description"),
+                    "extract": source.get("extract"),
+                    "lead_vocals": source.get("lead_vocals"),
+                    "backing_vocals": source.get("backing_vocals"),
+                },
+            }
+        )
+
+    external_genres = sorted(set(external_genres))
+    external_instruments = sorted(set(external_instruments))
+
+    profile_view = (((row.get("diagnostics") or {}).get("profile_view")) or {})
+    genre_h = profile_view.get("genre_hierarchy") or {}
+    lab_genre = _compact(((genre_h.get("primary") or {}).get("genre")))
+    vocal = profile_view.get("vocal_profile") or {}
+    instrumentation = profile_view.get("instrumentation") or {}
+
+    lab_genre_tokens = _genre_tokens([lab_genre])
+    external_genre_tokens = _genre_tokens(external_genres)
+    genre_overlap = sorted(lab_genre_tokens & external_genre_tokens)
+    genre_decision = (
+        "match"
+        if genre_overlap
+        else ("mismatch" if lab_genre_tokens and external_genre_tokens else "not_scored")
+    )
+
+    lab_instruments = [
+        _compact(x.get("label"))
+        for x in instrumentation.get("candidates") or []
+        if isinstance(x, dict) and _compact(x.get("label"))
+    ]
+    external_cf = " ".join(external_instruments).casefold()
+    instrument_matches = [x for x in lab_instruments if x.casefold() in external_cf]
+
+    dimensions = vocal.get("dimensions") or {}
+    lead_decision = _compact((dimensions.get("lead_vocal") or {}).get("decision"))
+    backing_decision = _compact((dimensions.get("backing_vocals") or {}).get("decision"))
+    choir_decision = _compact((dimensions.get("choir") or {}).get("decision"))
+
+    identity_source_count = len(identity_rows)
+    useful_source_count = len(source_rows)
+    identity_conf = float(identity.get("confidence") or 0.0)
+
+    external_identity_verified = False
+    external_identity_source = None
+    for source in identity_rows:
+        if _compact(source.get("source")) != "MusicBrainz":
+            continue
+        canonical_title = _compact(source.get("canonical_title"))
+        canonical_artist = _compact(source.get("canonical_artist"))
+        mb_score = int(source.get("score") or 0)
+        title_match = bool(canonical_title) and canonical_title.casefold() == _compact(identity.get("title")).casefold()
+        artist_match = bool(canonical_artist) and _compact(identity.get("artist")).casefold() in canonical_artist.casefold()
+        if title_match and artist_match and mb_score >= 90:
+            external_identity_verified = True
+            external_identity_source = "MusicBrainz"
+            break
+
+    effective_identity_conf = max(identity_conf, 0.95) if external_identity_verified else identity_conf
+    evidence_conf = min(1.0, 0.45 + 0.18 * useful_source_count)
+    overall_confidence = round(min(effective_identity_conf, evidence_conf), 3)
+
+    scored_dimensions = []
+    if genre_decision in {"match", "mismatch"}:
+        scored_dimensions.append("genre")
+    if external_lead and lead_decision == "present":
+        scored_dimensions.append("lead_vocal")
+    if external_backing and backing_decision in {"present", "possible"}:
+        scored_dimensions.append("backing_vocals")
+    if external_instruments and instrument_matches:
+        scored_dimensions.append("instrumentation")
+
+    external_validation_available = bool(
+        external_identity_verified
+        and useful_source_count >= 1
+        and scored_dimensions
+    )
+    complete = external_validation_available
+
+    confidence_band = (
+        "high"
+        if overall_confidence >= float(min_confidence)
+        else ("moderate" if external_validation_available else "unavailable")
+    )
+
+    return {
+        "run_id": int(row["run_id"]),
+        "revision_key": f"profile-{int(row['run_id'])}-assistant-auto-v1",
+        "reviewer": "assistant-auto",
+        "status": "completed" if complete else "draft",
+        "identity": {
+            **identity,
+            "research_request_count": int(research.get("request_count") or 0),
+            "external_identity_verified": external_identity_verified,
+            "external_identity_source": external_identity_source,
+            "effective_confidence": round(effective_identity_conf, 3),
+        },
+        "sources": source_payload,
+        "external_validation": {
+            "available": external_validation_available,
+            "analysis_dependency": False,
+            "unscored_dimensions_unchanged": True,
+            "scored_dimensions": scored_dimensions,
+            "confidence_band": confidence_band,
+            "reason": None if external_validation_available else "no_reliable_dimension_level_reference",
+        },
+        "consensus": {
+            "genre_labels": external_genres,
+            "genre_tokens": sorted(external_genre_tokens),
+            "instruments_credited_or_related": external_instruments,
+            "lead_vocals_supported": external_lead,
+            "backing_vocals_supported": external_backing,
+            "external_identity_source_count": identity_source_count,
+            "external_profile_evidence_source_count": useful_source_count,
+        },
+        "comparison": {
+            "genre": {
+                "lab": lab_genre or None,
+                "external": external_genres,
+                "decision": genre_decision,
+                "overlap": genre_overlap,
+            },
+            "lead_vocal": {
+                "lab": lead_decision or None,
+                "external_supported": external_lead,
+                "decision": (
+                    "match"
+                    if external_lead and lead_decision == "present"
+                    else "not_scored"
+                ),
+            },
+            "backing_vocals": {
+                "lab": backing_decision or None,
+                "external_supported": external_backing,
+                "decision": (
+                    "underconfident_match"
+                    if external_backing and backing_decision == "possible"
+                    else ("match" if external_backing and backing_decision == "present" else "not_scored")
+                ),
+            },
+            "choir": {
+                "lab": choir_decision or None,
+                "external_supported": False,
+                "decision": "not_inferred_from_backing_vocals",
+            },
+            "instrumentation": {
+                "lab_candidates": lab_instruments,
+                "external": external_instruments,
+                "matched_candidates": instrument_matches,
+                "decision": (
+                    "partial_match"
+                    if instrument_matches and len(instrument_matches) < len(lab_instruments)
+                    else ("match" if instrument_matches else "not_scored")
+                ),
+            },
+            "research_warnings": research.get("warnings") or [],
+        },
+        "confidence": overall_confidence,
+    }
+
+
+def auto_review_once(
+    client: Any,
+    *,
+    limit: int = 100,
+    dry_run: bool = True,
+    min_confidence: float = 0.75,
+    budget: NetworkBudget | None = None,
+) -> dict[str, Any]:
+    snapshot = profile_review_queue_snapshot(client, limit=limit)
+    rows = snapshot.get("reviews") or []
+    if not rows:
+        return {
+            "schema": "EZStudioLab_assistant.profile-auto-review-once.v1",
+            "status": "idle",
+            "dry_run": bool(dry_run),
+            "submitted": False,
+        }
+
+    selected = None
+    for row in rows:
+        identity = row.get("normalized_identity") or normalize_track_identity(row)
+        if _compact(identity.get("title")) and _compact(identity.get("artist")):
+            selected = row
+            break
+
+    if selected is None:
+        return {
+            "schema": "EZStudioLab_assistant.profile-auto-review-once.v1",
+            "status": "abstain",
+            "reason": "no_resolvable_identity",
+            "dry_run": bool(dry_run),
+            "submitted": False,
+        }
+
+    identity = selected.get("normalized_identity") or normalize_track_identity(selected)
+    research = research_public_sources(identity, budget or NetworkBudget())
+    payload = build_review_payload(selected, research, min_confidence=min_confidence)
+
+    result = {
+        "schema": "EZStudioLab_assistant.profile-auto-review-once.v1",
+        "status": payload["status"],
+        "dry_run": bool(dry_run),
+        "submitted": False,
+        "run_id": int(selected["run_id"]),
+        "identity": identity,
+        "network": {
+            "request_count": research.get("request_count", 0),
+            "max_requests_per_item": (budget or NetworkBudget()).max_requests_per_item,
+            "min_interval_seconds": (budget or NetworkBudget()).min_interval_seconds,
+            "max_response_bytes": (budget or NetworkBudget()).max_response_bytes,
+        },
+        "payload": payload,
+    }
+
+    if dry_run:
+        return result
+
+    if payload["status"] != "completed":
+        result["status"] = "abstain"
+        result["reason"] = "external_validation_unavailable"
+        return result
+
+    submit = client.submit_profile_review(payload)
+    result["submitted"] = bool(submit.get("ok"))
+    result["submit_result"] = submit
+    result["status"] = "completed" if result["submitted"] else "submit_failed"
+    return result
+
+def auto_review_sweep(
+    client: Any,
+    *,
+    limit: int = 100,
+    max_items: int = 5,
+    dry_run: bool = True,
+    min_confidence: float = 0.75,
+    budget_factory: Any | None = None,
+    skip_run_ids: set[int] | None = None,
+) -> dict[str, Any]:
+    snapshot = profile_review_queue_snapshot(client, limit=limit)
+    rows = snapshot.get("reviews") or []
+    skipped_ids = {int(x) for x in (skip_run_ids or set())}
+    eligible_rows = [
+        row
+        for row in rows
+        if int(row.get("run_id") or 0) not in skipped_ids
+    ]
+
+    results = []
+    submitted_count = 0
+    completed_count = 0
+    draft_count = 0
+    abstain_count = 0
+
+    for row in eligible_rows[:max(1, int(max_items))]:
+        identity = row.get("normalized_identity") or normalize_track_identity(row)
+        if not _compact(identity.get("title")) or not _compact(identity.get("artist")):
+            results.append(
+                {
+                    "run_id": int(row.get("run_id") or 0),
+                    "status": "abstain",
+                    "reason": "identity_incomplete",
+                    "submitted": False,
+                }
+            )
+            abstain_count += 1
+            continue
+
+        budget = budget_factory() if callable(budget_factory) else NetworkBudget()
+        research = research_public_sources(identity, budget)
+        payload = build_review_payload(row, research, min_confidence=min_confidence)
+
+        item = {
+            "run_id": int(row["run_id"]),
+            "identity": identity,
+            "status": payload["status"],
+            "confidence": payload.get("confidence"),
+            "submitted": False,
+            "network_request_count": int(research.get("request_count") or 0),
+            "research_reason": research.get("reason"),
+            "warnings": research.get("warnings") or [],
+            "payload": payload if dry_run else None,
+        }
+
+        if payload["status"] == "completed":
+            completed_count += 1
+            if not dry_run:
+                submit = client.submit_profile_review(payload)
+                item["submitted"] = bool(submit.get("ok"))
+                item["submit_result"] = submit
+                if item["submitted"]:
+                    submitted_count += 1
+        elif payload["status"] == "draft":
+            draft_count += 1
+        else:
+            abstain_count += 1
+
+        results.append(item)
+
+    return {
+        "schema": "EZStudioLab_assistant.profile-auto-review-sweep.v1",
+        "dry_run": bool(dry_run),
+        "examined": len(results),
+        "completed": completed_count,
+        "draft": draft_count,
+        "abstain": abstain_count,
+        "submitted": submitted_count,
+        "skipped_cooldown": max(0, len(rows) - len(eligible_rows)),
+        "queue_count": len(rows),
+        "results": results,
+    }
+
+def _load_watch_state(path: str | Path) -> dict[str, Any]:
+    state_path = Path(path)
+    if not state_path.is_file():
+        return {"schema": "EZStudioLab_assistant.profile-auto-review-watch-state.v1", "runs": {}}
+    try:
+        data = json.loads(state_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {"schema": "EZStudioLab_assistant.profile-auto-review-watch-state.v1", "runs": {}}
+    if not isinstance(data, dict):
+        return {"schema": "EZStudioLab_assistant.profile-auto-review-watch-state.v1", "runs": {}}
+    runs = data.get("runs")
+    if not isinstance(runs, dict):
+        runs = {}
+    return {
+        "schema": "EZStudioLab_assistant.profile-auto-review-watch-state.v1",
+        "runs": runs,
+    }
+
+
+def _save_watch_state(path: str | Path, state: dict[str, Any]) -> None:
+    state_path = Path(path)
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = state_path.with_suffix(state_path.suffix + ".tmp")
+    tmp.write_text(json.dumps(state, ensure_ascii=True, indent=2), encoding="utf-8")
+    tmp.replace(state_path)
+
+
+def auto_review_watch(
+    client: Any,
+    *,
+    state_file: str | Path,
+    poll_seconds: float = 900.0,
+    draft_cooldown_seconds: float = 86400.0,
+    abstain_cooldown_seconds: float = 604800.0,
+    limit: int = 100,
+    max_items: int = 5,
+    iterations: int = 0,
+    min_confidence: float = 0.75,
+    budget_factory: Any | None = None,
+    now_fn: Any | None = None,
+    sleep_fn: Any | None = None,
+    emit_fn: Any | None = None,
+) -> dict[str, Any]:
+    now_fn = now_fn or time.time
+    sleep_fn = sleep_fn or time.sleep
+    emit_fn = emit_fn or (lambda event: print(json.dumps(event, ensure_ascii=True), flush=True))
+
+    state = _load_watch_state(state_file)
+    cycle = 0
+    totals = {
+        "examined": 0,
+        "completed": 0,
+        "draft": 0,
+        "abstain": 0,
+        "submitted": 0,
+    }
+
+    while True:
+        now = float(now_fn())
+        runs_state = state.setdefault("runs", {})
+        cooldown_ids = set()
+        for key, value in list(runs_state.items()):
+            try:
+                run_id = int(key)
+            except (TypeError, ValueError):
+                continue
+            if not isinstance(value, dict):
+                continue
+            next_retry = float(value.get("next_retry_epoch") or 0.0)
+            if next_retry > now:
+                cooldown_ids.add(run_id)
+
+        sweep = auto_review_sweep(
+            client,
+            limit=limit,
+            max_items=max_items,
+            dry_run=False,
+            min_confidence=min_confidence,
+            budget_factory=budget_factory,
+            skip_run_ids=cooldown_ids,
+        )
+
+        cycle += 1
+        for key in totals:
+            totals[key] += int(sweep.get(key) or 0)
+
+        for item in sweep.get("results") or []:
+            if not isinstance(item, dict):
+                continue
+            run_id = int(item.get("run_id") or 0)
+            if run_id <= 0:
+                continue
+            key = str(run_id)
+            status = str(item.get("status") or "")
+            if status == "completed" and bool(item.get("submitted")):
+                runs_state.pop(key, None)
+                continue
+
+            previous = runs_state.get(key) if isinstance(runs_state.get(key), dict) else {}
+            attempts = int(previous.get("attempts") or 0) + 1
+            if status == "draft":
+                cooldown = max(60.0, float(draft_cooldown_seconds))
+            else:
+                cooldown = max(60.0, float(abstain_cooldown_seconds))
+            runs_state[key] = {
+                "status": status or "abstain",
+                "attempts": attempts,
+                "last_checked_epoch": now,
+                "next_retry_epoch": now + cooldown,
+                "reason": item.get("reason") or item.get("research_reason"),
+                "confidence": item.get("confidence"),
+            }
+
+        state["updated_at_epoch"] = now
+        _save_watch_state(state_file, state)
+
+        event = {
+            "schema": "EZStudioLab_assistant.profile-auto-review-watch-cycle.v1",
+            "cycle": cycle,
+            "state_file": str(state_file),
+            "cooldown_count": len(cooldown_ids),
+            "sweep": {
+                "queue_count": sweep.get("queue_count"),
+                "examined": sweep.get("examined"),
+                "completed": sweep.get("completed"),
+                "draft": sweep.get("draft"),
+                "abstain": sweep.get("abstain"),
+                "submitted": sweep.get("submitted"),
+                "skipped_cooldown": sweep.get("skipped_cooldown"),
+            },
+            "totals": dict(totals),
+        }
+        emit_fn(event)
+
+        if iterations > 0 and cycle >= int(iterations):
+            return {
+                "schema": "EZStudioLab_assistant.profile-auto-review-watch-summary.v1",
+                "cycles": cycle,
+                "state_file": str(state_file),
+                "totals": totals,
+            }
+
+        sleep_fn(max(60.0, float(poll_seconds)))
+
