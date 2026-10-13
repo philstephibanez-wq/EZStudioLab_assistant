@@ -197,6 +197,7 @@ class StatusWindow:
         self.root_dir = root_dir
         self.status_path = root_dir / "logs" / "assistant.status.json"
         self.commit_path = root_dir / "DEPLOYED_COMMIT.txt"
+        self.version_path = root_dir / "VERSION"
         self.lifecycle_path = root_dir / "logs" / "status_window.lifecycle.log"
         self.ui_events: queue.Queue[str] = queue.Queue()
 
@@ -289,6 +290,13 @@ class StatusWindow:
 
         self.root.after(150, self._poll_ui_events)
 
+    def _read_version(self) -> str:
+        try:
+            value = self.version_path.read_text(encoding="utf-8-sig").strip()
+        except OSError:
+            return "-"
+        return value or "-"
+
     def _read_commit(self) -> str:
         try:
             value = self.commit_path.read_text(encoding="utf-8-sig").strip()
@@ -308,7 +316,7 @@ class StatusWindow:
         return payload
 
     def _refresh_status(self) -> None:
-        self.version_label.configure(text=f"Version : {self._read_commit()}")
+        self.version_label.configure(text=f"Version : {self._read_version()} · {self._read_commit()}")
 
         payload = self._read_status()
 
