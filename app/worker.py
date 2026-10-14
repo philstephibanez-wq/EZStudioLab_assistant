@@ -2,7 +2,7 @@ from __future__ import annotations
 import json,time
 from typing import Any
 from runtime_status import write_status
-from transport import AnalysisApiClient
+from transport import AnalysisApiClient, AnalysisApiError
 def _capability_payload(capabilities:Any,state:str)->dict[str,Any]:
     return {"schema":"ezstudio.distributed.worker-heartbeat.v1","protocol":capabilities.protocol,"node_id":capabilities.node_id,"hostname":capabilities.hostname,"state":state,"capabilities":capabilities.to_dict()}
 def observe_queue(client,capabilities):
@@ -38,28 +38,114 @@ def _distributed_error_summary(exc):
         return head[:180]
     return f"{type(exc).__name__}: {message}"[:180]
 
+def _distributed_retry_delay(poll_seconds, consecutive_errors):
+    base = max(1.0, float(poll_seconds))
+    factor = 2 ** min(max(0, int(consecutive_errors) - 1), 4)
+    return min(30.0, base * factor)
+
+
 def watch_distributed(client,capabilities,*,poll_seconds=5.0,iterations=0,limit=100):
-    count=0; worker_id=str(capabilities.node_id); cap=capabilities.to_dict(); write_status("ONLINE","Démarrage du worker distribué"); client.distributed_worker_heartbeat(worker_id,cap,state="starting")
-    try:
-        while True:
+    count=0
+    worker_id=str(capabilities.node_id)
+    cap=capabilities.to_dict()
+    started=False
+    consecutive_api_errors=0
+    write_status("ONLINE","Démarrage du worker distribué")
+
+    while True:
+        try:
+            if not started:
+                client.distributed_worker_heartbeat(
+                    worker_id,
+                    cap,
+                    state="starting",
+                )
+                started=True
+
             write_status("ONLINE","Recherche de job compatible")
-            client.distributed_worker_heartbeat(worker_id,cap,state="polling")
-            jobs=client.distributed_eligible_jobs(worker_id,limit=limit); state="idle" if not jobs else "eligible_jobs_visible"; heartbeat=client.distributed_worker_heartbeat(worker_id,cap,state=state)
-            activity="En veille — aucun job compatible" if not jobs else f"{len(jobs)} job(s) compatible(s) détecté(s)"
+            client.distributed_worker_heartbeat(
+                worker_id,
+                cap,
+                state="polling",
+            )
+            jobs=client.distributed_eligible_jobs(worker_id,limit=limit)
+            state="idle" if not jobs else "eligible_jobs_visible"
+            heartbeat=client.distributed_worker_heartbeat(
+                worker_id,
+                cap,
+                state=state,
+            )
+            consecutive_api_errors=0
+
+            activity=(
+                "En veille — aucun job compatible"
+                if not jobs
+                else f"{len(jobs)} job(s) compatible(s) détecté(s)"
+            )
             write_status("ONLINE",activity)
-            print(json.dumps({"event":"distributed_queue_snapshot","worker_id":worker_id,"claim_enabled":False,"scientific_execution_enabled":False,"eligible_count":len(jobs),"eligible_jobs":jobs,"heartbeat":heartbeat},ensure_ascii=False),flush=True); count+=1
-            if iterations>0 and count>=iterations:return 0
+            print(
+                json.dumps(
+                    {
+                        "event":"distributed_queue_snapshot",
+                        "worker_id":worker_id,
+                        "claim_enabled":False,
+                        "scientific_execution_enabled":False,
+                        "eligible_count":len(jobs),
+                        "eligible_jobs":jobs,
+                        "heartbeat":heartbeat,
+                    },
+                    ensure_ascii=False,
+                ),
+                flush=True,
+            )
+            count+=1
+            if iterations>0 and count>=iterations:
+                return 0
             time.sleep(poll_seconds)
-    except Exception as exc:
-        write_status(
-            "ERROR",
-            _distributed_error_summary(exc),
-            extra={
-                "error_type":type(exc).__name__,
-                "details":f"{type(exc).__name__}: {exc}"[:4000],
-            },
-        )
-        raise
+        except AnalysisApiError as exc:
+            consecutive_api_errors+=1
+            retry_seconds=_distributed_retry_delay(
+                poll_seconds,
+                consecutive_api_errors,
+            )
+            write_status(
+                "ERROR",
+                "Connexion LAB temporairement indisponible — nouvelle tentative",
+                extra={
+                    "error_type":type(exc).__name__,
+                    "details":f"{type(exc).__name__}: {exc}"[:4000],
+                    "retry_seconds":retry_seconds,
+                    "consecutive_errors":consecutive_api_errors,
+                    "worker_continues":True,
+                },
+            )
+            print(
+                json.dumps(
+                    {
+                        "event":"distributed_transport_retry",
+                        "worker_id":worker_id,
+                        "claim_enabled":False,
+                        "scientific_execution_enabled":False,
+                        "retry_seconds":retry_seconds,
+                        "consecutive_errors":consecutive_api_errors,
+                        "error":_distributed_error_summary(exc),
+                    },
+                    ensure_ascii=False,
+                ),
+                flush=True,
+            )
+            time.sleep(retry_seconds)
+        except Exception as exc:
+            write_status(
+                "ERROR",
+                _distributed_error_summary(exc),
+                extra={
+                    "error_type":type(exc).__name__,
+                    "details":f"{type(exc).__name__}: {exc}"[:4000],
+                    "worker_continues":False,
+                },
+            )
+            raise
 
 def _context_flag_true(payload, key):
     if isinstance(payload, dict):
