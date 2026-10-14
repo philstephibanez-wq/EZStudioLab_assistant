@@ -17,7 +17,7 @@ from transport import AnalysisApiClient
 from profile_review import load_review_payload, profile_review_queue_snapshot
 from profile_auto_review import NetworkBudget, auto_review_once, auto_review_sweep, auto_review_watch
 from preset_guard import evaluate_preset_candidate
-from worker import distributed_claim_once, distributed_probe, observe_queue, watch_distributed, watch_queue
+from worker import distributed_claim_once, distributed_execute_protocol_once, distributed_probe, observe_queue, watch_distributed, watch_queue
 def _client_from_args(args):
     base_url=args.base_url or os.getenv("EZSTUDIOLAB_ASSISTANT_BASE_URL"); token=args.token or os.getenv("EZSTUDIOLAB_ASSISTANT_TOKEN")
     if not base_url: raise RuntimeError("analysis_base_url_required:set EZSTUDIOLAB_ASSISTANT_BASE_URL or --base-url")
@@ -35,6 +35,7 @@ def main():
     probe=sub.add_parser("distributed-probe"); _network_args(probe); probe.add_argument("--limit",type=int,default=100)
     dwatch=sub.add_parser("distributed-watch"); _network_args(dwatch); dwatch.add_argument("--poll-seconds",type=float,default=5.0); dwatch.add_argument("--iterations",type=int,default=0); dwatch.add_argument("--limit",type=int,default=100)
     claim=sub.add_parser("distributed-claim-once"); _network_args(claim); claim.add_argument("--job-id",type=int,required=True); claim.add_argument("--lease-seconds",type=int,default=60); claim.add_argument("--limit",type=int,default=100)
+    execute=sub.add_parser("distributed-execute-protocol-once"); _network_args(execute); execute.add_argument("--job-id",type=int,required=True); execute.add_argument("--lease-seconds",type=int,default=60); execute.add_argument("--limit",type=int,default=100)
     reviewq=sub.add_parser("profile-review-queue"); _network_args(reviewq); reviewq.add_argument("--limit",type=int,default=100)
     auto=sub.add_parser("profile-review-auto-once"); _network_args(auto); auto.add_argument("--limit",type=int,default=100); auto.add_argument("--dry-run",action="store_true"); auto.add_argument("--min-confidence",type=float,default=0.75); auto.add_argument("--network-min-interval",type=float,default=2.0); auto.add_argument("--network-max-response-kb",type=int,default=256); auto.add_argument("--network-max-requests",type=int,default=6)
     sweep=sub.add_parser("profile-review-auto-sweep"); _network_args(sweep); sweep.add_argument("--limit",type=int,default=100); sweep.add_argument("--max-items",type=int,default=5); sweep.add_argument("--dry-run",action="store_true"); sweep.add_argument("--min-confidence",type=float,default=0.75); sweep.add_argument("--network-min-interval",type=float,default=2.0); sweep.add_argument("--network-max-response-kb",type=int,default=256); sweep.add_argument("--network-max-requests",type=int,default=6)
@@ -55,6 +56,9 @@ def main():
     if args.command=="distributed-watch": return watch_distributed(_client_from_args(args),detect_capabilities(),poll_seconds=max(1.0,float(args.poll_seconds)),iterations=max(0,int(args.iterations)),limit=max(1,min(500,int(args.limit))))
     if args.command=="distributed-claim-once":
         result=distributed_claim_once(_client_from_args(args),detect_capabilities(),job_id=max(1,int(args.job_id)),lease_seconds=max(30,min(300,int(args.lease_seconds))),limit=max(1,min(500,int(args.limit))))
+        print(json.dumps(result,ensure_ascii=False,indent=2)); return 0
+    if args.command=="distributed-execute-protocol-once":
+        result=distributed_execute_protocol_once(_client_from_args(args),detect_capabilities(),job_id=max(1,int(args.job_id)),lease_seconds=max(30,min(300,int(args.lease_seconds))),limit=max(1,min(500,int(args.limit))))
         print(json.dumps(result,ensure_ascii=False,indent=2)); return 0
     if args.command=="profile-review-auto-watch":
         def make_watch_budget():

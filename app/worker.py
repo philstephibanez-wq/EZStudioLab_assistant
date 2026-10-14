@@ -60,3 +60,165 @@ def watch_distributed(client,capabilities,*,poll_seconds=5.0,iterations=0,limit=
             },
         )
         raise
+
+def _context_flag_true(payload, key):
+    if isinstance(payload, dict):
+        if payload.get(key) is True:
+            return True
+        return any(_context_flag_true(value, key) for value in payload.values())
+    if isinstance(payload, list):
+        return any(_context_flag_true(value, key) for value in payload)
+    return False
+
+def _sha256_file(path):
+    import hashlib
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        while True:
+            chunk = handle.read(1024 * 1024)
+            if not chunk:
+                break
+            digest.update(chunk)
+    return digest.hexdigest().upper()
+
+def _shared_source_metadata(shared_source):
+    from pathlib import Path
+
+    value = str(shared_source or "").strip()
+    if not value:
+        raise RuntimeError("distributed_shared_source_missing")
+    if not value.startswith("\\\\"):
+        raise RuntimeError("distributed_shared_source_not_unc")
+
+    source_path = Path(value)
+    if not source_path.is_file():
+        raise RuntimeError("distributed_shared_source_unreadable")
+
+    return int(source_path.stat().st_size), _sha256_file(source_path)
+
+def distributed_execute_protocol_once(client, capabilities, *, job_id, lease_seconds=60, limit=100):
+    worker_id = str(capabilities.node_id)
+    cap = capabilities.to_dict()
+    jid = int(job_id)
+
+    client.distributed_worker_heartbeat(worker_id, cap, state="execution_check")
+    jobs = client.distributed_eligible_jobs(worker_id, limit=limit)
+
+    selected = None
+    for row in jobs:
+        if isinstance(row, dict) and int(row.get("job_id") or 0) == jid:
+            selected = row
+            break
+
+    if selected is None:
+        client.distributed_worker_heartbeat(worker_id, cap, state="idle")
+        raise RuntimeError(f"distributed_job_not_currently_eligible:{jid}")
+
+    if str(selected.get("kind") or "") != "distributed_test":
+        client.distributed_worker_heartbeat(worker_id, cap, state="idle")
+        raise RuntimeError(
+            f"distributed_execution_kind_not_allowed:{selected.get('kind')}"
+        )
+
+    claim = client.distributed_claim_job(
+        jid, worker_id, lease_seconds=lease_seconds
+    )
+    lease = claim.get("lease")
+    if not isinstance(lease, dict):
+        raise RuntimeError("distributed_claim_missing_lease")
+    if str(lease.get("worker_id") or "") != worker_id:
+        raise RuntimeError("distributed_claim_worker_mismatch")
+
+    lease_token = str(lease.get("lease_token") or "").strip()
+    if not lease_token:
+        raise RuntimeError("distributed_claim_missing_lease_token")
+
+    completed = False
+    try:
+        context = client.distributed_context(jid, worker_id, lease_token)
+        if not isinstance(context, dict):
+            raise RuntimeError("distributed_context_invalid")
+        if not _context_flag_true(context, "protocol_test_only"):
+            raise RuntimeError("distributed_protocol_test_flag_required")
+
+        paths = context.get("paths")
+        if not isinstance(paths, dict):
+            raise RuntimeError("distributed_context_paths_missing")
+
+        shared_source = str(paths.get("shared_source") or "").strip()
+        if not shared_source:
+            raise RuntimeError("distributed_shared_source_missing")
+        if not shared_source.startswith("\\\\"):
+            raise RuntimeError("distributed_shared_source_not_unc")
+
+        client.distributed_progress(jid, worker_id, lease_token, 5)
+        client.distributed_lease_heartbeat(
+            jid, worker_id, lease_token, lease_seconds=lease_seconds
+        )
+        write_status(
+            "ONLINE",
+            f"Job protocole #{jid} — validation source partagée",
+        )
+
+        size, sha256 = _shared_source_metadata(shared_source)
+
+        client.distributed_progress(jid, worker_id, lease_token, 50)
+        lease_heartbeat = client.distributed_lease_heartbeat(
+            jid, worker_id, lease_token, lease_seconds=lease_seconds
+        )
+        client.distributed_progress(jid, worker_id, lease_token, 95)
+
+        client.distributed_worker_heartbeat(
+            worker_id, cap, state="completing_protocol_test"
+        )
+        complete = client.distributed_complete(
+            jid, worker_id, lease_token
+        )
+        completed = True
+
+        client.distributed_worker_heartbeat(
+            worker_id, cap, state="idle"
+        )
+        write_status("ONLINE", f"Job protocole #{jid} terminé")
+
+        return {
+            "schema": "EZStudioLab_assistant.distributed-protocol-execution.v1",
+            "worker_id": worker_id,
+            "job_id": jid,
+            "kind": "distributed_test",
+            "protocol_test_only": True,
+            "scientific_execution_enabled": False,
+            "shared_source": shared_source,
+            "source_size": size,
+            "source_sha256": sha256,
+            "lease_heartbeat": lease_heartbeat,
+            "complete": complete,
+        }
+    except Exception as exc:
+        if not completed:
+            try:
+                client.distributed_fail(
+                    jid,
+                    worker_id,
+                    lease_token,
+                    f"protocol_execution_failed:{type(exc).__name__}:{exc}",
+                )
+            except Exception:
+                pass
+
+        try:
+            client.distributed_worker_heartbeat(
+                worker_id, cap, state="error"
+            )
+        except Exception:
+            pass
+
+        write_status(
+            "ERROR",
+            _distributed_error_summary(exc),
+            extra={
+                "error_type": type(exc).__name__,
+                "details": f"{type(exc).__name__}: {exc}"[:4000],
+            },
+        )
+        raise
