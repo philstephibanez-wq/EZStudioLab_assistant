@@ -8,7 +8,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-HOST_REPO = ROOT.parent
+HOST_REPO = ROOT.parent / "EZStudio_lab"
 MAIN = ROOT / "app" / "main.py"
 
 

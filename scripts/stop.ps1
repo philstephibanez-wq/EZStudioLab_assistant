@@ -1,8 +1,7 @@
 ﻿$ErrorActionPreference = 'Stop'
 
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$installRoot = (Resolve-Path (Join-Path $root '..')).Path
-$runtime = Join-Path $installRoot 'var\assistant\web'
+$runtime = Join-Path $root 'runtime\web'
 $lockPath = Join-Path $runtime 'instance.lock'
 $phpPidPath = Join-Path $runtime 'php.pid'
 $caddyPidPath = Join-Path $runtime 'caddy.pid'

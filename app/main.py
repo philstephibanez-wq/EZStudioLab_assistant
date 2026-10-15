@@ -2,10 +2,16 @@ from __future__ import annotations
 import argparse, json, os, sys
 from pathlib import Path
 ASSISTANT_ROOT=Path(__file__).resolve().parents[1]
-HOST_REPO=Path(os.getenv("EZSTUDIOLAB_HOST_REPO",ASSISTANT_ROOT.parent)).resolve()
+_explicit_host=os.getenv("EZSTUDIOLAB_HOST_REPO")
+if _explicit_host:
+    HOST_REPO=Path(_explicit_host).resolve()
+elif (ASSISTANT_ROOT/"runtime"/"python").is_dir():
+    HOST_REPO=(ASSISTANT_ROOT/"runtime").resolve()
+else:
+    HOST_REPO=(ASSISTANT_ROOT.parent/"EZStudio_lab").resolve()
 APP_ROOT=Path(__file__).resolve().parent
 PYTHON_ROOT=HOST_REPO/"python"
-if not PYTHON_ROOT.is_dir(): raise RuntimeError("EZStudio_lab python root not found. Set EZSTUDIOLAB_HOST_REPO to the EZStudio_lab repository root.")
+if not PYTHON_ROOT.is_dir(): raise RuntimeError("EZStudio runtime python root not found. Set EZSTUDIOLAB_HOST_REPO or provide runtime\\python under the Assistant root.")
 if str(APP_ROOT) in sys.path: sys.path.remove(str(APP_ROOT))
 sys.path.insert(0,str(APP_ROOT))
 if str(PYTHON_ROOT) not in sys.path: sys.path.insert(1,str(PYTHON_ROOT))

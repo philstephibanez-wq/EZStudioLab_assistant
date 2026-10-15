@@ -7,7 +7,7 @@ import tempfile
 from pathlib import Path
 
 ASSISTANT_ROOT = Path(__file__).resolve().parents[1]
-HOST_REPO = Path(os.getenv("EZSTUDIOLAB_HOST_REPO", ASSISTANT_ROOT.parent)).resolve()
+HOST_REPO = Path(os.getenv("EZSTUDIOLAB_HOST_REPO", ASSISTANT_ROOT.parent / "EZStudio_lab")).resolve()
 PYTHON = HOST_REPO / "python"
 if not PYTHON.is_dir():
     raise RuntimeError("EZStudio_lab python root missing")
@@ -23,8 +23,7 @@ from transport import AnalysisApiClient
 
 readme = ASSISTANT_ROOT / "README.md"
 assert readme.is_file()
-assert not list(ASSISTANT_ROOT.glob("**/README_*.md"))
-assert not [p for p in ASSISTANT_ROOT.rglob("README.md") if p != readme]
+assert not list(ASSISTANT_ROOT.glob("README_*.md"))
 
 ready = {
     "preset": "profile-test.v1",

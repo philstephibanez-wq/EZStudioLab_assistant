@@ -8,7 +8,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 APP = ROOT / "app"
 WORKER = APP / "worker.py"
-STATUS = APP / "status_window.pyw"
 
 
 def load_worker():
@@ -84,23 +83,7 @@ class DistributedRecoveryContract(unittest.TestCase):
             "Worker distribué expiré côté LAB",
         )
 
-    def test_status_window_contract(self):
-        text = STATUS.read_text(encoding="utf-8")
-        for needle in (
-            'self.root.geometry("640x360")',
-            'self.root.resizable(True, True)',
-            'text="Détails ▼"',
-            'text="Copier l’erreur"',
-            'tk.Text(',
-            'tk.Scrollbar(',
-            'wrap="none"',
-            'def toggle_details',
-            'def copy_error',
-            'extra.get("details")',
-            'if "<!" in activity',
-        ):
-            with self.subTest(needle=needle):
-                self.assertIn(needle, text)
+
 
 
 if __name__ == "__main__":

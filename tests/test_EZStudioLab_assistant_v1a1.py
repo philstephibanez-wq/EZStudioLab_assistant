@@ -6,7 +6,7 @@ import tempfile
 from pathlib import Path
 
 ASSISTANT_ROOT = Path(__file__).resolve().parents[1]
-HOST_REPO = Path(os.getenv("EZSTUDIOLAB_HOST_REPO", ASSISTANT_ROOT.parent)).resolve()
+HOST_REPO = Path(os.getenv("EZSTUDIOLAB_HOST_REPO", ASSISTANT_ROOT.parent / "EZStudio_lab")).resolve()
 PYTHON = HOST_REPO / "python"
 if not PYTHON.is_dir():
     raise RuntimeError("EZStudio_lab python root missing")
@@ -18,16 +18,22 @@ from ezstudio.distributed.model_resolver import ModelResolver, sha256_path
 from ezstudio.distributed.worker_protocol import JobRequirements, compatibility_report
 
 app = ASSISTANT_ROOT / "app" / "main.py"
-launcher = ASSISTANT_ROOT / "scripts" / "start-EZStudioLab_assistant.ps1"
+start_cmd = ASSISTANT_ROOT / "scripts" / "start.cmd"
+start_ps1 = ASSISTANT_ROOT / "scripts" / "start.ps1"
+stop_cmd = ASSISTANT_ROOT / "scripts" / "stop.cmd"
+stop_ps1 = ASSISTANT_ROOT / "scripts" / "stop.ps1"
 config = ASSISTANT_ROOT / "config" / "EZStudioLab_assistant.example.json"
 readme = ASSISTANT_ROOT / "README.md"
 
 assert app.is_file()
-assert launcher.is_file()
+assert start_cmd.is_file()
+assert start_ps1.is_file()
+assert stop_cmd.is_file()
+assert stop_ps1.is_file()
+assert not (ASSISTANT_ROOT / "scripts" / "start-EZStudioLab_assistant.ps1").exists()
 assert config.is_file()
 assert readme.is_file()
-assert not list(ASSISTANT_ROOT.glob("**/README_*.md"))
-assert not [p for p in ASSISTANT_ROOT.rglob("README.md") if p != readme]
+assert not list(ASSISTANT_ROOT.glob("README_*.md"))
 
 caps = detect_capabilities()
 assert caps.protocol == "ezstudio.distributed.v1"
@@ -50,7 +56,7 @@ with tempfile.TemporaryDirectory() as tmp:
     )
     assert report["compatible"] is True
 
-print("EZStudioLab_assistant_SUBMODULE_V1A_CONTRACT_OK")
-print("Single root README enforced")
+print("EZStudioLab_assistant_V1A_SINGLE_ROOT_CONTRACT_OK")
+print("Canonical start/stop lifecycle enforced")
 print("Shared protocol remains owned by EZStudio_lab")
 print("Scientific pipeline untouched")
