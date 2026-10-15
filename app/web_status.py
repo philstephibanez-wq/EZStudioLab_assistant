@@ -10,11 +10,12 @@ from pathlib import Path
 from transport import AnalysisApiClient, AnalysisApiError
 
 ROOT = Path(__file__).resolve().parents[1]
-INSTALL_ROOT = ROOT.parent
-RUNTIME_ROOT = INSTALL_ROOT / "var" / "assistant"
+DEFAULT_STATUS_FILE = ROOT / "logs" / "assistant.status.json"
+DEFAULT_TOKEN_FILE = ROOT / "runtime" / "state" / "analysis-worker-token.dpapi"
 
 LAB_TIMEOUT_SECONDS = 1.5
 SMB_TIMEOUT_SECONDS = 1.5
+TOKEN_TIMEOUT_SECONDS = 3.0
 
 
 def _read_json(path: Path) -> dict:
@@ -23,6 +24,57 @@ def _read_json(path: Path) -> dict:
     except (OSError, json.JSONDecodeError):
         return {}
     return value if isinstance(value, dict) else {}
+
+
+def _read_dpapi_token(path: Path) -> str:
+    """Read the per-user DPAPI token without exposing it in command arguments."""
+    if not path.is_file():
+        return ""
+
+    script = (
+        "$ErrorActionPreference='Stop';"
+        "$p=$env:EZSTUDIOLAB_ASSISTANT_TOKEN_FILE;"
+        "$cipher=[System.IO.File]::ReadAllText("
+        "$p,[System.Text.Encoding]::ASCII).Trim();"
+        "$secure=ConvertTo-SecureString $cipher;"
+        "$credential=New-Object "
+        "System.Management.Automation.PSCredential("
+        "'assistant-token',$secure);"
+        "[Console]::Out.Write("
+        "$credential.GetNetworkCredential().Password)"
+    )
+    env = os.environ.copy()
+    env["EZSTUDIOLAB_ASSISTANT_TOKEN_FILE"] = str(path)
+    kwargs = {
+        "capture_output": True,
+        "text": True,
+        "encoding": "utf-8",
+        "errors": "replace",
+        "timeout": TOKEN_TIMEOUT_SECONDS,
+        "env": env,
+    }
+    if hasattr(subprocess, "CREATE_NO_WINDOW"):
+        kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+
+    try:
+        completed = subprocess.run(
+            [
+                "powershell",
+                "-NoProfile",
+                "-NonInteractive",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+                script,
+            ],
+            **kwargs,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+
+    if completed.returncode != 0:
+        return ""
+    return completed.stdout.strip()
 
 
 def _probe_lab(base_url: str, token: str) -> dict:
@@ -117,7 +169,7 @@ def main() -> int:
     status_file = Path(
         os.getenv(
             "EZSTUDIOLAB_ASSISTANT_STATUS_FILE",
-            str(RUNTIME_ROOT / "assistant.status.json"),
+            str(DEFAULT_STATUS_FILE),
         )
     )
     model_root = Path(
@@ -131,6 +183,8 @@ def main() -> int:
         "http://EZSTUDIO-MAIN:8702",
     ).rstrip("/")
     token = os.getenv("EZSTUDIOLAB_ASSISTANT_TOKEN", "").strip()
+    if not token:
+        token = _read_dpapi_token(DEFAULT_TOKEN_FILE)
 
     runtime = _read_json(status_file)
     lab_rest = _probe_lab(base_url, token)

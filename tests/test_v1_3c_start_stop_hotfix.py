@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from pathlib import Path
 import unittest
@@ -13,7 +13,7 @@ class AssistantStartStopHotfix13C(unittest.TestCase):
         cls.stop = (ROOT / "scripts" / "stop.ps1").read_text(encoding="utf-8-sig")
 
     def test_version_stays_13c(self):
-        self.assertEqual("1.3f", (ROOT / "VERSION").read_text(encoding="utf-8").strip())
+        self.assertEqual("1.3g", (ROOT / "VERSION").read_text(encoding="utf-8").strip())
 
     def test_start_is_singleton_and_can_recover_running_instance(self):
         self.assertIn("instance.lock", self.start)
