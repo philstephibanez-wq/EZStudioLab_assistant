@@ -26,6 +26,27 @@ function Add-CandidatePid([System.Collections.Generic.HashSet[int]]$Set, $Value)
     if (Test-AssistantProcess $pidValue) { [void]$Set.Add($pidValue) }
 }
 
+function Add-PidFilePortCandidate(
+    [System.Collections.Generic.HashSet[int]]$Set,
+    [string]$PidPath,
+    [string]$ExpectedName,
+    [int]$ExpectedPort
+) {
+    if (-not (Test-Path -LiteralPath $PidPath -PathType Leaf)) { return }
+
+    try { $pidValue = [int](Get-Content -LiteralPath $PidPath -Raw) }
+    catch { return }
+
+    $processInfo = Get-ProcessInfo $pidValue
+    if ($null -eq $processInfo) { return }
+    if ([string]$processInfo.Name -ne $ExpectedName) { return }
+
+    $owner = Get-PortOwner $ExpectedPort
+    if ($null -eq $owner -or [int]$owner -ne $pidValue) { return }
+
+    [void]$Set.Add($pidValue)
+}
+
 function Get-PortOwner([int]$Port) {
     $listener = Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($null -eq $listener) { return $null }
@@ -39,6 +60,12 @@ foreach ($pidPath in @($caddyPidPath, $phpPidPath)) {
         try { Add-CandidatePid $candidates (Get-Content -LiteralPath $pidPath -Raw) } catch {}
     }
 }
+
+# Bounded fallback for remote sessions where Win32_Process.CommandLine may be
+# unavailable: trust a persisted PID only when it also owns the exact expected
+# Assistant listener and has the expected executable name.
+Add-PidFilePortCandidate $candidates $caddyPidPath 'caddy.exe' 8712
+Add-PidFilePortCandidate $candidates $phpPidPath 'php.exe' 8713
 
 foreach ($port in @(8712,8713)) {
     $owner = Get-PortOwner $port

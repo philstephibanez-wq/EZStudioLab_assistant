@@ -23,7 +23,9 @@ class AssistantWebSingletonV13C(unittest.TestCase):
         self.assertIn("Get-NetTCPConnection", source)
         self.assertIn("8712", source)
         self.assertIn("8713", source)
-        self.assertIn("assistant_web_instance_conflict_after_lock", source)
+        self.assertIn("assistant_web_foreign_port_owner", source)
+        self.assertIn("assistant_web_partial_instance_detected", source)
+        self.assertIn("assistant_web_listener_validation_failed", source)
 
     def test_start_failure_releases_singleton(self):
         source = (ROOT / "scripts" / "start.ps1").read_text(encoding="utf-8-sig")
