@@ -1,22 +1,18 @@
 from __future__ import annotations
 
+import importlib.util
+import json
+import subprocess
 import sys
 from pathlib import Path
+from unittest import TestCase
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 APP = ROOT / "app"
 
 if str(APP) not in sys.path:
     sys.path.insert(0, str(APP))
-
-import importlib.util
-import json
-import subprocess
-from pathlib import Path
-from unittest import TestCase
-from unittest.mock import patch
-
-ROOT = Path(__file__).resolve().parents[1]
 
 
 def load_web_status():
@@ -72,4 +68,5 @@ class AssistantExternalDependencyStatusV13B(TestCase):
 
 if __name__ == "__main__":
     import unittest
+
     unittest.main()
