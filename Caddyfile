@@ -1,0 +1,5 @@
+:8712 {
+    bind 0.0.0.0
+    encode zstd gzip
+    reverse_proxy 127.0.0.1:8713
+}
