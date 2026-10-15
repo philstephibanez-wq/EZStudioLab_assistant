@@ -10,7 +10,7 @@ STOP = (ROOT / "scripts" / "stop.ps1").read_text(encoding="utf-8-sig")
 class AssistantStopPidFileRecovery13C(unittest.TestCase):
     def test_version_stays_13c(self):
         self.assertEqual(
-            "1.3d",
+            "1.3e",
             (ROOT / "VERSION").read_text(encoding="utf-8-sig").strip(),
         )
 
@@ -42,4 +42,5 @@ class AssistantStopPidFileRecovery13C(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
 
