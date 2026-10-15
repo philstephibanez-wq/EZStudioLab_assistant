@@ -215,7 +215,7 @@ def main() -> int:
         },
     }
 
-    print(json.dumps(payload, ensure_ascii=False))
+    print(json.dumps(payload, ensure_ascii=True))
     return 0
 
 

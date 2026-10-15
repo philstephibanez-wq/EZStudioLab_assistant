@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class AssistantWebSingletonV13C(unittest.TestCase):
     def test_version_is_13c(self):
-        self.assertEqual("1.3g", (ROOT / "VERSION").read_text(encoding="utf-8").strip())
+        self.assertEqual("1.3h", (ROOT / "VERSION").read_text(encoding="utf-8").strip())
 
     def test_start_uses_atomic_singleton_lock(self):
         source = (ROOT / "scripts" / "start.ps1").read_text(encoding="utf-8-sig")

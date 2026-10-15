@@ -6,7 +6,7 @@ ROOT = Path(__file__).resolve().parents[1]
 class AssistantNoLegacyStatusUi13D(unittest.TestCase):
     def test_version_is_13d(self):
         self.assertEqual(
-            "1.3g",
+            "1.3h",
             (ROOT / "VERSION").read_text(encoding="utf-8-sig").strip(),
         )
 
