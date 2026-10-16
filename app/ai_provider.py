@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 import urllib.error
@@ -103,14 +104,77 @@ class LocalAIProvider(AIReviewProvider):
         return {"provider":"local","enabled":ready,"model":self.model_path,"canonical_model":self.canonical_model_path,"cache_root":self.cache_root,"endpoint":self.endpoint,"shared_model_root":str(self.config.shared_model_root),"reason":reason}
 
     @staticmethod
+    def _decode_local_json(content: str) -> dict[str, Any]:
+        text = str(content or "").strip()
+        if not text:
+            raise ValueError("local_ai_content_missing")
+
+        try:
+            value = json.loads(text)
+            if isinstance(value, dict):
+                return value
+        except json.JSONDecodeError:
+            pass
+
+        fenced = re.fullmatch(
+            r"```(?:json)?\s*(\{.*\})\s*```",
+            text,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        if fenced:
+            value = json.loads(fenced.group(1))
+            if isinstance(value, dict):
+                return value
+
+        start = text.find("{")
+        if start >= 0:
+            value, _end = json.JSONDecoder().raw_decode(text[start:])
+            if isinstance(value, dict):
+                return value
+
+        raise ValueError("local_ai_json_object_required")
+
+    @staticmethod
+    def _normalize_local_dimensions(value: Any) -> dict[str, Any]:
+        if isinstance(value, dict):
+            return value
+        if not isinstance(value, list):
+            raise ValueError("ai_profile_review_dimensions_object_required")
+
+        known = {
+            "genre",
+            "instrumentation",
+            "lead_vocal",
+            "backing_vocals",
+            "choir",
+        }
+        normalized: dict[str, Any] = {}
+        for item in value:
+            if not isinstance(item, dict):
+                raise ValueError("ai_profile_review_dimensions_list_item_object_required")
+            keys = [key for key in item if key in known]
+            if len(keys) != 1:
+                raise ValueError("ai_profile_review_dimension_name_required")
+            name = keys[0]
+            decision = item.get(name)
+            if decision not in {"match", "mismatch", "uncertain", "not_scored"}:
+                raise ValueError("ai_profile_review_dimension_decision_invalid")
+            normalized[name] = {
+                "decision": decision,
+                "confidence": item.get("confidence"),
+                "evidence": item.get("evidence"),
+                "rationale": item.get("rationale"),
+            }
+        return normalized
+
+    @staticmethod
     def _validate_local_result(value: Any, *, model: str) -> dict[str, Any]:
         if not isinstance(value, dict): raise ValueError("ai_profile_review_json_object_required")
         confidence = value.get("confidence", 0.0)
         if not isinstance(confidence, (int,float)): raise ValueError("ai_profile_review_confidence_required")
         confidence = float(confidence)
         if not 0.0 <= confidence <= 1.0: raise ValueError("ai_profile_review_confidence_out_of_range")
-        dimensions = value.get("dimensions")
-        if not isinstance(dimensions, dict): raise ValueError("ai_profile_review_dimensions_object_required")
+        dimensions = LocalAIProvider._normalize_local_dimensions(value.get("dimensions"))
         summary = value.get("summary")
         if summary is not None and not isinstance(summary, str): raise ValueError("ai_profile_review_summary_string_required")
         sources = value.get("sources") if isinstance(value.get("sources"), list) else []
@@ -122,7 +186,7 @@ class LocalAIProvider(AIReviewProvider):
             return {"schema":"EZStudioLab_assistant.ai-profile-review.v1","status":"unavailable","provider":"local","model":self.model_path,"confidence":0.0,"summary":None,"dimensions":{},"sources":[],"reason":reason or "local_ai_server_unavailable"}
         profile_view = (((row.get("diagnostics") or {}).get("profile_view")) if isinstance(row.get("diagnostics"),dict) else {}) or {}
         evidence = {"identity":{"title":row.get("title"),"artist":row.get("artist"),"run_id":row.get("run_id")},"profile_view":profile_view,"public_research":research}
-        system_prompt = "You are the PROFILE review engine for EZStudioLab Assistant. Assess the LAB PROFILE analysis against supplied public evidence. Never modify or promote a scientific preset. Distinguish evidence from inference. Return ONLY one valid JSON object with keys summary, confidence, dimensions, sources. confidence must be 0..1. dimensions may contain genre, instrumentation, lead_vocal, backing_vocals and choir. Each dimension should use decision, confidence, evidence, rationale. decision is match, mismatch, uncertain, or not_scored. Do not invent facts or sources."
+        system_prompt = "You are the PROFILE review engine for EZStudioLab Assistant. Assess the LAB PROFILE analysis against supplied public evidence. Never modify or promote a scientific preset. Distinguish evidence from inference. Return ONLY one valid JSON object with keys summary, confidence, dimensions, sources. confidence must be a NUMBER from 0.0 to 1.0, never a word such as High or Low. dimensions MUST be a JSON OBJECT keyed only by genre, instrumentation, lead_vocal, backing_vocals and choir, never a list. Each dimension value MUST be an object with keys decision, confidence, evidence, rationale. decision is match, mismatch, uncertain, or not_scored. sources MUST be a JSON array. Do not use Markdown fences. Do not invent facts or sources."
         body = {"model":"local","messages":[{"role":"system","content":system_prompt},{"role":"user","content":json.dumps(evidence,ensure_ascii=False,separators=(",",":"))}],"temperature":0.1,"max_tokens":700,"stream":False}
         req = urllib.request.Request(self.endpoint + "/v1/chat/completions", data=json.dumps(body,ensure_ascii=False).encode("utf-8"), headers={"Content-Type":"application/json","Accept":"application/json"}, method="POST")
         try:
@@ -133,7 +197,8 @@ class LocalAIProvider(AIReviewProvider):
             message = choices[0].get("message") if isinstance(choices[0],dict) else None
             content = message.get("content") if isinstance(message,dict) else None
             if not isinstance(content,str) or not content.strip(): raise ValueError("local_ai_content_missing")
-            return self._validate_local_result(json.loads(content.strip()), model=self.model_path)
+            value = self._decode_local_json(content)
+            return self._validate_local_result(value, model=self.model_path)
         except urllib.error.HTTPError as exc:
             return {"schema":"EZStudioLab_assistant.ai-profile-review.v1","status":"error","provider":"local","model":self.model_path,"confidence":0.0,"summary":None,"dimensions":{},"sources":[],"reason":f"local_ai_http_{int(getattr(exc,'code',0))}"}
         except Exception as exc:
