@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from profile_review import normalize_track_identity, profile_review_queue_snapshot
+from ai_provider import AIReviewProvider, build_ai_provider_from_env
 
 
 @dataclass(frozen=True)
@@ -771,6 +772,73 @@ def build_review_payload(row: dict[str, Any], research: dict[str, Any], *, min_c
     }
 
 
+def enrich_review_payload_with_ai(
+    payload: dict[str, Any],
+    ai_review: dict[str, Any],
+) -> dict[str, Any]:
+    result = dict(payload)
+    consensus = dict(result.get("consensus") or {})
+    comparison = dict(result.get("comparison") or {})
+    compact_ai = {
+        "schema": ai_review.get("schema"),
+        "status": ai_review.get("status"),
+        "provider": ai_review.get("provider"),
+        "model": ai_review.get("model"),
+        "confidence": ai_review.get("confidence"),
+        "summary": ai_review.get("summary"),
+        "response_id": ai_review.get("response_id"),
+        "reason": ai_review.get("reason"),
+    }
+    consensus["assistant_ai"] = compact_ai
+    comparison["assistant_ai"] = {
+        "status": ai_review.get("status"),
+        "dimensions": ai_review.get("dimensions") if isinstance(ai_review.get("dimensions"), dict) else {},
+        "advisory_only": True,
+        "scientific_preset_mutation_allowed": False,
+        "automatic_preset_promotion_allowed": False,
+    }
+    result["consensus"] = consensus
+    result["comparison"] = comparison
+    if ai_review.get("status") == "completed":
+        result["revision_key"] = f"profile-{int(result['run_id'])}-assistant-ai-v1"
+        result["reviewer"] = "assistant-auto+ai"
+    return result
+
+
+def _run_ai_profile_review(
+    provider: AIReviewProvider,
+    row: dict[str, Any],
+    research: dict[str, Any],
+) -> dict[str, Any]:
+    try:
+        result = provider.review_profile(row, research)
+        if isinstance(result, dict):
+            return result
+    except Exception as exc:
+        return {
+            "schema": "EZStudioLab_assistant.ai-profile-review.v1",
+            "status": "error",
+            "provider": getattr(provider, "provider_name", "unknown"),
+            "model": None,
+            "confidence": 0.0,
+            "summary": None,
+            "dimensions": {},
+            "sources": [],
+            "reason": f"{type(exc).__name__}:{exc}"[:500],
+        }
+    return {
+        "schema": "EZStudioLab_assistant.ai-profile-review.v1",
+        "status": "error",
+        "provider": getattr(provider, "provider_name", "unknown"),
+        "model": None,
+        "confidence": 0.0,
+        "summary": None,
+        "dimensions": {},
+        "sources": [],
+        "reason": "ai_provider_invalid_result",
+    }
+
+
 def auto_review_once(
     client: Any,
     *,
@@ -778,6 +846,7 @@ def auto_review_once(
     dry_run: bool = True,
     min_confidence: float = 0.75,
     budget: NetworkBudget | None = None,
+    ai_provider: AIReviewProvider | None = None,
 ) -> dict[str, Any]:
     snapshot = profile_review_queue_snapshot(client, limit=limit)
     rows = snapshot.get("reviews") or []
@@ -808,6 +877,9 @@ def auto_review_once(
     identity = selected.get("normalized_identity") or normalize_track_identity(selected)
     research = research_public_sources(identity, budget or NetworkBudget())
     payload = build_review_payload(selected, research, min_confidence=min_confidence)
+    resolved_ai = ai_provider or build_ai_provider_from_env()
+    ai_review = _run_ai_profile_review(resolved_ai, selected, research)
+    payload = enrich_review_payload_with_ai(payload, ai_review)
 
     result = {
         "schema": "EZStudioLab_assistant.profile-auto-review-once.v1",
@@ -823,6 +895,13 @@ def auto_review_once(
             "max_response_bytes": (budget or NetworkBudget()).max_response_bytes,
         },
         "payload": payload,
+        "ai": {
+            "status": ai_review.get("status"),
+            "provider": ai_review.get("provider"),
+            "model": ai_review.get("model"),
+            "confidence": ai_review.get("confidence"),
+            "reason": ai_review.get("reason"),
+        },
     }
 
     if dry_run:
@@ -848,6 +927,7 @@ def auto_review_sweep(
     min_confidence: float = 0.75,
     budget_factory: Any | None = None,
     skip_run_ids: set[int] | None = None,
+    ai_provider: AIReviewProvider | None = None,
 ) -> dict[str, Any]:
     snapshot = profile_review_queue_snapshot(client, limit=limit)
     rows = snapshot.get("reviews") or []
@@ -863,6 +943,7 @@ def auto_review_sweep(
     completed_count = 0
     draft_count = 0
     abstain_count = 0
+    resolved_ai = ai_provider or build_ai_provider_from_env()
 
     for row in eligible_rows[:max(1, int(max_items))]:
         identity = row.get("normalized_identity") or normalize_track_identity(row)
@@ -881,6 +962,8 @@ def auto_review_sweep(
         budget = budget_factory() if callable(budget_factory) else NetworkBudget()
         research = research_public_sources(identity, budget)
         payload = build_review_payload(row, research, min_confidence=min_confidence)
+        ai_review = _run_ai_profile_review(resolved_ai, row, research)
+        payload = enrich_review_payload_with_ai(payload, ai_review)
 
         item = {
             "run_id": int(row["run_id"]),
@@ -892,6 +975,13 @@ def auto_review_sweep(
             "research_reason": research.get("reason"),
             "warnings": research.get("warnings") or [],
             "payload": payload if dry_run else None,
+            "ai": {
+                "status": ai_review.get("status"),
+                "provider": ai_review.get("provider"),
+                "model": ai_review.get("model"),
+                "confidence": ai_review.get("confidence"),
+                "reason": ai_review.get("reason"),
+            },
         }
 
         if payload["status"] == "completed":
@@ -964,6 +1054,7 @@ def auto_review_watch(
     now_fn: Any | None = None,
     sleep_fn: Any | None = None,
     emit_fn: Any | None = None,
+    ai_provider: AIReviewProvider | None = None,
 ) -> dict[str, Any]:
     now_fn = now_fn or time.time
     sleep_fn = sleep_fn or time.sleep
@@ -1002,6 +1093,7 @@ def auto_review_watch(
             min_confidence=min_confidence,
             budget_factory=budget_factory,
             skip_run_ids=cooldown_ids,
+            ai_provider=ai_provider,
         )
 
         cycle += 1

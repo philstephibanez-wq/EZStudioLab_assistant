@@ -11,7 +11,7 @@ WEB_STATUS = (ROOT / "app" / "web_status.py").read_text(encoding="utf-8")
 class AssistantWebStatusAsciiTransportV13h(unittest.TestCase):
     def test_version_is_13h(self):
         self.assertEqual(
-            "1.3h",
+            "1.3j",
             (ROOT / "VERSION").read_text(encoding="utf-8").strip(),
         )
 

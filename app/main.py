@@ -22,6 +22,7 @@ from gate import evaluate_profile_gate
 from transport import AnalysisApiClient
 from profile_review import load_review_payload, profile_review_queue_snapshot
 from profile_auto_review import NetworkBudget, auto_review_once, auto_review_sweep, auto_review_watch
+from ai_provider import ai_provider_status
 from preset_guard import evaluate_preset_candidate
 from worker import distributed_claim_once, distributed_execute_protocol_once, distributed_probe, observe_queue, watch_distributed, watch_queue
 def _client_from_args(args):
@@ -34,6 +35,7 @@ def _network_args(command):
 def main():
     parser=argparse.ArgumentParser(prog="EZStudioLab_assistant"); sub=parser.add_subparsers(dest="command",required=True)
     sub.add_parser("capabilities")
+    sub.add_parser("ai-status")
     resolve=sub.add_parser("resolve-model"); resolve.add_argument("relative_path"); resolve.add_argument("--cache",action="store_true")
     check=sub.add_parser("check-job"); check.add_argument("--requires-cuda",action="store_true"); check.add_argument("--min-vram-mb",type=int,default=0); check.add_argument("--min-ram-mb",type=int,default=0); check.add_argument("--model",default=None)
     queue=sub.add_parser("queue"); _network_args(queue)
@@ -50,6 +52,7 @@ def main():
     guard=sub.add_parser("profile-guard"); guard.add_argument("baseline_json"); guard.add_argument("candidate_json"); guard.add_argument("--threshold",type=float,default=0.75); guard.add_argument("--metric-tolerance",type=float,default=0.0); guard.add_argument("--max-song-regression",type=float,default=0.10)
     gate=sub.add_parser("evaluate-gate"); gate.add_argument("report_json"); args=parser.parse_args()
     if args.command=="capabilities": print(detect_capabilities().to_json()); return 0
+    if args.command=="ai-status": print(json.dumps(ai_provider_status(),ensure_ascii=True,indent=2)); return 0
     resolver=ModelResolver() if args.command in {"resolve-model","check-job"} else None
     if args.command=="resolve-model":
         resolved=resolver.resolve(args.relative_path,use_cache=bool(args.cache)); print(json.dumps({"schema":"EZStudioLab_assistant.model-resolution.v1","relative_path":args.relative_path,"resolved_path":str(resolved),"cached":bool(args.cache)},ensure_ascii=False,indent=2)); return 0
