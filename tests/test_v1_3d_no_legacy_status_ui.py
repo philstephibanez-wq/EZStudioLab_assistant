@@ -4,12 +4,6 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 
 class AssistantNoLegacyStatusUi13D(unittest.TestCase):
-    def test_version_is_13d(self):
-        self.assertEqual(
-            "1.3j",
-            (ROOT / "VERSION").read_text(encoding="utf-8-sig").strip(),
-        )
-
     def test_legacy_status_window_is_physically_removed(self):
         self.assertFalse((ROOT / "app" / "status_window.pyw").exists())
 

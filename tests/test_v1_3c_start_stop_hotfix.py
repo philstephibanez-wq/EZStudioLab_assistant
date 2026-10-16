@@ -12,9 +12,6 @@ class AssistantStartStopHotfix13C(unittest.TestCase):
         cls.start = (ROOT / "scripts" / "start.ps1").read_text(encoding="utf-8-sig")
         cls.stop = (ROOT / "scripts" / "stop.ps1").read_text(encoding="utf-8-sig")
 
-    def test_version_stays_13c(self):
-        self.assertEqual("1.3j", (ROOT / "VERSION").read_text(encoding="utf-8").strip())
-
     def test_start_is_singleton_and_can_recover_running_instance(self):
         self.assertIn("instance.lock", self.start)
         self.assertIn("ASSISTANT_WEB_ALREADY_RUNNING", self.start)

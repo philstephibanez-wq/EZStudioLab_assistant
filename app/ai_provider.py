@@ -20,6 +20,8 @@ class AIProviderConfig:
     timeout_seconds: float = 60.0
     shared_model_root: str = DEFAULT_SHARED_MODEL_ROOT
     local_model_path: str | None = None
+    local_cache_root: str | None = None
+    local_endpoint: str = "http://127.0.0.1:8720"
 
 
 class AIReviewProvider:
@@ -71,37 +73,71 @@ class LocalAIProvider(AIReviewProvider):
 
     def __init__(self, config: AIProviderConfig) -> None:
         self.config = config
-        root = Path(config.shared_model_root)
-        model_path = Path(config.local_model_path or "")
+        self.canonical_model_path = str(config.local_model_path or "").strip()
+        if not self.canonical_model_path:
+            raise RuntimeError("local_ai_model_path_required")
+        if not _is_model_under_root(config.shared_model_root, self.canonical_model_path):
+            raise RuntimeError("local_ai_model_must_be_under_shared_model_root")
+        cache_root = str(config.local_cache_root or "").strip() or str(Path(__file__).resolve().parents[1] / "runtime" / "models-cache")
+        self.cache_root = cache_root
+        relative = _model_relative_path(config.shared_model_root, self.canonical_model_path)
+        self.model_path = str(Path(cache_root) / Path(*relative.parts))
+        self.endpoint = str(config.local_endpoint or "http://127.0.0.1:8720").rstrip("/")
+
+    def _health(self) -> tuple[bool, str | None]:
+        req = urllib.request.Request(self.endpoint + "/health", headers={"Accept":"application/json"}, method="GET")
         try:
-            root_resolved = root.resolve()
-            model_resolved = model_path.resolve()
-            model_resolved.relative_to(root_resolved)
+            with urllib.request.urlopen(req, timeout=min(3.0, max(1.0, float(self.config.timeout_seconds)))) as response:
+                body = response.read(65536)
+            payload = json.loads(body.decode("utf-8"))
+            if isinstance(payload, dict):
+                status = str(payload.get("status") or "").casefold()
+                if status in {"ok","ready"} or payload.get("ok") is True:
+                    return True, None
+            return False, "local_ai_health_not_ready"
         except Exception as exc:
-            raise RuntimeError("local_ai_model_must_be_under_shared_model_root") from exc
-        self.model_path = model_resolved
+            return False, f"{type(exc).__name__}:{exc}"[:300]
 
     def status(self) -> dict[str, Any]:
-        return {
-            "provider": "local",
-            "enabled": False,
-            "model": str(self.model_path),
-            "shared_model_root": str(self.config.shared_model_root),
-            "reason": "local_provider_not_implemented",
-        }
+        ready, reason = self._health()
+        return {"provider":"local","enabled":ready,"model":self.model_path,"canonical_model":self.canonical_model_path,"cache_root":self.cache_root,"endpoint":self.endpoint,"shared_model_root":str(self.config.shared_model_root),"reason":reason}
+
+    @staticmethod
+    def _validate_local_result(value: Any, *, model: str) -> dict[str, Any]:
+        if not isinstance(value, dict): raise ValueError("ai_profile_review_json_object_required")
+        confidence = value.get("confidence", 0.0)
+        if not isinstance(confidence, (int,float)): raise ValueError("ai_profile_review_confidence_required")
+        confidence = float(confidence)
+        if not 0.0 <= confidence <= 1.0: raise ValueError("ai_profile_review_confidence_out_of_range")
+        dimensions = value.get("dimensions")
+        if not isinstance(dimensions, dict): raise ValueError("ai_profile_review_dimensions_object_required")
+        summary = value.get("summary")
+        if summary is not None and not isinstance(summary, str): raise ValueError("ai_profile_review_summary_string_required")
+        sources = value.get("sources") if isinstance(value.get("sources"), list) else []
+        return {"schema":"EZStudioLab_assistant.ai-profile-review.v1","status":"completed","provider":"local","model":model,"confidence":round(confidence,3),"summary":summary.strip() if isinstance(summary,str) else None,"dimensions":dimensions,"sources":[x for x in sources if isinstance(x,dict)][:20]}
 
     def review_profile(self, row: dict[str, Any], research: dict[str, Any]) -> dict[str, Any]:
-        return {
-            "schema": "EZStudioLab_assistant.ai-profile-review.v1",
-            "status": "unavailable",
-            "provider": "local",
-            "model": str(self.model_path),
-            "confidence": 0.0,
-            "summary": None,
-            "dimensions": {},
-            "sources": [],
-            "reason": "local_provider_not_implemented",
-        }
+        ready, reason = self._health()
+        if not ready:
+            return {"schema":"EZStudioLab_assistant.ai-profile-review.v1","status":"unavailable","provider":"local","model":self.model_path,"confidence":0.0,"summary":None,"dimensions":{},"sources":[],"reason":reason or "local_ai_server_unavailable"}
+        profile_view = (((row.get("diagnostics") or {}).get("profile_view")) if isinstance(row.get("diagnostics"),dict) else {}) or {}
+        evidence = {"identity":{"title":row.get("title"),"artist":row.get("artist"),"run_id":row.get("run_id")},"profile_view":profile_view,"public_research":research}
+        system_prompt = "You are the PROFILE review engine for EZStudioLab Assistant. Assess the LAB PROFILE analysis against supplied public evidence. Never modify or promote a scientific preset. Distinguish evidence from inference. Return ONLY one valid JSON object with keys summary, confidence, dimensions, sources. confidence must be 0..1. dimensions may contain genre, instrumentation, lead_vocal, backing_vocals and choir. Each dimension should use decision, confidence, evidence, rationale. decision is match, mismatch, uncertain, or not_scored. Do not invent facts or sources."
+        body = {"model":"local","messages":[{"role":"system","content":system_prompt},{"role":"user","content":json.dumps(evidence,ensure_ascii=False,separators=(",",":"))}],"temperature":0.1,"max_tokens":700,"stream":False}
+        req = urllib.request.Request(self.endpoint + "/v1/chat/completions", data=json.dumps(body,ensure_ascii=False).encode("utf-8"), headers={"Content-Type":"application/json","Accept":"application/json"}, method="POST")
+        try:
+            with urllib.request.urlopen(req, timeout=max(10.0,float(self.config.timeout_seconds))) as response:
+                envelope = json.loads(response.read(2_000_000).decode("utf-8"))
+            choices = envelope.get("choices") if isinstance(envelope,dict) else None
+            if not isinstance(choices,list) or not choices: raise ValueError("local_ai_choices_missing")
+            message = choices[0].get("message") if isinstance(choices[0],dict) else None
+            content = message.get("content") if isinstance(message,dict) else None
+            if not isinstance(content,str) or not content.strip(): raise ValueError("local_ai_content_missing")
+            return self._validate_local_result(json.loads(content.strip()), model=self.model_path)
+        except urllib.error.HTTPError as exc:
+            return {"schema":"EZStudioLab_assistant.ai-profile-review.v1","status":"error","provider":"local","model":self.model_path,"confidence":0.0,"summary":None,"dimensions":{},"sources":[],"reason":f"local_ai_http_{int(getattr(exc,'code',0))}"}
+        except Exception as exc:
+            return {"schema":"EZStudioLab_assistant.ai-profile-review.v1","status":"error","provider":"local","model":self.model_path,"confidence":0.0,"summary":None,"dimensions":{},"sources":[],"reason":f"{type(exc).__name__}:{exc}"[:500]}
 
 
 class OpenAIResponsesProvider(AIReviewProvider):
@@ -297,6 +333,24 @@ def _env_bool(name: str, default: bool = False) -> bool:
     return raw in {"1", "true", "yes", "on"}
 
 
+def _model_relative_path(root: str, model: str):
+    from pathlib import PureWindowsPath
+    rt, mt = str(root).strip(), str(model).strip()
+    if rt.startswith("\\\\") or "\\" in rt or ":" in rt:
+        rp, mp = PureWindowsPath(rt), PureWindowsPath(mt)
+    else:
+        rp, mp = Path(rt), Path(mt)
+    try:
+        return mp.relative_to(rp)
+    except Exception as exc:
+        raise RuntimeError("local_ai_model_must_be_under_shared_model_root") from exc
+
+def _is_model_under_root(root: str, model: str) -> bool:
+    try:
+        _model_relative_path(root, model); return True
+    except Exception:
+        return False
+
 def config_from_env() -> AIProviderConfig:
     provider = str(os.getenv("EZSTUDIOLAB_AI_PROVIDER", "off")).strip().casefold()
     if provider not in {"off", "openai", "local"}:
@@ -316,6 +370,11 @@ def config_from_env() -> AIProviderConfig:
             or DEFAULT_SHARED_MODEL_ROOT
         ),
         local_model_path=(str(os.getenv("EZSTUDIOLAB_LOCAL_AI_MODEL", "")).strip() or None),
+        local_cache_root=(str(os.getenv("EZSTUDIOLAB_LOCAL_AI_CACHE_ROOT", "")).strip() or None),
+        local_endpoint=(
+            str(os.getenv("EZSTUDIOLAB_LOCAL_AI_ENDPOINT", "http://127.0.0.1:8720")).strip()
+            or "http://127.0.0.1:8720"
+        ),
     )
 
 

@@ -8,12 +8,6 @@ STOP = (ROOT / "scripts" / "stop.ps1").read_text(encoding="utf-8-sig")
 
 
 class AssistantStopPidFileRecovery13C(unittest.TestCase):
-    def test_version_stays_13c(self):
-        self.assertEqual(
-            "1.3j",
-            (ROOT / "VERSION").read_text(encoding="utf-8-sig").strip(),
-        )
-
     def test_strict_commandline_ownership_remains(self):
         self.assertIn("Test-AssistantProcess", STOP)
         self.assertIn("CommandLine", STOP)

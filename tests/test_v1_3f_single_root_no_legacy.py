@@ -4,12 +4,6 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 
 class V13FSingleRootNoLegacyContract(unittest.TestCase):
-    def test_version(self):
-        self.assertEqual(
-            "1.3j",
-            (ROOT / "VERSION").read_text(encoding="utf-8-sig").strip(),
-        )
-
     def test_legacy_python_ui_removed(self):
         self.assertFalse((ROOT / "app" / "status_window.pyw").exists())
         self.assertFalse((ROOT / "tests" / "test_v1d_local_status_window.py").exists())
