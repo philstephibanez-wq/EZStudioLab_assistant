@@ -797,6 +797,8 @@ def enrich_review_payload_with_ai(
         "scientific_preset_mutation_allowed": False,
         "automatic_preset_promotion_allowed": False,
     }
+    # PROFILE_DRAFT_BRIDGE_R1: preserve validation provenance in persisted JSON.
+    comparison["external_validation"] = dict(result.get("external_validation") or {})
     result["consensus"] = consensus
     result["comparison"] = comparison
     if ai_review.get("status") == "completed":
@@ -837,6 +839,23 @@ def _run_ai_profile_review(
         "sources": [],
         "reason": "ai_provider_invalid_result",
     }
+
+
+def _profile_review_should_submit(payload: dict[str, Any], ai_review: dict[str, Any]) -> bool:
+    """Persist useful observations without confusing AI inference with external validation."""
+    state = payload.get("status")
+    if state == "completed":
+        return True  # Preserve existing deterministic external-review path.
+    return (
+        state == "draft"
+        and ai_review.get("status") == "completed"
+        and ai_review.get("provider") in {"local", "openai"}
+        and isinstance(ai_review.get("dimensions"), dict)
+        and bool(ai_review.get("dimensions"))
+        and isinstance(ai_review.get("confidence"), (int, float))
+        and 0.0 <= float(ai_review["confidence"]) <= 1.0
+        and str(payload.get("revision_key") or "").startswith("profile-")
+    )
 
 
 def auto_review_once(
@@ -907,15 +926,14 @@ def auto_review_once(
     if dry_run:
         return result
 
-    if payload["status"] != "completed":
-        result["status"] = "abstain"
-        result["reason"] = "external_validation_unavailable"
+    if not _profile_review_should_submit(payload, ai_review):
+        result["reason"] = "external_validation_unavailable" if payload["status"] == "draft" else "revision_not_submittable"
         return result
 
     submit = client.submit_profile_review(payload)
     result["submitted"] = bool(submit.get("ok"))
     result["submit_result"] = submit
-    result["status"] = "completed" if result["submitted"] else "submit_failed"
+    result["status"] = payload["status"] if result["submitted"] else "submit_failed"
     return result
 
 def auto_review_sweep(
@@ -986,16 +1004,19 @@ def auto_review_sweep(
 
         if payload["status"] == "completed":
             completed_count += 1
-            if not dry_run:
-                submit = client.submit_profile_review(payload)
-                item["submitted"] = bool(submit.get("ok"))
-                item["submit_result"] = submit
-                if item["submitted"]:
-                    submitted_count += 1
         elif payload["status"] == "draft":
             draft_count += 1
         else:
             abstain_count += 1
+
+        if not dry_run and _profile_review_should_submit(payload, ai_review):
+            submit = client.submit_profile_review(payload)
+            item["submitted"] = bool(submit.get("ok"))
+            item["submit_result"] = submit
+            if item["submitted"]:
+                submitted_count += 1
+            else:
+                item["reason"] = "submit_failed"
 
         results.append(item)
 
