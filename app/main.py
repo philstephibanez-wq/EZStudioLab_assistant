@@ -23,6 +23,7 @@ from transport import AnalysisApiClient
 from profile_review import load_review_payload, profile_review_queue_snapshot
 from profile_auto_review import NetworkBudget, auto_review_once, auto_review_sweep, auto_review_watch
 from ai_provider import ai_provider_status
+from profile_diagnostic import diagnose_profile
 from local_ai_runtime import local_ai_start, local_ai_status, local_ai_stop, sync_local_model_cache
 from preset_guard import evaluate_preset_candidate
 from worker import distributed_claim_once, distributed_execute_protocol_once, distributed_probe, observe_queue, watch_distributed, watch_queue
@@ -53,6 +54,7 @@ def main():
     auto=sub.add_parser("profile-review-auto-once"); _network_args(auto); auto.add_argument("--limit",type=int,default=100); auto.add_argument("--dry-run",action="store_true"); auto.add_argument("--min-confidence",type=float,default=0.75); auto.add_argument("--network-min-interval",type=float,default=2.0); auto.add_argument("--network-max-response-kb",type=int,default=256); auto.add_argument("--network-max-requests",type=int,default=6)
     sweep=sub.add_parser("profile-review-auto-sweep"); _network_args(sweep); sweep.add_argument("--limit",type=int,default=100); sweep.add_argument("--max-items",type=int,default=5); sweep.add_argument("--dry-run",action="store_true"); sweep.add_argument("--min-confidence",type=float,default=0.75); sweep.add_argument("--network-min-interval",type=float,default=2.0); sweep.add_argument("--network-max-response-kb",type=int,default=256); sweep.add_argument("--network-max-requests",type=int,default=6)
     paw=sub.add_parser("profile-review-auto-watch"); _network_args(paw); paw.add_argument("--state-file",required=True); paw.add_argument("--poll-seconds",type=float,default=900.0); paw.add_argument("--draft-cooldown-hours",type=float,default=24.0); paw.add_argument("--abstain-cooldown-hours",type=float,default=168.0); paw.add_argument("--limit",type=int,default=100); paw.add_argument("--max-items",type=int,default=5); paw.add_argument("--iterations",type=int,default=0); paw.add_argument("--min-confidence",type=float,default=0.75); paw.add_argument("--network-min-interval",type=float,default=2.0); paw.add_argument("--network-max-response-kb",type=int,default=256); paw.add_argument("--network-max-requests",type=int,default=6)
+    diagnostic=sub.add_parser("profile-review-diagnostic"); _network_args(diagnostic); diagnostic.add_argument("--run-id",type=int,required=True); diagnostic.add_argument("--limit",type=int,default=500); diagnostic.add_argument("--dry-run",action="store_true",required=True)
     reviews=sub.add_parser("profile-review-submit"); _network_args(reviews); reviews.add_argument("review_json")
     guard=sub.add_parser("profile-guard"); guard.add_argument("baseline_json"); guard.add_argument("candidate_json"); guard.add_argument("--threshold",type=float,default=0.75); guard.add_argument("--metric-tolerance",type=float,default=0.0); guard.add_argument("--max-song-regression",type=float,default=0.10)
     gate=sub.add_parser("evaluate-gate"); gate.add_argument("report_json"); args=parser.parse_args()
@@ -94,6 +96,9 @@ def main():
         print(json.dumps(result,ensure_ascii=True,indent=2)); return 0 if result.get("status") in {"completed","draft","abstain","idle"} else 5
     if args.command=="profile-review-queue":
         print(json.dumps(profile_review_queue_snapshot(_client_from_args(args),limit=max(1,min(500,int(args.limit)))),ensure_ascii=True,indent=2)); return 0
+    if args.command=="profile-review-diagnostic":
+        result=diagnose_profile(_client_from_args(args),run_id=args.run_id,limit=max(1,min(500,int(args.limit))))
+        print(json.dumps(result,ensure_ascii=True,indent=2)); return 0 if result.get("status")=="completed" else 5
     if args.command=="profile-review-submit":
         payload=load_review_payload(args.review_json); result=_client_from_args(args).submit_profile_review(payload); print(json.dumps(result,ensure_ascii=False,indent=2)); return 0
     if args.command=="profile-guard":
