@@ -8,6 +8,7 @@ from pathlib import Path
 import urllib.error
 import urllib.request
 from typing import Any
+from declarative_review import load_review_preset
 
 DEFAULT_SHARED_MODEL_ROOT = r"\\EZSTUDIO-MAIN\EZModels"
 DEFAULT_OPENAI_MODEL = "gpt-6-luna"
@@ -356,12 +357,13 @@ class LocalAIProvider(AIReviewProvider):
             return {"schema":"EZStudioLab_assistant.ai-profile-review.v1","status":"unavailable","provider":"local","model":self.model_path,"confidence":0.0,"summary":None,"dimensions":{},"sources":[],"reason":reason or "local_ai_server_unavailable"}
         profile_view = (((row.get("diagnostics") or {}).get("profile_view")) if isinstance(row.get("diagnostics"),dict) else {}) or {}
         evidence = _local_profile_evidence(row, research)
-        system_prompt = "You are the PROFILE review engine for EZStudioLab Assistant. Assess the LAB PROFILE analysis against supplied public evidence. Never modify or promote a scientific preset. Distinguish evidence from inference. Return ONLY one valid JSON object with keys summary, confidence, dimensions, sources. confidence must be a NUMBER from 0.0 to 1.0, never a word such as High or Low. dimensions MUST be a JSON OBJECT keyed only by genre, instrumentation, lead_vocal, backing_vocals and choir, never a list. Each dimension value MUST be an object with keys decision, confidence, evidence, rationale. decision is match, mismatch, uncertain, or not_scored. sources MUST be a JSON array. Do not use Markdown fences. Do not invent facts or sources."
+        preset, preset_hash = load_review_preset("profile")
+        system_prompt = preset["prompt"]
         try:
-            evidence_json = _local_profile_budget(evidence, system_prompt)
+            evidence_json = _local_profile_budget(evidence, system_prompt, max_chars=preset["context_max_chars"])
         except ValueError as exc:
             return {"schema":"EZStudioLab_assistant.ai-profile-review.v1","status":"error","provider":"local","model":self.model_path,"confidence":0.0,"summary":None,"dimensions":{},"sources":[],"reason":str(exc)}
-        body = {"model":"local","messages":[{"role":"system","content":system_prompt},{"role":"user","content":evidence_json}],"temperature":0.1,"max_tokens":1200,"stream":False}
+        body = {"model":"local","messages":[{"role":"system","content":system_prompt},{"role":"user","content":evidence_json}],"temperature":preset["temperature"],"max_tokens":preset["max_tokens"],"stream":False}
         req = urllib.request.Request(self.endpoint + "/v1/chat/completions", data=json.dumps(body,ensure_ascii=False).encode("utf-8"), headers={"Content-Type":"application/json","Accept":"application/json"}, method="POST")
         try:
             with urllib.request.urlopen(req, timeout=max(10.0,float(self.config.timeout_seconds))) as response:
@@ -375,7 +377,9 @@ class LocalAIProvider(AIReviewProvider):
             content = message.get("content") if isinstance(message,dict) else None
             if not isinstance(content,str) or not content.strip(): raise ValueError("local_ai_content_missing")
             value = self._decode_local_json(content)
-            return self._validate_local_result(value, model=self.model_path)
+            result = self._validate_local_result(value, model=self.model_path)
+            result["review_preset"] = {"id": preset["id"], "phase": preset["phase"], "sha256": preset_hash}
+            return result
         except urllib.error.HTTPError as exc:
             return {"schema":"EZStudioLab_assistant.ai-profile-review.v1","status":"error","provider":"local","model":self.model_path,"confidence":0.0,"summary":None,"dimensions":{},"sources":[],"reason":("local_ai_http_400_context_possible" if int(getattr(exc,'code',0)) == 400 else f"local_ai_http_{int(getattr(exc,'code',0))}")}
         except Exception as exc:
