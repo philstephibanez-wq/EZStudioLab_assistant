@@ -341,13 +341,16 @@ class LocalAIProvider(AIReviewProvider):
             evidence_json = _local_profile_budget(evidence, system_prompt)
         except ValueError as exc:
             return {"schema":"EZStudioLab_assistant.ai-profile-review.v1","status":"error","provider":"local","model":self.model_path,"confidence":0.0,"summary":None,"dimensions":{},"sources":[],"reason":str(exc)}
-        body = {"model":"local","messages":[{"role":"system","content":system_prompt},{"role":"user","content":evidence_json}],"temperature":0.1,"max_tokens":700,"stream":False}
+        body = {"model":"local","messages":[{"role":"system","content":system_prompt},{"role":"user","content":evidence_json}],"temperature":0.1,"max_tokens":1200,"stream":False}
         req = urllib.request.Request(self.endpoint + "/v1/chat/completions", data=json.dumps(body,ensure_ascii=False).encode("utf-8"), headers={"Content-Type":"application/json","Accept":"application/json"}, method="POST")
         try:
             with urllib.request.urlopen(req, timeout=max(10.0,float(self.config.timeout_seconds))) as response:
                 envelope = json.loads(response.read(2_000_000).decode("utf-8"))
             choices = envelope.get("choices") if isinstance(envelope,dict) else None
             if not isinstance(choices,list) or not choices: raise ValueError("local_ai_choices_missing")
+            finish_reason = choices[0].get("finish_reason")
+            if finish_reason == "length":
+                raise ValueError("local_ai_output_truncated")
             message = choices[0].get("message") if isinstance(choices[0],dict) else None
             content = message.get("content") if isinstance(message,dict) else None
             if not isinstance(content,str) or not content.strip(): raise ValueError("local_ai_content_missing")
