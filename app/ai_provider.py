@@ -90,18 +90,75 @@ def _local_profile_compact(value, *, depth=0, max_depth=4, list_limit=8, text_li
 
 
 def _local_profile_evidence(row, research):
-    diagnostics = row.get("diagnostics") or {}
-    profile = diagnostics.get("profile_view") if isinstance(diagnostics, dict) else {}
-    identity = {"title": row.get("title"), "artist": row.get("artist"), "run_id": row.get("run_id")}
-    # Select only structured results, not fetched page bodies, raw API responses, or diagnostics dumps.
-    known = ("sources", "references", "identity", "genres", "genre_labels",
-             "instruments", "instrumentation", "vocals", "warnings", "matches")
-    research = research if isinstance(research, dict) else {}
-    references = {key: research[key] for key in known if key in research}
-    return {"identity": identity,
-            "profile_view": _local_profile_compact(profile, max_depth=4, list_limit=8, text_limit=350),
-            "public_research": _local_profile_compact(references, max_depth=3, list_limit=5, text_limit=250),
-            "evidence_notice": "Evidence was bounded deterministically; missing items are unscored, not negative evidence."}
+    """PROFILE_EVIDENCE_R3B: an evidence-aware, bounded view of actual LAB paths.
+
+    This is a view for the AI reviewer, not a replacement for scientific output.
+    Unverified labels and score ranks are not independent reference evidence.
+    """
+    def obj(value):
+        return value if isinstance(value, dict) else {}
+
+    def short(value, limit=75):
+        return value[:limit] if isinstance(value, str) else value if isinstance(value, (bool, int, float)) else None
+
+    def pick(value, keys):
+        data = obj(value)
+        return {key: short(data[key]) for key in keys if key in data and short(data[key]) is not None}
+
+    def labels(items, limit=3):
+        return [pick(item, ('label', 'score', 'score_type', 'decision', 'support', 'source_score', 'rank_consensus'))
+                for item in (items if isinstance(items, list) else [])[:limit] if isinstance(item, dict)]
+
+    diag = obj(row.get('diagnostics'))
+    profile = obj(diag.get('profile_view'))
+    tagging = obj(diag.get('tagging'))
+    genre = obj(profile.get('genre_hierarchy'))
+    instrumentation = obj(profile.get('instrumentation'))
+    vocals = obj(profile.get('vocal_profile'))
+    dims = obj(vocals.get('dimensions'))
+    musical = {
+        'genre': {
+            'status': short(genre.get('status')),
+            'primary': pick(genre.get('primary'), ('genre_family', 'genre', 'subgenre', 'source_label', 'source_score', 'source_score_type')),
+            'candidates': [pick(x, ('genre', 'genre_family', 'source_score')) for x in genre.get('candidates', [])[:3] if isinstance(x, dict)],
+            'tagging': labels(tagging.get('genre'), 3),
+        },
+        'instrumentation': {
+            'status': short(instrumentation.get('status')),
+            'candidates': [pick(x, ('label', 'support', 'source_count', 'decision', 'rank_consensus'))
+                           for x in instrumentation.get('candidates', [])[:5] if isinstance(x, dict)],
+            'tagging': labels(tagging.get('instrumentation'), 4),
+        },
+        'vocals': {
+            'status': short(vocals.get('status')),
+            'dimensions': {
+                key: {
+                    **pick(dims.get(key), ('decision', 'engine_support', 'calibrated')),
+                    'evidence': [pick(x, ('module', 'label', 'score', 'score_type', 'role'))
+                                 for x in obj(dims.get(key)).get('evidence', [])[:2] if isinstance(x, dict)],
+                }
+                for key in ('lead_vocal', 'backing_vocals', 'vocal_harmonies', 'choir')
+                if key in dims
+            },
+            'tagging': labels(tagging.get('voice'), 3),
+        },
+    }
+    research = obj(research)
+    # Explicitly keep reference metadata if present, but never raw website bodies.
+    refs = {}
+    for key in ('identity', 'genres', 'genre_labels', 'instruments', 'instrumentation', 'vocals', 'matches', 'references', 'sources'):
+        value = research.get(key)
+        if isinstance(value, list):
+            refs[key] = [_local_profile_compact(x, max_depth=2, list_limit=2, text_limit=90)
+                         for x in value[:2]]
+        elif isinstance(value, dict):
+            refs[key] = _local_profile_compact(value, max_depth=2, list_limit=2, text_limit=90)
+    return {
+        'identity': {key: short(row.get(key), 100) for key in ('title', 'artist', 'run_id')},
+        'profile_view': musical,
+        'public_research': refs,
+        'evidence_notice': 'LAB results are predictions, not independent proof. Compare only if reliable public evidence is explicit. Otherwise choose not_scored.',
+    }
 
 
 def _local_profile_budget(evidence, system_prompt, *, max_chars=6500):
@@ -223,7 +280,14 @@ class LocalAIProvider(AIReviewProvider):
     @staticmethod
     def _normalize_local_dimensions(value: Any) -> dict[str, Any]:
         if isinstance(value, dict):
-            return value
+            # PROFILE_EVIDENCE_R3A: canonical singular key; reject conflicting aliases.
+            normalized = dict(value)
+            if "lead_vocals" in normalized:
+                alias = normalized.pop("lead_vocals")
+                if "lead_vocal" in normalized and normalized["lead_vocal"] != alias:
+                    raise ValueError("ai_profile_review_lead_vocal_alias_conflict")
+                normalized["lead_vocal"] = alias
+            return normalized
         if not isinstance(value, list):
             raise ValueError("ai_profile_review_dimensions_object_required")
 

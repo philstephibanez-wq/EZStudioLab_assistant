@@ -841,6 +841,24 @@ def _run_ai_profile_review(
     }
 
 
+def _profile_ai_has_scored_evidence(ai_review: dict[str, Any]) -> bool:
+    """A syntactically completed generation is not a reviewed musical dimension."""
+    dimensions = ai_review.get("dimensions")
+    if not isinstance(dimensions, dict):
+        return False
+    for key in ("genre", "instrumentation", "lead_vocal", "lead_vocals", "backing_vocals", "choir"):
+        item = dimensions.get(key)
+        if not isinstance(item, dict) or item.get("decision") not in {"match", "mismatch"}:
+            continue
+        conf = item.get("confidence")
+        if isinstance(conf, bool) or not isinstance(conf, (int, float)) or not 0.0 < float(conf) <= 1.0:
+            continue
+        evidence = item.get("evidence")
+        if isinstance(evidence, str) and evidence.strip():
+            return True
+    return False
+
+
 def _profile_review_should_submit(payload: dict[str, Any], ai_review: dict[str, Any]) -> bool:
     """Persist useful observations without confusing AI inference with external validation."""
     state = payload.get("status")
@@ -851,8 +869,10 @@ def _profile_review_should_submit(payload: dict[str, Any], ai_review: dict[str, 
         and ai_review.get("status") == "completed"
         and ai_review.get("provider") in {"local", "openai"}
         and isinstance(ai_review.get("dimensions"), dict)
-        and bool(ai_review.get("dimensions"))
+        and _profile_ai_has_scored_evidence(ai_review)
         and isinstance(ai_review.get("confidence"), (int, float))
+        and not isinstance(ai_review.get("confidence"), bool)
+        and float(ai_review["confidence"]) > 0.0
         and 0.0 <= float(ai_review["confidence"]) <= 1.0
         and str(payload.get("revision_key") or "").startswith("profile-")
     )
