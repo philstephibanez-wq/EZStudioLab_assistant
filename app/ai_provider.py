@@ -157,7 +157,7 @@ def _local_profile_evidence(row, research):
         'identity': {key: short(row.get(key), 100) for key in ('title', 'artist', 'run_id')},
         'profile_view': musical,
         'public_research': refs,
-        'evidence_notice': 'LAB results are predictions, not independent proof. Compare only if reliable public evidence is explicit. Otherwise choose not_scored.',
+        'evidence_notice': 'LAB predictions are not independent evidence. Score a dimension only when trustworthy external references specifically support that dimension. Judge each dimension independently; missing support in one does not invalidate the others.',
     }
 
 
@@ -197,14 +197,34 @@ def _local_profile_budget(evidence, system_prompt, *, max_chars=6500):
     )
     selected_profile = {key: profile[key] for key in profile_priority if key in profile}
     selected_research = {key: research[key] for key in research_priority if key in research}
-    notice = "Evidence truncated for local context; omissions must be not_scored."
-
     for depth, elements, text in ((3, 4, 180), (2, 3, 120), (2, 2, 80), (1, 1, 55)):
+        compact_profile = _local_profile_compact(
+            selected_profile, max_depth=depth, list_limit=elements, text_limit=text
+        )
+        compact_research = _local_profile_compact(
+            selected_research, max_depth=depth, list_limit=elements, text_limit=text
+        )
+        # The reduced representation must not silently drop the scientific
+        # dimension containers. Preserve missing-data status per dimension.
+        preserved = {
+            name: bool(compact_profile.get(name))
+            for name in ("genre", "instrumentation", "vocals")
+        }
+        omitted_profile = sorted(set(profile) - set(compact_profile))
+        omitted_research = sorted(set(research) - set(compact_research))
         candidate = {
             "identity": _local_profile_compact(identity, max_depth=2, list_limit=3, text_limit=120),
-            "profile_view": _local_profile_compact(selected_profile, max_depth=depth, list_limit=elements, text_limit=text),
-            "public_research": _local_profile_compact(selected_research, max_depth=depth, list_limit=elements, text_limit=text),
-            "evidence_notice": notice,
+            "profile_view": compact_profile,
+            "public_research": compact_research,
+            "context_reduction": {
+                "active": True,
+                "included_profile_sections": [k for k, present in preserved.items() if present],
+                "omitted_profile_sections": omitted_profile,
+                "omitted_research_sections": omitted_research,
+                "item_limit": elements,
+                "text_limit": text,
+                "note": "Some values may be shortened within listed sections. Judge each dimension separately; do not infer an omission in another dimension. Never treat LAB predictions as public evidence.",
+            },
         }
         if fits(candidate):
             return pack(candidate)
