@@ -104,12 +104,56 @@ def _local_profile_evidence(row, research):
             "evidence_notice": "Evidence was bounded deterministically; missing items are unscored, not negative evidence."}
 
 
-def _local_profile_budget(evidence, system_prompt, *, max_chars=7300):
-    # Conservative preflight: chars are not tokens. Bound UTF-8 bytes too and fail closed.
-    body = json.dumps(evidence, ensure_ascii=False, separators=(",", ":"))
-    if len(body) + len(system_prompt) > max_chars or len(body.encode("utf-8")) + len(system_prompt.encode("utf-8")) > max_chars:
-        raise ValueError("context_budget_exceeded")
-    return body
+def _local_profile_budget(evidence, system_prompt, *, max_chars=6500):
+    # PROFILE_LOCAL_CONTEXT_BUDGET_R2: progressively bound only the copy sent to AI.
+    # Prefer identity and structured music features over expansive diagnostic records.
+    # A character/UTF-8 bound is conservative, not a tokenizer-based guarantee.
+    def pack(value):
+        return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+
+    def fits(value):
+        raw = pack(value)
+        return (len(raw) + len(system_prompt) <= max_chars and
+                len(raw.encode("utf-8")) + len(system_prompt.encode("utf-8")) <= max_chars)
+
+    if fits(evidence):
+        return pack(evidence)
+
+    identity = evidence.get("identity") or {}
+    profile = evidence.get("profile_view") or {}
+    research = evidence.get("public_research") or {}
+    if not isinstance(profile, dict):
+        profile = {}
+    if not isinstance(research, dict):
+        research = {}
+
+    # Filtering by *meaningful field names*, not unbounded insertion order.
+    # Preserve data already in the LAB payload; never fabricate a missing value.
+    profile_priority = (
+        "genre", "genres", "genre_labels", "instrumentation", "instruments",
+        "lead_vocal", "lead_vocals", "backing_vocals", "choir", "vocals",
+        "tempo", "bpm", "meter", "key", "rhythm", "semantic", "clap",
+    )
+    research_priority = (
+        "identity", "genres", "genre_labels", "instruments", "instrumentation",
+        "vocals", "matches", "references", "sources", "warnings",
+    )
+    selected_profile = {key: profile[key] for key in profile_priority if key in profile}
+    selected_research = {key: research[key] for key in research_priority if key in research}
+    notice = "Evidence truncated for local context; omissions must be not_scored."
+
+    for depth, elements, text in ((3, 4, 180), (2, 3, 120), (2, 2, 80), (1, 1, 55)):
+        candidate = {
+            "identity": _local_profile_compact(identity, max_depth=2, list_limit=3, text_limit=120),
+            "profile_view": _local_profile_compact(selected_profile, max_depth=depth, list_limit=elements, text_limit=text),
+            "public_research": _local_profile_compact(selected_research, max_depth=depth, list_limit=elements, text_limit=text),
+            "evidence_notice": notice,
+        }
+        if fits(candidate):
+            return pack(candidate)
+
+    # Fail closed rather than silently removing all evidence.
+    raise ValueError("context_budget_exceeded")
 
 class LocalAIProvider(AIReviewProvider):
     provider_name = "local"
