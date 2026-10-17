@@ -87,7 +87,18 @@ class V13JAIProviderContract(unittest.TestCase):
             "response_id": "resp_test",
         }
         enriched = enrich_review_payload_with_ai(payload, ai)
-        self.assertEqual(enriched["revision_key"], "profile-42-assistant-ai-v1")
+        self.assertRegex(
+            enriched["revision_key"],
+            r"^profile-42-assistant-ai-[0-9a-f]{16}$",
+        )
+
+        repeated = enrich_review_payload_with_ai(payload, ai)
+        self.assertEqual(repeated["revision_key"], enriched["revision_key"])
+
+        changed_ai = dict(ai)
+        changed_ai["summary"] = "New evidence changes the conclusion."
+        changed = enrich_review_payload_with_ai(payload, changed_ai)
+        self.assertNotEqual(changed["revision_key"], enriched["revision_key"])
         self.assertEqual(enriched["reviewer"], "assistant-auto+ai")
         self.assertEqual(enriched["comparison"]["genre"]["decision"], "match")
         self.assertTrue(enriched["comparison"]["assistant_ai"]["advisory_only"])

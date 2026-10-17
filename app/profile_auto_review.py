@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import html
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -802,7 +803,12 @@ def enrich_review_payload_with_ai(
     result["consensus"] = consensus
     result["comparison"] = comparison
     if ai_review.get("status") == "completed":
-        result["revision_key"] = f"profile-{int(result['run_id'])}-assistant-ai-v1"
+        # Content-addressed history: new conclusions get new revision IDs.
+        fingerprint = hashlib.sha256(json.dumps(
+            {"ai": ai_review, "external_validation": comparison["external_validation"]},
+            ensure_ascii=False, sort_keys=True, default=str
+        ).encode("utf-8")).hexdigest()[:16]
+        result["revision_key"] = f"profile-{int(result['run_id'])}-assistant-ai-{fingerprint}"
         result["reviewer"] = "assistant-auto+ai"
     return result
 
@@ -855,6 +861,12 @@ def _profile_ai_has_scored_evidence(ai_review: dict[str, Any]) -> bool:
             continue
         evidence = item.get("evidence")
         if isinstance(evidence, str) and evidence.strip():
+            return True
+        if isinstance(evidence, list) and any(
+            (isinstance(entry, str) and entry.strip())
+            or (isinstance(entry, dict) and bool(entry))
+            for entry in evidence
+        ):
             return True
     return False
 
