@@ -69,6 +69,48 @@ class DisabledAIProviderWithReason(DisabledAIProvider):
         return payload
 
 
+# PROFILE_LOCAL_CONTEXT_BUDGET_R1
+# Deterministic reduction of LAB evidence. No model-generated claims or invented sources.
+def _local_profile_compact(value, *, depth=0, max_depth=4, list_limit=8, text_limit=450):
+    if depth > max_depth:
+        return None
+    if isinstance(value, str):
+        return value[:text_limit] + (" [truncated]" if len(value) > text_limit else "")
+    if isinstance(value, (int, float, bool)) or value is None:
+        return value
+    if isinstance(value, list):
+        return [_local_profile_compact(v, depth=depth + 1, max_depth=max_depth,
+                 list_limit=list_limit, text_limit=text_limit) for v in value[:list_limit]]
+    if isinstance(value, dict):
+        return {str(k): _local_profile_compact(v, depth=depth + 1, max_depth=max_depth,
+                list_limit=list_limit, text_limit=text_limit)
+                for k, v in list(value.items())[:30]
+                if not str(k).startswith("_")}
+    return str(value)[:text_limit]
+
+
+def _local_profile_evidence(row, research):
+    diagnostics = row.get("diagnostics") or {}
+    profile = diagnostics.get("profile_view") if isinstance(diagnostics, dict) else {}
+    identity = {"title": row.get("title"), "artist": row.get("artist"), "run_id": row.get("run_id")}
+    # Select only structured results, not fetched page bodies, raw API responses, or diagnostics dumps.
+    known = ("sources", "references", "identity", "genres", "genre_labels",
+             "instruments", "instrumentation", "vocals", "warnings", "matches")
+    research = research if isinstance(research, dict) else {}
+    references = {key: research[key] for key in known if key in research}
+    return {"identity": identity,
+            "profile_view": _local_profile_compact(profile, max_depth=4, list_limit=8, text_limit=350),
+            "public_research": _local_profile_compact(references, max_depth=3, list_limit=5, text_limit=250),
+            "evidence_notice": "Evidence was bounded deterministically; missing items are unscored, not negative evidence."}
+
+
+def _local_profile_budget(evidence, system_prompt, *, max_chars=7300):
+    # Conservative preflight: chars are not tokens. Bound UTF-8 bytes too and fail closed.
+    body = json.dumps(evidence, ensure_ascii=False, separators=(",", ":"))
+    if len(body) + len(system_prompt) > max_chars or len(body.encode("utf-8")) + len(system_prompt.encode("utf-8")) > max_chars:
+        raise ValueError("context_budget_exceeded")
+    return body
+
 class LocalAIProvider(AIReviewProvider):
     provider_name = "local"
 
@@ -185,9 +227,13 @@ class LocalAIProvider(AIReviewProvider):
         if not ready:
             return {"schema":"EZStudioLab_assistant.ai-profile-review.v1","status":"unavailable","provider":"local","model":self.model_path,"confidence":0.0,"summary":None,"dimensions":{},"sources":[],"reason":reason or "local_ai_server_unavailable"}
         profile_view = (((row.get("diagnostics") or {}).get("profile_view")) if isinstance(row.get("diagnostics"),dict) else {}) or {}
-        evidence = {"identity":{"title":row.get("title"),"artist":row.get("artist"),"run_id":row.get("run_id")},"profile_view":profile_view,"public_research":research}
+        evidence = _local_profile_evidence(row, research)
         system_prompt = "You are the PROFILE review engine for EZStudioLab Assistant. Assess the LAB PROFILE analysis against supplied public evidence. Never modify or promote a scientific preset. Distinguish evidence from inference. Return ONLY one valid JSON object with keys summary, confidence, dimensions, sources. confidence must be a NUMBER from 0.0 to 1.0, never a word such as High or Low. dimensions MUST be a JSON OBJECT keyed only by genre, instrumentation, lead_vocal, backing_vocals and choir, never a list. Each dimension value MUST be an object with keys decision, confidence, evidence, rationale. decision is match, mismatch, uncertain, or not_scored. sources MUST be a JSON array. Do not use Markdown fences. Do not invent facts or sources."
-        body = {"model":"local","messages":[{"role":"system","content":system_prompt},{"role":"user","content":json.dumps(evidence,ensure_ascii=False,separators=(",",":"))}],"temperature":0.1,"max_tokens":700,"stream":False}
+        try:
+            evidence_json = _local_profile_budget(evidence, system_prompt)
+        except ValueError as exc:
+            return {"schema":"EZStudioLab_assistant.ai-profile-review.v1","status":"error","provider":"local","model":self.model_path,"confidence":0.0,"summary":None,"dimensions":{},"sources":[],"reason":str(exc)}
+        body = {"model":"local","messages":[{"role":"system","content":system_prompt},{"role":"user","content":evidence_json}],"temperature":0.1,"max_tokens":700,"stream":False}
         req = urllib.request.Request(self.endpoint + "/v1/chat/completions", data=json.dumps(body,ensure_ascii=False).encode("utf-8"), headers={"Content-Type":"application/json","Accept":"application/json"}, method="POST")
         try:
             with urllib.request.urlopen(req, timeout=max(10.0,float(self.config.timeout_seconds))) as response:
@@ -200,7 +246,7 @@ class LocalAIProvider(AIReviewProvider):
             value = self._decode_local_json(content)
             return self._validate_local_result(value, model=self.model_path)
         except urllib.error.HTTPError as exc:
-            return {"schema":"EZStudioLab_assistant.ai-profile-review.v1","status":"error","provider":"local","model":self.model_path,"confidence":0.0,"summary":None,"dimensions":{},"sources":[],"reason":f"local_ai_http_{int(getattr(exc,'code',0))}"}
+            return {"schema":"EZStudioLab_assistant.ai-profile-review.v1","status":"error","provider":"local","model":self.model_path,"confidence":0.0,"summary":None,"dimensions":{},"sources":[],"reason":("local_ai_http_400_context_possible" if int(getattr(exc,'code',0)) == 400 else f"local_ai_http_{int(getattr(exc,'code',0))}")}
         except Exception as exc:
             return {"schema":"EZStudioLab_assistant.ai-profile-review.v1","status":"error","provider":"local","model":self.model_path,"confidence":0.0,"summary":None,"dimensions":{},"sources":[],"reason":f"{type(exc).__name__}:{exc}"[:500]}
 
