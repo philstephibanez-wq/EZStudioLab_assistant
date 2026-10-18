@@ -5,6 +5,7 @@ import hashlib
 import json
 from pathlib import Path
 import re
+import unicodedata
 import time
 import urllib.error
 import urllib.parse
@@ -354,7 +355,23 @@ def _wikipedia(http: ThrottledPublicHttp, title: str, artist: str, preferred_tit
     pages = ((data.get("query") or {}).get("pages") or [])
     if not isinstance(pages, list) or not pages:
         return {"source": "Wikipedia", "available": False}
-    page = pages[0] if isinstance(pages[0], dict) else {}
+    # Generator search order is not an identity guarantee: select a page
+    # supporting BOTH track title and artist, otherwise abstain.
+    ranked = []
+    title_norm = _normalize_identity_text(title)
+    artist_norm = _normalize_identity_text(artist)
+    for candidate in pages:
+        if not isinstance(candidate, dict):
+            continue
+        page_title = _normalize_identity_text(candidate.get("title"))
+        page_extract = _normalize_identity_text(candidate.get("extract"))
+        title_ok = page_title == title_norm or title_norm in page_extract
+        artist_ok = artist_norm in page_title or artist_norm in page_extract
+        if title_ok and artist_ok:
+            ranked.append((int(page_title == title_norm), candidate))
+    if not ranked:
+        return {"source": "Wikipedia", "available": False}
+    page = max(ranked, key=lambda item: item[0])[1]
     extract = _compact(page.get("extract"))
     return {
         "source": "Wikipedia",
@@ -367,7 +384,9 @@ def _wikipedia(http: ThrottledPublicHttp, title: str, artist: str, preferred_tit
 
 
 def _normalize_identity_text(value: Any) -> str:
-    text = _compact(value).casefold()
+    # Compare Unicode spelling variants without erasing accented letters.
+    text = unicodedata.normalize("NFKD", _compact(value).casefold())
+    text = "".join(ch for ch in text if not unicodedata.combining(ch))
     text = re.sub(r"\s*\([^)]*\)\s*$", "", text).strip()
     text = re.sub(r"[^a-z0-9]+", " ", text)
     return re.sub(r"\s+", " ", text).strip()
@@ -873,21 +892,21 @@ def _profile_ai_has_scored_evidence(ai_review: dict[str, Any]) -> bool:
 
 def _profile_review_should_submit(payload: dict[str, Any], ai_review: dict[str, Any]) -> bool:
     """Persist useful observations without confusing AI inference with external validation."""
-    state = payload.get("status")
-    if state == "completed":
-        return True  # Preserve existing deterministic external-review path.
-    return (
-        state == "draft"
-        and ai_review.get("status") == "completed"
-        and ai_review.get("provider") in {"local", "openai"}
-        and isinstance(ai_review.get("dimensions"), dict)
-        and _profile_ai_has_scored_evidence(ai_review)
-        and isinstance(ai_review.get("confidence"), (int, float))
-        and not isinstance(ai_review.get("confidence"), bool)
-        and float(ai_review["confidence"]) > 0.0
-        and 0.0 <= float(ai_review["confidence"]) <= 1.0
-        and str(payload.get("revision_key") or "").startswith("profile-")
-    )
+    # Independent, dimension-level external validation is mandatory.
+    validation = payload.get("external_validation")
+    if not isinstance(validation, dict):
+        return False
+    dimensions = validation.get("scored_dimensions")
+    if validation.get("available") is not True or not isinstance(dimensions, list) or not dimensions:
+        return False
+    if validation.get("analysis_dependency") is not False:
+        return False
+    identity = payload.get("identity")
+    if not isinstance(identity, dict) or identity.get("external_identity_verified") is not True:
+        return False
+    if not str(payload.get("revision_key") or "").startswith("profile-"):
+        return False
+    return payload.get("status") == "completed"
 
 
 def auto_review_once(

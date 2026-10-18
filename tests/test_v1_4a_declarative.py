@@ -1,15 +1,32 @@
 from __future__ import annotations
 import json
-import os
 import sys
-import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'app'))
-from declarative_review import DEFAULT_PATH, load_review_preset, PHASES
+from declarative_review import load_review_preset, PHASES
+
+MAIN_PRESET = r'\\EZSTUDIO-MAIN\EZStudio_lab\presets\assistant\profile-baseline-1.json'
+
+
+def baseline():
+    return {
+        'schema': 'ezs.assistant.review-preset.v1',
+        'id': 'profile-qwen-baseline-1',
+        'phase': 'profile',
+        'provider': 'local',
+        'prompt': 'Review the profile against independent evidence. ' * 8,
+        'temperature': 0.1,
+        'max_tokens': 1200,
+        'context_max_chars': 6500,
+    }
+
+
+def encoded(data):
+    return json.dumps(data, ensure_ascii=False).encode('utf-8')
 
 
 class DeclarativeContract(unittest.TestCase):
@@ -17,45 +34,48 @@ class DeclarativeContract(unittest.TestCase):
         self.assertEqual(PHASES, ('profile', 'stems', 'chords_n', 'lyrics'))
 
     def test_baseline(self):
-        preset, digest = load_review_preset()
+        with patch('pathlib.Path.read_bytes', return_value=encoded(baseline())):
+            preset, digest = load_review_preset(path=MAIN_PRESET)
         self.assertEqual(preset['temperature'], 0.1)
         self.assertEqual(preset['max_tokens'], 1200)
         self.assertEqual(len(digest), 64)
 
+    def test_missing_path_fails_closed(self):
+        with patch.dict('os.environ', {'EZSTUDIOLAB_REVIEW_PRESET_PATH': ''}):
+            with self.assertRaisesRegex(ValueError, 'review_main_preset_path_required'):
+                load_review_preset()
+
+    @unittest.skipUnless(sys.platform == 'win32', 'UNC enforcement is Windows-specific')
+    def test_local_path_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, 'review_preset_requires_main_unc_path'):
+            load_review_preset(path=r'H:\EZStudio_lab\presets\assistant\profile-baseline-1.json')
+
     def test_hot_reload_without_import_reload(self):
-        with tempfile.TemporaryDirectory() as d:
-            p = Path(d) / 'preset.json'
-            data = json.loads(DEFAULT_PATH.read_text(encoding='utf-8'))
-            p.write_text(json.dumps(data), encoding='utf-8')
-            with patch.dict(os.environ, {'EZSTUDIOLAB_REVIEW_PRESET_PATH': str(p)}):
-                first, a = load_review_preset()
-                data['temperature'] = 0.35
-                p.write_text(json.dumps(data), encoding='utf-8')
-                second, b = load_review_preset()
-            self.assertEqual(first['temperature'], 0.1)
-            self.assertEqual(second['temperature'], 0.35)
-            self.assertNotEqual(a, b)
+        first_data = baseline()
+        second_data = {**first_data, 'temperature': 0.35}
+        with patch('pathlib.Path.read_bytes', side_effect=[encoded(first_data), encoded(second_data)]):
+            first, a = load_review_preset(path=MAIN_PRESET)
+            second, b = load_review_preset(path=MAIN_PRESET)
+        self.assertEqual(first['temperature'], 0.1)
+        self.assertEqual(second['temperature'], 0.35)
+        self.assertNotEqual(a, b)
 
     def test_no_arbitrary_code_or_bad_phase(self):
-        with tempfile.TemporaryDirectory() as d:
-            p = Path(d) / 'preset.json'
-            data = json.loads(DEFAULT_PATH.read_text(encoding='utf-8'))
-            data['python_module'] = 'os.system'
-            p.write_text(json.dumps(data), encoding='utf-8')
+        invalid = {**baseline(), 'python_module': 'os.system'}
+        with patch('pathlib.Path.read_bytes', return_value=encoded(invalid)):
             with self.assertRaisesRegex(ValueError, 'invalid_keys'):
-                load_review_preset(path=p)
-            with self.assertRaisesRegex(ValueError, 'phase_unknown'):
-                load_review_preset(phase='untrusted', path=p)
+                load_review_preset(path=MAIN_PRESET)
+        with self.assertRaisesRegex(ValueError, 'phase_unknown'):
+            load_review_preset(phase='untrusted', path=MAIN_PRESET)
 
     def test_bom_and_invalid_do_not_fallback(self):
-        with tempfile.TemporaryDirectory() as d:
-            p = Path(d) / 'preset.json'
-            p.write_bytes(b'\xef\xbb\xbf' + DEFAULT_PATH.read_bytes())
+        with patch('pathlib.Path.read_bytes', return_value=b'\xef\xbb\xbf' + encoded(baseline())):
             with self.assertRaisesRegex(ValueError, 'bom_forbidden'):
-                load_review_preset(path=p)
-            p.write_text('{broken', encoding='utf-8')
+                load_review_preset(path=MAIN_PRESET)
+        with patch('pathlib.Path.read_bytes', return_value=b'{broken'):
             with self.assertRaises(json.JSONDecodeError):
-                load_review_preset(path=p)
+                load_review_preset(path=MAIN_PRESET)
+
 
 if __name__ == '__main__':
     unittest.main()

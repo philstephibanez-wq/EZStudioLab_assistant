@@ -1,5 +1,5 @@
 from __future__ import annotations
-import json, sys, tempfile, unittest
+import json, os, sys, tempfile, unittest
 from pathlib import Path
 from unittest.mock import patch
 ROOT=Path(__file__).resolve().parents[1]; APP=ROOT/"app"
@@ -29,7 +29,16 @@ class V13KLocalAIRuntimeContract(unittest.TestCase):
         def fake(req,timeout):
             seen.append(req.full_url)
             return R({"status":"ok"}) if req.full_url.endswith("/health") else R({"choices":[{"message":{"content":json.dumps({"summary":"ok","confidence":0.8,"dimensions":{},"sources":[]})}}]})
-        with patch("urllib.request.urlopen",fake):
+        preset = {
+            "schema": "ezs.assistant.review-preset.v1", "id": "profile-qwen-baseline-1",
+            "phase": "profile", "provider": "local",
+            "prompt": "Review independently sourced PROFILE evidence with rigorous confidence. " * 4,
+            "temperature": 0.1, "max_tokens": 1200, "context_max_chars": 6500,
+        }
+        canonical = r"\\EZSTUDIO-MAIN\EZStudio_lab\presets\assistant\profile-baseline-1.json"
+        with patch("urllib.request.urlopen",fake), \
+             patch("declarative_review.Path.read_bytes",return_value=json.dumps(preset).encode("utf-8")), \
+             patch.dict("os.environ", {"EZSTUDIOLAB_REVIEW_PRESET_PATH": canonical}):
             self.assertTrue(p.status()["enabled"]); self.assertEqual(p.review_profile({"run_id":1,"title":"S","artist":"A"},{"sources":[]})["status"],"completed")
         self.assertTrue(any(x.endswith("/v1/chat/completions") for x in seen))
 if __name__=="__main__": unittest.main()

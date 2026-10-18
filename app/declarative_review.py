@@ -7,14 +7,21 @@ from pathlib import Path
 
 PHASES = ('profile', 'stems', 'chords_n', 'lyrics')
 ALLOWED = {'schema', 'id', 'phase', 'provider', 'prompt', 'temperature', 'max_tokens', 'context_max_chars'}
-DEFAULT_PATH = Path(__file__).resolve().parents[1] / 'presets' / 'assistant' / 'profile-baseline-1.json'
+# On XPS this must be an explicitly configured UNC/read-only MAIN path.
+# Never fall back to an XPS-local preset.
+DEFAULT_PATH = None
 
 
 def load_review_preset(phase='profile', path=None):
     """Read on EACH invocation: changes require no worker restart. Fail closed."""
     if phase not in PHASES:
         raise ValueError('review_phase_unknown')
-    selected = Path(path or os.getenv('EZSTUDIOLAB_REVIEW_PRESET_PATH') or DEFAULT_PATH)
+    configured = path or os.getenv('EZSTUDIOLAB_REVIEW_PRESET_PATH')
+    if not configured:
+        raise ValueError('review_main_preset_path_required')
+    selected = Path(configured)
+    if os.name == 'nt' and not str(selected).startswith('\\\\'):
+        raise ValueError('review_preset_requires_main_unc_path')
     raw = selected.read_bytes()
     if raw.startswith(b'\xef\xbb\xbf'):
         raise ValueError('review_preset_bom_forbidden')

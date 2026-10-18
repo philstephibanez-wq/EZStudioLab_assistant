@@ -14,7 +14,50 @@ if str(APP) not in sys.path:
 from profile_auto_review import NetworkBudget, build_review_payload
 
 
+
+
+def _r26d_verified_completed_fixture(run_id):
+    """A completed revision must have independent identity and dimension evidence."""
+    return {
+        "run_id": run_id,
+        "status": "completed",
+        "confidence": 0.91,
+        "revision_key": f"profile-{run_id}-contract-verified",
+        "identity": {"external_identity_verified": True, "external_identity_source": "MusicBrainz"},
+        "sources": [{
+            "name": "MusicBrainz", "type": "public_reference",
+            "url": "https://musicbrainz.org/recording/example",
+            "identity_relevant": True,
+            "evidence": {"genres": ["pop rock"]},
+        }],
+        "external_validation": {
+            "available": True, "analysis_dependency": False,
+            "scored_dimensions": ["genre"],
+            "unscored_dimensions_unchanged": True,
+            "confidence_band": "high",
+        },
+        "comparison": {"genre": {"lab": "rock", "external": ["pop rock"],
+                                   "decision": "mismatch"}},
+    }
+
 class ProfileAutoReviewContract(unittest.TestCase):
+
+    def test_r26d_completed_without_external_evidence_never_submits(self):
+        import profile_auto_review as par
+        forged = {
+            "run_id": 999, "status": "completed",
+            "revision_key": "profile-999-ai-only",
+            "confidence": 0.99,
+        }
+        ai = {"status": "completed", "provider": "local", "confidence": 0.99,
+              "dimensions": {"genre": {"decision": "match", "confidence": 0.99,
+                                       "evidence": [{"module": "clap"}]}}}
+        self.assertFalse(par._profile_review_should_submit(forged, ai))
+        self.assertFalse(par._profile_review_should_submit(
+            dict(forged, identity={"external_identity_verified": True},
+                 external_validation={"available": False, "analysis_dependency": False,
+                                      "scored_dimensions": []}), ai))
+
     def _row(self):
         return {
             "run_id": 111,
@@ -367,7 +410,7 @@ class ProfileAutoReviewContract(unittest.TestCase):
             def fake_build(row, research, min_confidence=0.75):
                 if row["run_id"] == 301:
                     return {"run_id": 301, "status": "draft", "confidence": 0.40}
-                return {"run_id": 302, "status": "completed", "confidence": 0.91}
+                return _r26d_verified_completed_fixture(302)
             par.build_review_payload = fake_build
 
             client = FakeClient()
@@ -459,7 +502,7 @@ class ProfileAutoReviewContract(unittest.TestCase):
             def fake_build(row, research, min_confidence=0.75):
                 if row["run_id"] == 201:
                     return {"run_id": 201, "status": "draft", "confidence": 0.60}
-                return {"run_id": 202, "status": "completed", "confidence": 0.91}
+                return _r26d_verified_completed_fixture(202)
             par.build_review_payload = fake_build
 
             client = FakeClient()
