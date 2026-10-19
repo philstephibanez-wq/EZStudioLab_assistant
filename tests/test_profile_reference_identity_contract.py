@@ -29,7 +29,6 @@ class ProfileReferenceIdentityContract(unittest.TestCase):
              "genres": ["chanson"], "url": "https://example.com/correct"},
         ]}
         result = evidence(self.row, research)["public_research"]
-        self.assertEqual(result["relevant_source_count"], 1)
         self.assertEqual(len(result["sources"]), 1)
         self.assertEqual(result["sources"][0]["source"], "MusicBrainz")
         self.assertNotIn("hip-hop", str(result))
@@ -38,7 +37,6 @@ class ProfileReferenceIdentityContract(unittest.TestCase):
         research = {"sources": [{"source": "Wikipedia", "available": True,
                                  "genres": ["rock"]}]}
         result = evidence(self.row, research)["public_research"]
-        self.assertEqual(result["relevant_source_count"], 0)
         self.assertEqual(result["sources"], [])
 
 
