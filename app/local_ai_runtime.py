@@ -280,18 +280,28 @@ def _register_and_start_task(cfg: LocalAIRuntimeConfig, model: Path) -> None:
 $ErrorActionPreference='Stop'
 $taskName={_ps_single(LOCAL_AI_TASK_NAME)}
 $legacyTask={_ps_single(LEGACY_RECOVERY_TASK_NAME)}
-foreach($name in @($legacyTask,$taskName)){{
-  $existing=Get-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue
-  if($null -ne $existing){{
-    Stop-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue
-    Unregister-ScheduledTask -TaskName $name -Confirm:$false -ErrorAction SilentlyContinue
+# Idempotent start: a valid existing task needs no administrative registration rights.
+$expectedExe={_ps_single(cfg.server_exe)}
+$expectedArgs={_ps_single(task_args)}
+$expectedRoot={_ps_single(cfg.runtime_root)}
+$existing=Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+if($null -ne $existing){{
+  $actions=@($existing.Actions)
+  if($actions.Count -ne 1 -or
+     -not [string]::Equals([string]$actions[0].Execute,$expectedExe,[System.StringComparison]::OrdinalIgnoreCase) -or
+     -not [string]::Equals([string]$actions[0].Arguments,$expectedArgs,[System.StringComparison]::Ordinal) -or
+     -not [string]::Equals(([string]$actions[0].WorkingDirectory).TrimEnd('\'),([string]$expectedRoot).TrimEnd('\'),[System.StringComparison]::OrdinalIgnoreCase)){{
+    throw 'local_ai_existing_task_configuration_mismatch_requires_explicit_repair'
   }}
+  Start-ScheduledTask -TaskName $taskName -ErrorAction Stop
+}} else {{
+  # No prior task: registration is permitted, and failure does not alter the runtime.
+  $action=New-ScheduledTaskAction -Execute $expectedExe -Argument $expectedArgs -WorkingDirectory $expectedRoot
+  $principal=New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Limited
+  $settings=New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -ExecutionTimeLimit ([TimeSpan]::Zero) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
+  Register-ScheduledTask -TaskName $taskName -Action $action -Principal $principal -Settings $settings -Description 'EZStudioLab Assistant persistent local AI' -ErrorAction Stop | Out-Null
+  Start-ScheduledTask -TaskName $taskName -ErrorAction Stop
 }}
-$action=New-ScheduledTaskAction -Execute {_ps_single(cfg.server_exe)} -Argument {_ps_single(task_args)} -WorkingDirectory {_ps_single(cfg.runtime_root)}
-$principal=New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Limited
-$settings=New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -ExecutionTimeLimit ([TimeSpan]::Zero) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
-Register-ScheduledTask -TaskName $taskName -Action $action -Principal $principal -Settings $settings -Description 'EZStudioLab Assistant persistent local AI' -Force | Out-Null
-Start-ScheduledTask -TaskName $taskName
 """
     p = _powershell(script, timeout=20)
     if p.returncode != 0:
