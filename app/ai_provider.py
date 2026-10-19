@@ -160,8 +160,23 @@ def _local_profile_evidence(row, research):
         'sources': verified_sources,
         'relevant_source_count': len(verified_sources),
     }
+    # Traceable recording-level credits are distinct from inferred instruments.
+    credits = []
+    for source in verified_sources:
+        if source.get('source') != 'MusicBrainz':
+            continue
+        for item in source.get('recording_credits', [])[:12]:
+            if not isinstance(item, dict) or item.get('scope') != 'recording':
+                continue
+            credits.append({
+                'musician': str(item.get('musician') or '')[:90],
+                'role': str(item.get('role') or '')[:50],
+                'instruments': [str(v)[:65] for v in item.get('instruments', [])[:5]],
+                'scope': 'recording',
+                'source_url': source.get('url'),
+            })
     # Explicitly keep reference metadata if present, but never raw website bodies.
-    refs = {}
+    refs = {'recording_credits': credits[:12]} if credits else {}
     for key in ('identity', 'genres', 'genre_labels', 'instruments', 'instrumentation', 'vocals', 'matches', 'references', 'sources'):
         value = research.get(key)
         if isinstance(value, list):
