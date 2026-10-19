@@ -89,6 +89,42 @@ def _query(params: dict[str, Any]) -> str:
     return urllib.parse.urlencode(params, doseq=True, quote_via=urllib.parse.quote)
 
 
+def _recording_credits(relations: Any, recording_url: str | None) -> list[dict[str, Any]]:
+    """Extract recording-level performer credits; album credits are not track evidence."""
+    if not isinstance(relations, list):
+        return []
+    result = []
+    for relation in relations:
+        if not isinstance(relation, dict) or relation.get("target-type") != "artist":
+            continue
+        kind = _compact(relation.get("type")).casefold()
+        attributes = [_compact(x) for x in relation.get("attributes") or [] if isinstance(x, str)]
+        instruments = []
+        instrument_obj = relation.get("instrument")
+        if isinstance(instrument_obj, dict) and _compact(instrument_obj.get("name")):
+            instruments.append(_compact(instrument_obj["name"]))
+        for attribute in attributes:
+            if attribute.casefold() not in _NON_CREDIT_ATTRIBUTES and attribute not in instruments:
+                instruments.append(attribute)
+        if not (kind in {"instrument", "vocal", "performer"} or "vocal" in kind):
+            continue
+        artist = relation.get("artist")
+        musician = _compact(artist.get("name")) if isinstance(artist, dict) else ""
+        if not musician:
+            continue
+        result.append({
+            "musician": musician, "role": kind, "instruments": instruments[:8],
+            "scope": "recording", "source_url": recording_url,
+        })
+    return result[:30]
+
+
+_NON_CREDIT_ATTRIBUTES = {
+    "additional", "guest", "solo", "lead", "rhythm", "background",
+    "backing", "live", "session", "featured",
+}
+
+
 def _musicbrainz(http: ThrottledPublicHttp, title: str, artist: str) -> dict[str, Any]:
     query = f'recording:"{title}" AND artist:"{artist}"'
     search_url = "https://musicbrainz.org/ws/2/recording/?" + _query(
@@ -141,6 +177,8 @@ def _musicbrainz(http: ThrottledPublicHttp, title: str, artist: str) -> dict[str
         if isinstance(t, dict) and _compact(t.get("name")):
             tags.append(_compact(t.get("name")))
 
+    recording_url = f"https://musicbrainz.org/recording/{mbid}" if mbid else None
+    recording_credits = _recording_credits(detail.get("relations"), recording_url)
     performers = []
     instruments = []
     backing_vocals = False
@@ -234,6 +272,7 @@ def _musicbrainz(http: ThrottledPublicHttp, title: str, artist: str) -> dict[str
         "genres": sorted(set(genres)),
         "tags": sorted(set(tags)),
         "performers": performers[:30],
+        "recording_credits": recording_credits,
         "instruments": sorted(set(instruments)),
         "lead_vocals": lead_vocals,
         "backing_vocals": backing_vocals,
@@ -631,6 +670,7 @@ def build_review_payload(row: dict[str, Any], research: dict[str, Any], *, min_c
                     "genres": genres,
                     "instruments": source.get("instruments") or [],
                     "performers": source.get("performers") or [],
+                    "recording_credits": source.get("recording_credits") or [],
                     "description": source.get("description"),
                     "extract": source.get("extract"),
                     "lead_vocals": source.get("lead_vocals"),
