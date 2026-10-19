@@ -813,6 +813,7 @@ def enrich_review_payload_with_ai(
     comparison["assistant_ai"] = {
         "status": ai_review.get("status"),
         "dimensions": ai_review.get("dimensions") if isinstance(ai_review.get("dimensions"), dict) else {},
+        "coverage": ai_review.get("coverage") if isinstance(ai_review.get("coverage"), dict) else None,
         "advisory_only": True,
         "scientific_preset_mutation_allowed": False,
         "automatic_preset_promotion_allowed": False,

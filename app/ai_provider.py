@@ -233,6 +233,54 @@ def _local_profile_budget(evidence, system_prompt, *, max_chars=6500):
     # Fail closed rather than silently removing all evidence.
     raise ValueError("context_budget_exceeded")
 
+
+
+def _profile_ai_coverage(dimensions: dict) -> dict:
+    """Advisory-only coverage; never infer musical evidence from prose."""
+    names = ('genre', 'instrumentation', 'lead_vocal', 'backing_vocals', 'choir')
+    details = {}
+    scored = 0
+    for name in names:
+        raw = dimensions.get(name)
+        value = dict(raw) if isinstance(raw, dict) else {}
+        decision = value.get('decision')
+        if decision not in ('match', 'mismatch', 'uncertain', 'not_scored'):
+            decision = 'not_scored'
+        conf = value.get('confidence')
+        if isinstance(conf, bool) or not isinstance(conf, (int, float)) or not 0.0 <= float(conf) <= 1.0:
+            conf = None
+        evidence = value.get('evidence')
+        has_evidence = (isinstance(evidence, str) and bool(evidence.strip())) or (
+            isinstance(evidence, list) and any(bool(x) for x in evidence)
+        )
+        # match/mismatch requires both a confidence and an actual evidence item.
+        valid = decision in ('match', 'mismatch') and conf is not None and has_evidence
+        reason = value.get('reason') or value.get('rationale')
+        if not valid:
+            if decision in ('match', 'mismatch'):
+                reason = 'insufficient_dimension_evidence_or_confidence'
+            elif not reason:
+                reason = 'missing_evidence_in_profile_context' if not value else 'dimension_not_scored'
+            decision = 'not_scored'
+            conf = None
+        else:
+            scored += 1
+        details[name] = {
+            'decision': decision, 'confidence': float(conf) if conf is not None else None,
+            'evidence': evidence if has_evidence else [],
+            'rationale': value.get('rationale') or '',
+            'reason': str(reason)[:300] if not valid else None,
+        }
+    return {
+        'schema': 'ezs.profile-ai-coverage.v1',
+        'dimensions': details,
+        'scored_count': scored,
+        'total_count': len(names),
+        'coverage': round(scored / len(names), 3),
+        'complete': scored == len(names),
+        'external_validation': False,
+    }
+
 class LocalAIProvider(AIReviewProvider):
     provider_name = "local"
 
@@ -346,10 +394,12 @@ class LocalAIProvider(AIReviewProvider):
         confidence = float(confidence)
         if not 0.0 <= confidence <= 1.0: raise ValueError("ai_profile_review_confidence_out_of_range")
         dimensions = LocalAIProvider._normalize_local_dimensions(value.get("dimensions"))
+        coverage = _profile_ai_coverage(dimensions)
+        dimensions = coverage["dimensions"]
         summary = value.get("summary")
         if summary is not None and not isinstance(summary, str): raise ValueError("ai_profile_review_summary_string_required")
         sources = value.get("sources") if isinstance(value.get("sources"), list) else []
-        return {"schema":"EZStudioLab_assistant.ai-profile-review.v1","status":"completed","provider":"local","model":model,"confidence":round(confidence,3),"summary":summary.strip() if isinstance(summary,str) else None,"dimensions":dimensions,"sources":[x for x in sources if isinstance(x,dict)][:20]}
+        return {"schema":"EZStudioLab_assistant.ai-profile-review.v1","status":"completed","provider":"local","model":model,"confidence":round(confidence,3),"summary":summary.strip() if isinstance(summary,str) else None,"dimensions":dimensions,"coverage":coverage,"sources":[x for x in sources if isinstance(x,dict)][:20]}
 
     def review_profile(self, row: dict[str, Any], research: dict[str, Any]) -> dict[str, Any]:
         ready, reason = self._health()
