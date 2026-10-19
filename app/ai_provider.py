@@ -348,41 +348,51 @@ class LocalAIProvider(AIReviewProvider):
 
     @staticmethod
     def _normalize_local_dimensions(value: Any) -> dict[str, Any]:
+        """Accept Qwen object/list JSON shapes; never invent evidence or scores."""
+        known = ('genre', 'instrumentation', 'lead_vocal', 'backing_vocals', 'choir')
+        alias = {'lead_vocals': 'lead_vocal'}
         if isinstance(value, dict):
-            # PROFILE_EVIDENCE_R3A: canonical singular key; reject conflicting aliases.
-            normalized = dict(value)
-            if "lead_vocals" in normalized:
-                alias = normalized.pop("lead_vocals")
-                if "lead_vocal" in normalized and normalized["lead_vocal"] != alias:
-                    raise ValueError("ai_profile_review_lead_vocal_alias_conflict")
-                normalized["lead_vocal"] = alias
-            return normalized
-        if not isinstance(value, list):
-            raise ValueError("ai_profile_review_dimensions_object_required")
-
-        known = {
-            "genre",
-            "instrumentation",
-            "lead_vocal",
-            "backing_vocals",
-            "choir",
-        }
-        normalized: dict[str, Any] = {}
-        for item in value:
-            if not isinstance(item, dict):
-                raise ValueError("ai_profile_review_dimensions_list_item_object_required")
-            keys = [key for key in item if key in known]
-            if len(keys) != 1:
-                raise ValueError("ai_profile_review_dimension_name_required")
-            name = keys[0]
-            decision = item.get(name)
-            if decision not in {"match", "mismatch", "uncertain", "not_scored"}:
-                raise ValueError("ai_profile_review_dimension_decision_invalid")
+            items = [(alias.get(k, k), v) for k, v in value.items()]
+        elif isinstance(value, list):
+            items = []
+            for row in value:
+                if not isinstance(row, dict):
+                    raise ValueError('ai_profile_review_dimension_item_invalid')
+                name = row.get('name', row.get('dimension'))
+                if isinstance(name, str):
+                    name = alias.get(name, name)
+                    items.append((name, {k: v for k, v in row.items() if k not in ('name', 'dimension')}))
+                else:
+                    present = [k for k in row if alias.get(k, k) in known]
+                    if len(present) != 1:
+                        raise ValueError('ai_profile_review_dimension_name_required')
+                    key = present[0]
+                    datum = row[key]
+                    if isinstance(datum, dict):
+                        items.append((alias.get(key, key), datum))
+                    else:
+                        items.append((alias.get(key, key), {**{k:v for k,v in row.items() if k != key}, 'decision': datum}))
+        else:
+            raise ValueError('ai_profile_review_dimensions_object_or_list_required')
+        normalized = {}
+        for name, datum in items:
+            if name not in known:
+                raise ValueError('ai_profile_review_dimension_unknown')
+            if name in normalized:
+                raise ValueError('ai_profile_review_dimension_duplicate')
+            if isinstance(datum, str):
+                datum = {'decision': datum}
+            if not isinstance(datum, dict):
+                raise ValueError('ai_profile_review_dimension_value_invalid')
+            decision = datum.get('decision', 'not_scored')
+            if decision not in {'match','mismatch','uncertain','not_scored'}:
+                raise ValueError('ai_profile_review_dimension_decision_invalid')
             normalized[name] = {
-                "decision": decision,
-                "confidence": item.get("confidence"),
-                "evidence": item.get("evidence"),
-                "rationale": item.get("rationale"),
+                'decision': decision,
+                'confidence': datum.get('confidence'),
+                'evidence': datum.get('evidence'),
+                'rationale': datum.get('rationale'),
+                'reason': datum.get('reason'),
             }
         return normalized
 
