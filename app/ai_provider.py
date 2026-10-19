@@ -147,6 +147,19 @@ def _local_profile_evidence(row, research):
         },
     }
     research = obj(research)
+    # Only title/artist-relevant references may be supplied as external evidence.
+    # Failed or irrelevant lookups are not proof about the recording.
+    verified_sources = [
+        source for source in research.get('sources', [])
+        if isinstance(source, dict)
+        and source.get('available') is True
+        and source.get('identity_relevant') is True
+    ] if isinstance(research.get('sources'), list) else []
+    research = {
+        **research,
+        'sources': verified_sources,
+        'relevant_source_count': len(verified_sources),
+    }
     # Explicitly keep reference metadata if present, but never raw website bodies.
     refs = {}
     for key in ('identity', 'genres', 'genre_labels', 'instruments', 'instrumentation', 'vocals', 'matches', 'references', 'sources'):
