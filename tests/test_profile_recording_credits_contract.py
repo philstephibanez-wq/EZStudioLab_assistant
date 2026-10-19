@@ -10,7 +10,7 @@ names = {"_compact", "_recording_credits", "_musicbrainz", "_query"}
 functions = [n for n in module.body if isinstance(n, ast.FunctionDef) and n.name in names]
 if {n.name for n in functions} != names:
     raise RuntimeError("recording_credit_functions_missing")
-namespace = {"Any": object, "_NON_CREDIT_ATTRIBUTES": {
+namespace = {"Any": object, "ThrottledPublicHttp": object, "_NON_CREDIT_ATTRIBUTES": {
     "additional", "guest", "solo", "lead", "rhythm", "background",
     "backing", "live", "session", "featured",
 }, "re": __import__("re"), "urllib": __import__("urllib"), "urllib.parse": urllib.parse}
