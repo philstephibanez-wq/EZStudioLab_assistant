@@ -891,22 +891,30 @@ def _profile_ai_has_scored_evidence(ai_review: dict[str, Any]) -> bool:
 
 
 def _profile_review_should_submit(payload: dict[str, Any], ai_review: dict[str, Any]) -> bool:
-    """Persist useful observations without confusing AI inference with external validation."""
-    # Independent, dimension-level external validation is mandatory.
-    validation = payload.get("external_validation")
-    if not isinstance(validation, dict):
-        return False
-    dimensions = validation.get("scored_dimensions")
-    if validation.get("available") is not True or not isinstance(dimensions, list) or not dimensions:
-        return False
-    if validation.get("analysis_dependency") is not False:
-        return False
-    identity = payload.get("identity")
-    if not isinstance(identity, dict) or identity.get("external_identity_verified") is not True:
+    """Persist advisory drafts without asserting verified external evidence."""
+    if ai_review.get("status") != "completed":
         return False
     if not str(payload.get("revision_key") or "").startswith("profile-"):
         return False
-    return payload.get("status") == "completed"
+    if payload.get("status") not in {"draft", "completed"}:
+        return False
+    # Completed remains reserved for independently verified sources.
+    if payload.get("status") == "completed":
+        validation = payload.get("external_validation")
+        if not isinstance(validation, dict):
+            return False
+        dimensions = validation.get("scored_dimensions")
+        identity = payload.get("identity")
+        return (
+            validation.get("available") is True
+            and isinstance(dimensions, list) and bool(dimensions)
+            and validation.get("analysis_dependency") is False
+            and isinstance(identity, dict)
+            and identity.get("external_identity_verified") is True
+            and bool(payload.get("sources"))
+        )
+    # A draft is stored as an observation only; never promoted or externally validated.
+    return True
 
 
 def auto_review_once(
