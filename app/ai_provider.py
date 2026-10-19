@@ -450,6 +450,20 @@ class LocalAIProvider(AIReviewProvider):
             raise ValueError("ai_profile_review_confidence_required_for_scored_dimensions")
         summary = value.get("summary")
         if summary is not None and not isinstance(summary, str): raise ValueError("ai_profile_review_summary_string_required")
+        # Model prose is not independent evidence. Without any substantiated
+        # dimension, do not publish free-form hypotheses as findings.
+        if coverage["scored_count"] == 0:
+            summary = (
+                "Révision IA non concluante : aucune des cinq dimensions musicales "
+                "ne dispose de preuves suffisantes pour une comparaison. "
+                "Les hypothèses non vérifiées du modèle ne sont pas retenues."
+            )
+            confidence = None
+        elif isinstance(summary, str) and summary.strip():
+            summary = (
+                "Commentaire exploratoire de l’IA (non validé indépendamment) : "
+                + summary.strip()
+            )
         sources = value.get("sources") if isinstance(value.get("sources"), list) else []
         return {"schema":"EZStudioLab_assistant.ai-profile-review.v1","status":"completed","provider":"local","model":model,"confidence":(round(confidence,3) if confidence is not None else None),"summary":summary.strip() if isinstance(summary,str) else None,"dimensions":dimensions,"coverage":coverage,"sources":[x for x in sources if isinstance(x,dict)][:20]}
 
