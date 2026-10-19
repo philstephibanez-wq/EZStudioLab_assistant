@@ -179,30 +179,27 @@ def _musicbrainz(http: ThrottledPublicHttp, title: str, artist: str) -> dict[str
 
     recording_url = f"https://musicbrainz.org/recording/{mbid}" if mbid else None
     recording_credits = _recording_credits(detail.get("relations"), recording_url)
-    performers = []
-    instruments = []
-    backing_vocals = False
-    lead_vocals = False
-    for rel in detail.get("relations") or []:
-        if not isinstance(rel, dict):
-            continue
-        rel_type = _compact(rel.get("type")).casefold()
-        target_type = _compact(rel.get("target-type")).casefold()
-        artist_obj = rel.get("artist") if isinstance(rel.get("artist"), dict) else {}
-        target_artist = _compact(artist_obj.get("name"))
-        attrs = [_compact(x) for x in (rel.get("attributes") or []) if _compact(x)]
-        if target_type == "artist" and target_artist:
-            performers.append({"artist": target_artist, "type": rel_type, "attributes": attrs})
-        attrs_cf = " ".join(attrs).casefold()
-        if "instrument" in rel_type or attrs:
-            for a in attrs:
-                acf = a.casefold()
-                if acf not in {"additional", "guest"} and a not in instruments:
-                    instruments.append(a)
-        if "background vocal" in attrs_cf or "backing vocal" in attrs_cf:
-            backing_vocals = True
-        if "lead vocal" in attrs_cf or rel_type == "vocal":
-            lead_vocals = True
+    # A relation attribute is not automatically an instrument (e.g. "live").
+    # Use only artist/performer relations on the recording itself.
+    performers = [
+        {"artist": credit["musician"], "type": credit["role"],
+         "attributes": credit["instruments"]}
+        for credit in recording_credits
+    ]
+    instruments = sorted({
+        instrument
+        for credit in recording_credits
+        if credit["role"] in ("instrument", "performer")
+        for instrument in credit["instruments"]
+        if instrument.casefold() not in _NON_CREDIT_ATTRIBUTES
+    })
+    backing_vocals = any(
+        credit["role"] == "vocal"
+        and any(a.casefold() in ("backing vocals", "background vocals", "backing vocal",
+                                 "background vocal") for a in credit["instruments"])
+        for credit in recording_credits
+    )
+    lead_vocals = any(credit["role"] == "vocal" for credit in recording_credits)
 
     # Enrichment: release-group and primary artist metadata can carry genre/style
     # even when the recording object itself has no genre tags.
