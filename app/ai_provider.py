@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 import urllib.error
 import urllib.request
+import time
+from profile_trace import emit as trace_emit, snap as trace_snap
 from typing import Any
 from declarative_review import load_review_preset
 
@@ -348,9 +350,9 @@ class LocalAIProvider(AIReviewProvider):
 
     @staticmethod
     def _normalize_local_dimensions(value: Any) -> dict[str, Any]:
-        """Normalize known Qwen dimension names and uncertainty, without inventing evidence."""
-        known = ('genre', 'instrumentation', 'lead_vocal', 'backing_vocals', 'choir')
-        alias = {
+        """Normalize advisory AI output, never infer a musical match from an unknown label."""
+        canonical = ('genre', 'instrumentation', 'lead_vocal', 'backing_vocals', 'choir')
+        aliases = {
             'genres': 'genre', 'music_genre': 'genre', 'musical_genre': 'genre',
             'instruments': 'instrumentation', 'instrument': 'instrumentation',
             'lead_vocals': 'lead_vocal', 'lead_voice': 'lead_vocal',
@@ -359,95 +361,118 @@ class LocalAIProvider(AIReviewProvider):
             'backing_vocal': 'backing_vocals', 'backing_voice': 'backing_vocals',
             'choirs': 'choir', 'choral_vocals': 'choir',
         }
-        def canonical_name(raw):
-            if not isinstance(raw, str):
-                raise ValueError('ai_profile_review_dimension_name_required')
-            key = raw.strip().casefold().replace('-', '_').replace(' ', '_')
-            name = alias.get(key, key)
-            if name not in known:
-                raise ValueError('ai_profile_review_dimension_unknown:' + key[:70])
-            return name
+        uncertainty = {'possible', 'possibly', 'inconclusive', 'inconclusif',
+                       'indeterminate', 'indéterminé', 'ambiguous', 'maybe', 'unclear'}
+        def unknown(reason: str) -> dict[str, Any]:
+            return {'decision':'not_scored', 'confidence':None, 'evidence':[],
+                    'rationale':'', 'reason':reason}
+        result = {name: unknown('dimension_missing_from_model_output') for name in canonical}
         if isinstance(value, dict):
             items = list(value.items())
         elif isinstance(value, list):
             items = []
-            for row in value:
-                if not isinstance(row, dict):
-                    raise ValueError('ai_profile_review_dimension_item_invalid')
-                name = row.get('name', row.get('dimension'))
-                if isinstance(name, str):
-                    items.append((name, {k: v for k, v in row.items() if k not in ('name', 'dimension')}))
+            for entry in value:
+                if not isinstance(entry, dict):
+                    continue
+                label = entry.get('name', entry.get('dimension'))
+                if isinstance(label, str):
+                    items.append((label, {k:v for k,v in entry.items() if k not in ('name','dimension')}))
                 else:
-                    present = [k for k in row if k not in ('decision', 'confidence', 'evidence', 'rationale', 'reason')]
-                    if len(present) != 1:
-                        raise ValueError('ai_profile_review_dimension_name_required')
-                    key = present[0]
-                    datum = row[key]
-                    if isinstance(datum, dict):
-                        items.append((key, datum))
-                    else:
-                        items.append((key, {**{k: v for k, v in row.items() if k != key}, 'decision': datum}))
+                    keys = [k for k in entry if k not in ('decision','confidence','evidence','rationale','reason')]
+                    if len(keys)==1:
+                        k=keys[0]
+                        v=entry[k]
+                        items.append((k, v if isinstance(v,dict) else {'decision':v}))
         else:
-            raise ValueError('ai_profile_review_dimensions_object_or_list_required')
-        normalized = {}
+            return result
+        seen = set()
         for raw_name, datum in items:
-            name = canonical_name(raw_name)
-            if name in normalized:
-                raise ValueError('ai_profile_review_dimension_duplicate:' + name)
+            if not isinstance(raw_name, str):
+                continue
+            key = raw_name.strip().casefold().replace('-', '_').replace(' ', '_')
+            name = aliases.get(key, key)
+            # The vague 'vocals' group cannot safely be assigned to lead, backing or choir.
+            if name not in canonical:
+                continue
+            if name in seen:
+                result[name] = unknown('duplicate_dimension_in_model_output')
+                continue
+            seen.add(name)
             if isinstance(datum, str):
                 datum = {'decision': datum}
             if not isinstance(datum, dict):
-                raise ValueError('ai_profile_review_dimension_value_invalid:' + name)
-            decision = datum.get('decision', 'not_scored')
-            if not isinstance(decision, str):
-                raise ValueError('ai_profile_review_dimension_decision_invalid:' + name + ':non_string')
-            decision = decision.strip().casefold().replace('-', '_').replace(' ', '_')
-            uncertainty = {'possible', 'possibly', 'inconclusive', 'inconclusif', 'indeterminate', 'indéterminé', 'ambiguous', 'maybe', 'unclear'}
+                result[name] = unknown('invalid_dimension_value')
+                continue
+            raw_decision=datum.get('decision', 'not_scored')
+            if not isinstance(raw_decision, str):
+                result[name] = unknown('invalid_decision_type')
+                continue
+            decision=raw_decision.strip().casefold().replace('-', '_').replace(' ', '_')
             if decision in uncertainty:
-                decision = 'uncertain'
-            if decision not in {'match', 'mismatch', 'uncertain', 'not_scored'}:
-                raise ValueError('ai_profile_review_dimension_decision_invalid:' + name + ':' + decision[:70])
-            normalized[name] = {
-                'decision': decision,
-                'confidence': datum.get('confidence'),
-                'evidence': datum.get('evidence'),
-                'rationale': datum.get('rationale'),
-                'reason': datum.get('reason'),
+                decision='uncertain'
+            if decision not in ('match','mismatch','uncertain','not_scored'):
+                result[name] = unknown('unrecognized_ai_decision:' + decision[:70])
+                continue
+            result[name] = {
+                'decision':decision, 'confidence':datum.get('confidence'),
+                'evidence':datum.get('evidence'), 'rationale':datum.get('rationale'),
+                'reason':datum.get('reason'),
             }
-        return normalized
+        return result
 
     @staticmethod
     def _validate_local_result(value: Any, *, model: str) -> dict[str, Any]:
         if not isinstance(value, dict): raise ValueError("ai_profile_review_json_object_required")
-        confidence = value.get("confidence", 0.0)
-        if not isinstance(confidence, (int,float)): raise ValueError("ai_profile_review_confidence_required")
-        confidence = float(confidence)
-        if not 0.0 <= confidence <= 1.0: raise ValueError("ai_profile_review_confidence_out_of_range")
+        confidence = value.get("confidence")
+        if confidence is not None:
+            if isinstance(confidence, bool) or not isinstance(confidence, (int, float)):
+                raise ValueError("ai_profile_review_confidence_required")
+            confidence = float(confidence)
+            if not 0.0 <= confidence <= 1.0:
+                raise ValueError("ai_profile_review_confidence_out_of_range")
         dimensions = LocalAIProvider._normalize_local_dimensions(value.get("dimensions"))
         coverage = _profile_ai_coverage(dimensions)
         dimensions = coverage["dimensions"]
+        if confidence is None and coverage["scored_count"] > 0:
+            raise ValueError("ai_profile_review_confidence_required_for_scored_dimensions")
         summary = value.get("summary")
         if summary is not None and not isinstance(summary, str): raise ValueError("ai_profile_review_summary_string_required")
         sources = value.get("sources") if isinstance(value.get("sources"), list) else []
-        return {"schema":"EZStudioLab_assistant.ai-profile-review.v1","status":"completed","provider":"local","model":model,"confidence":round(confidence,3),"summary":summary.strip() if isinstance(summary,str) else None,"dimensions":dimensions,"coverage":coverage,"sources":[x for x in sources if isinstance(x,dict)][:20]}
+        return {"schema":"EZStudioLab_assistant.ai-profile-review.v1","status":"completed","provider":"local","model":model,"confidence":(round(confidence,3) if confidence is not None else None),"summary":summary.strip() if isinstance(summary,str) else None,"dimensions":dimensions,"coverage":coverage,"sources":[x for x in sources if isinstance(x,dict)][:20]}
 
     def review_profile(self, row: dict[str, Any], research: dict[str, Any]) -> dict[str, Any]:
+        health_ns=time.perf_counter_ns()
         ready, reason = self._health()
+        trace_emit("qwen.health",{"ready":ready,"reason":reason},start_ns=health_ns)
         if not ready:
             return {"schema":"EZStudioLab_assistant.ai-profile-review.v1","status":"unavailable","provider":"local","model":self.model_path,"confidence":0.0,"summary":None,"dimensions":{},"sources":[],"reason":reason or "local_ai_server_unavailable"}
         profile_view = (((row.get("diagnostics") or {}).get("profile_view")) if isinstance(row.get("diagnostics"),dict) else {}) or {}
+        ev_ns=time.perf_counter_ns()
         evidence = _local_profile_evidence(row, research)
+        trace_emit("qwen.evidence.build",start_ns=ev_ns)
+        trace_snap("qwen.evidence",evidence)
         preset, preset_hash = load_review_preset("profile")
+        trace_snap("qwen.preset",{"id":preset.get("id"),"sha256":preset_hash,"phase":preset.get("phase"),"settings":{k:v for k,v in preset.items() if k!="prompt"}})
         system_prompt = preset["prompt"]
         try:
+            budget_ns=time.perf_counter_ns()
             evidence_json = _local_profile_budget(evidence, system_prompt, max_chars=preset["context_max_chars"])
+            trace_emit("qwen.context_budget",{"original_chars":len(json.dumps(evidence,ensure_ascii=False)),"sent_chars":len(evidence_json),"max_chars":preset["context_max_chars"]},start_ns=budget_ns)
+            trace_snap("qwen.evidence.sent",json.loads(evidence_json))
         except ValueError as exc:
             return {"schema":"EZStudioLab_assistant.ai-profile-review.v1","status":"error","provider":"local","model":self.model_path,"confidence":0.0,"summary":None,"dimensions":{},"sources":[],"reason":str(exc)}
-        body = {"model":"local","messages":[{"role":"system","content":system_prompt},{"role":"user","content":evidence_json}],"temperature":preset["temperature"],"max_tokens":preset["max_tokens"],"stream":False}
+        body = {"model":"local","messages":[{"role":"system","content":system_prompt},{"role":"user","content":evidence_json}],"temperature":preset["temperature"],"max_tokens":preset["max_tokens"],"stream":False,"response_format":{"type":"json_object"}}
         req = urllib.request.Request(self.endpoint + "/v1/chat/completions", data=json.dumps(body,ensure_ascii=False).encode("utf-8"), headers={"Content-Type":"application/json","Accept":"application/json"}, method="POST")
+        trace_snap("qwen.http.request",{"url":self.endpoint + "/v1/chat/completions","headers":dict(req.header_items()),"body":body})
+        request_ns=time.perf_counter_ns()
         try:
             with urllib.request.urlopen(req, timeout=max(10.0,float(self.config.timeout_seconds))) as response:
-                envelope = json.loads(response.read(2_000_000).decode("utf-8"))
+                raw_response=response.read(2_000_000).decode("utf-8")
+                trace_snap("qwen.http.response",{"status":response.status,"headers":dict(response.headers),"body_raw":raw_response})
+                trace_emit("qwen.http.duration",start_ns=request_ns)
+                parse_ns=time.perf_counter_ns()
+                envelope = json.loads(raw_response)
+                trace_emit("qwen.envelope.parse",start_ns=parse_ns)
             choices = envelope.get("choices") if isinstance(envelope,dict) else None
             if not isinstance(choices,list) or not choices: raise ValueError("local_ai_choices_missing")
             finish_reason = choices[0].get("finish_reason")
@@ -456,13 +481,21 @@ class LocalAIProvider(AIReviewProvider):
             message = choices[0].get("message") if isinstance(choices[0],dict) else None
             content = message.get("content") if isinstance(message,dict) else None
             if not isinstance(content,str) or not content.strip(): raise ValueError("local_ai_content_missing")
+            parse_ns=time.perf_counter_ns()
             value = self._decode_local_json(content)
+            trace_emit("qwen.content.parse",start_ns=parse_ns)
+            trace_snap("qwen.content.decoded",value)
+            validate_ns=time.perf_counter_ns()
             result = self._validate_local_result(value, model=self.model_path)
+            trace_emit("qwen.validate.duration",start_ns=validate_ns)
+            trace_snap("qwen.validated",result)
             result["review_preset"] = {"id": preset["id"], "phase": preset["phase"], "sha256": preset_hash}
             return result
         except urllib.error.HTTPError as exc:
+            trace_emit("qwen.http.error",{"status":exc.code,"body":exc.read().decode("utf-8","replace")},start_ns=request_ns)
             return {"schema":"EZStudioLab_assistant.ai-profile-review.v1","status":"error","provider":"local","model":self.model_path,"confidence":0.0,"summary":None,"dimensions":{},"sources":[],"reason":("local_ai_http_400_context_possible" if int(getattr(exc,'code',0)) == 400 else f"local_ai_http_{int(getattr(exc,'code',0))}")}
         except Exception as exc:
+            trace_emit("qwen.error",{"type":type(exc).__name__,"message":str(exc)},start_ns=request_ns)
             return {"schema":"EZStudioLab_assistant.ai-profile-review.v1","status":"error","provider":"local","model":self.model_path,"confidence":0.0,"summary":None,"dimensions":{},"sources":[],"reason":f"{type(exc).__name__}:{exc}"[:500]}
 
 

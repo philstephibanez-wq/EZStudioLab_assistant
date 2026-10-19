@@ -131,8 +131,8 @@ if ($Action -eq 'status') {
   if (@(Get-ProfileProcesses).Count -gt 0) { throw 'PROFILE_TASK_INSTALL_REQUIRES_WORKER_STOPPED' }
   if (-not (Test-Path -LiteralPath $python -PathType Leaf)) { throw 'PROFILE_PYTHON_MISSING' }
   if (-not (Test-Path -LiteralPath $worker -PathType Leaf)) { throw 'PROFILE_WORKER_MISSING' }
-  $action=New-ScheduledTaskAction -Execute $python -Argument ('-u "' + $supervisor + '"') -WorkingDirectory $root
-  Set-ScheduledTask -TaskName $taskName -Action $action | Out-Null
+  $taskExecAction=New-ScheduledTaskAction -Execute $python -Argument ('-u "' + $supervisor + '"') -WorkingDirectory $root
+  Set-ScheduledTask -TaskName $taskName -Action $taskExecAction | Out-Null
   Write-Output 'PROFILE_TASK_SUPERVISOR_INSTALLED'
 } elseif ($Action -eq 'start') {
   Start-Profile
