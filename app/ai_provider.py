@@ -348,11 +348,27 @@ class LocalAIProvider(AIReviewProvider):
 
     @staticmethod
     def _normalize_local_dimensions(value: Any) -> dict[str, Any]:
-        """Accept Qwen object/list JSON shapes; never invent evidence or scores."""
+        """Normalize known Qwen dimension names and uncertainty, without inventing evidence."""
         known = ('genre', 'instrumentation', 'lead_vocal', 'backing_vocals', 'choir')
-        alias = {'lead_vocals': 'lead_vocal'}
+        alias = {
+            'genres': 'genre', 'music_genre': 'genre', 'musical_genre': 'genre',
+            'instruments': 'instrumentation', 'instrument': 'instrumentation',
+            'lead_vocals': 'lead_vocal', 'lead_voice': 'lead_vocal',
+            'main_vocal': 'lead_vocal', 'main_vocals': 'lead_vocal',
+            'background_vocals': 'backing_vocals', 'background_vocal': 'backing_vocals',
+            'backing_vocal': 'backing_vocals', 'backing_voice': 'backing_vocals',
+            'choirs': 'choir', 'choral_vocals': 'choir',
+        }
+        def canonical_name(raw):
+            if not isinstance(raw, str):
+                raise ValueError('ai_profile_review_dimension_name_required')
+            key = raw.strip().casefold().replace('-', '_').replace(' ', '_')
+            name = alias.get(key, key)
+            if name not in known:
+                raise ValueError('ai_profile_review_dimension_unknown:' + key[:70])
+            return name
         if isinstance(value, dict):
-            items = [(alias.get(k, k), v) for k, v in value.items()]
+            items = list(value.items())
         elif isinstance(value, list):
             items = []
             for row in value:
@@ -360,33 +376,37 @@ class LocalAIProvider(AIReviewProvider):
                     raise ValueError('ai_profile_review_dimension_item_invalid')
                 name = row.get('name', row.get('dimension'))
                 if isinstance(name, str):
-                    name = alias.get(name, name)
                     items.append((name, {k: v for k, v in row.items() if k not in ('name', 'dimension')}))
                 else:
-                    present = [k for k in row if alias.get(k, k) in known]
+                    present = [k for k in row if k not in ('decision', 'confidence', 'evidence', 'rationale', 'reason')]
                     if len(present) != 1:
                         raise ValueError('ai_profile_review_dimension_name_required')
                     key = present[0]
                     datum = row[key]
                     if isinstance(datum, dict):
-                        items.append((alias.get(key, key), datum))
+                        items.append((key, datum))
                     else:
-                        items.append((alias.get(key, key), {**{k:v for k,v in row.items() if k != key}, 'decision': datum}))
+                        items.append((key, {**{k: v for k, v in row.items() if k != key}, 'decision': datum}))
         else:
             raise ValueError('ai_profile_review_dimensions_object_or_list_required')
         normalized = {}
-        for name, datum in items:
-            if name not in known:
-                raise ValueError('ai_profile_review_dimension_unknown')
+        for raw_name, datum in items:
+            name = canonical_name(raw_name)
             if name in normalized:
-                raise ValueError('ai_profile_review_dimension_duplicate')
+                raise ValueError('ai_profile_review_dimension_duplicate:' + name)
             if isinstance(datum, str):
                 datum = {'decision': datum}
             if not isinstance(datum, dict):
-                raise ValueError('ai_profile_review_dimension_value_invalid')
+                raise ValueError('ai_profile_review_dimension_value_invalid:' + name)
             decision = datum.get('decision', 'not_scored')
-            if decision not in {'match','mismatch','uncertain','not_scored'}:
-                raise ValueError('ai_profile_review_dimension_decision_invalid')
+            if not isinstance(decision, str):
+                raise ValueError('ai_profile_review_dimension_decision_invalid:' + name + ':non_string')
+            decision = decision.strip().casefold().replace('-', '_').replace(' ', '_')
+            uncertainty = {'possible', 'possibly', 'inconclusive', 'inconclusif', 'indeterminate', 'indéterminé', 'ambiguous', 'maybe', 'unclear'}
+            if decision in uncertainty:
+                decision = 'uncertain'
+            if decision not in {'match', 'mismatch', 'uncertain', 'not_scored'}:
+                raise ValueError('ai_profile_review_dimension_decision_invalid:' + name + ':' + decision[:70])
             normalized[name] = {
                 'decision': decision,
                 'confidence': datum.get('confidence'),
