@@ -21,6 +21,7 @@ def baseline():
         'provider': 'local',
         'prompt': 'Review the profile against independent evidence. ' * 8,
         'output_contract': 'Return five separate dimensions with evidence provenance. ' * 5,
+        'dimension_normalization': {"aliases":{"genres":"genre","music_genre":"genre","musical_genre":"genre","instruments":"instrumentation","instrument":"instrumentation","lead_vocals":"lead_vocal","lead_voice":"lead_vocal","main_vocal":"lead_vocal","main_vocals":"lead_vocal","background_vocals":"backing_vocals","background_vocal":"backing_vocals","backing_vocal":"backing_vocals","backing_voice":"backing_vocals","choirs":"choir","choral_vocals":"choir"},"uncertainty":["possible","possibly","inconclusive","inconclusif","indeterminate","indéterminé","ambiguous","maybe","unclear"],"vocal_group":"vocals"},
         'temperature': 0.1,
         'max_tokens': 3072,
         'context_max_chars': 6500,
@@ -107,6 +108,20 @@ class DeclarativeContract(unittest.TestCase):
         self.assertEqual(public['recording_credits'][0]['instruments'], ['guitar'])
         self.assertEqual(public['recording_credits'][0]['source_url'],
                          'https://musicbrainz.org/recording/example')
+
+    def test_declarative_alias_without_python_change(self):
+        custom = baseline()['dimension_normalization'].copy()
+        custom['aliases'] = {**custom['aliases'], 'main_singer': 'lead_vocal'}
+        result = LocalAIProvider._normalize_local_dimensions(
+            {'main_singer': {'decision': 'uncertain'}}, normalization=custom)
+        self.assertEqual(result['lead_vocal']['decision'], 'uncertain')
+
+    def test_missing_normalization_fails_closed(self):
+        broken = baseline()
+        del broken['dimension_normalization']
+        with patch('pathlib.Path.read_bytes', return_value=encoded(broken)):
+            with self.assertRaisesRegex(ValueError, 'invalid_keys'):
+                load_review_preset(path=MAIN_PRESET)
 
     def test_missing_output_contract_fails_closed(self):
         broken = baseline()

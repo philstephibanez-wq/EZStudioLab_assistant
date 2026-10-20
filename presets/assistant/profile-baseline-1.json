@@ -7,5 +7,36 @@
   "temperature": 0.1,
   "max_tokens": 3072,
   "context_max_chars": 6500,
-  "output_contract": "PROFILE OUTPUT CONTRACT: Return one JSON object containing dimensions with EXACTLY genre, instrumentation, lead_vocal, backing_vocals, choir. Each dimension is an object with decision (match, mismatch, uncertain, not_scored), confidence (number 0 to 1 only for independently supported match/mismatch, otherwise null), evidence array of source-specific facts, rationale, and reason. A global confidence never replaces dimension confidence. LAB predictions, broad artist/release genre tags, absence of credits and model prose are NOT independent evidence. Never infer absence of choir from absence of credits. With no independently verified dimension evidence, output not_scored, confidence null, evidence []. Vocal keys must not be nested beneath generic vocals. MusicBrainz recording_genres citations must have source=MusicBrainz, scope=recording, source_url identical to provided reference, and exact genre. Recording-level MusicBrainz credits may support instruments or vocal subroles only with matching source=MusicBrainz, scope=recording, source_url and exact role/instrument. Wikipedia song genre evidence counts only if an exact sentence in the form '<title> is a <genre> song by <artist>.' appears in an identity-matched page and is cited by source=Wikipedia, scope=song_statement, source_url, genre and quote. General biographies and unrelated pages cannot score. Do not invent evidence, references, credits, conclusions, or numeric confidence."
+  "output_contract": "PROFILE OUTPUT CONTRACT: Return one JSON object containing dimensions with EXACTLY genre, instrumentation, lead_vocal, backing_vocals, choir. Each dimension is an object with decision (match, mismatch, uncertain, not_scored), confidence (number 0 to 1 only for independently supported match/mismatch, otherwise null), evidence array of source-specific facts, rationale, and reason. A global confidence never replaces dimension confidence. LAB predictions, broad artist/release genre tags, absence of credits and model prose are NOT independent evidence. Never infer absence of choir from absence of credits. With no independently verified dimension evidence, output not_scored, confidence null, evidence []. Vocal keys must not be nested beneath generic vocals. MusicBrainz recording_genres citations must have source=MusicBrainz, scope=recording, source_url identical to provided reference, and exact genre. Recording-level MusicBrainz credits may support instruments or vocal subroles only with matching source=MusicBrainz, scope=recording, source_url and exact role/instrument. Wikipedia song genre evidence counts only if an exact sentence in the form '<title> is a <genre> song by <artist>.' appears in an identity-matched page and is cited by source=Wikipedia, scope=song_statement, source_url, genre and quote. General biographies and unrelated pages cannot score. Do not invent evidence, references, credits, conclusions, or numeric confidence.",
+  "dimension_normalization": {
+    "aliases": {
+      "genres": "genre",
+      "music_genre": "genre",
+      "musical_genre": "genre",
+      "instruments": "instrumentation",
+      "instrument": "instrumentation",
+      "lead_vocals": "lead_vocal",
+      "lead_voice": "lead_vocal",
+      "main_vocal": "lead_vocal",
+      "main_vocals": "lead_vocal",
+      "background_vocals": "backing_vocals",
+      "background_vocal": "backing_vocals",
+      "backing_vocal": "backing_vocals",
+      "backing_voice": "backing_vocals",
+      "choirs": "choir",
+      "choral_vocals": "choir"
+    },
+    "uncertainty": [
+      "possible",
+      "possibly",
+      "inconclusive",
+      "inconclusif",
+      "indeterminate",
+      "indéterminé",
+      "ambiguous",
+      "maybe",
+      "unclear"
+    ],
+    "vocal_group": "vocals"
+  }
 }

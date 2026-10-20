@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 
 PHASES = ('profile', 'stems', 'chords_n', 'lyrics')
-ALLOWED = {'schema', 'id', 'phase', 'provider', 'prompt', 'output_contract', 'temperature', 'max_tokens', 'context_max_chars'}
+ALLOWED = {'schema', 'id', 'phase', 'provider', 'prompt', 'output_contract', 'dimension_normalization', 'temperature', 'max_tokens', 'context_max_chars'}
 # On XPS this must be an explicitly configured UNC/read-only MAIN path.
 # Never fall back to an XPS-local preset.
 DEFAULT_PATH = None
@@ -41,6 +41,22 @@ def load_review_preset(phase='profile', path=None):
     contract = data['output_contract']
     if not isinstance(contract, str) or not 100 <= len(contract) <= 12000:
         raise ValueError('review_preset_invalid_output_contract')
+    norm = data['dimension_normalization']
+    canonical = {'genre', 'instrumentation', 'lead_vocal', 'backing_vocals', 'choir'}
+    if not isinstance(norm, dict) or set(norm) != {'aliases', 'uncertainty', 'vocal_group'}:
+        raise ValueError('review_preset_invalid_normalization')
+    aliases = norm['aliases']
+    if not isinstance(aliases, dict) or len(aliases) > 48 or any(
+        not isinstance(k, str) or not k or len(k) > 40 or not isinstance(v, str) or v not in canonical
+        or k in canonical for k, v in aliases.items()
+    ):
+        raise ValueError('review_preset_invalid_aliases')
+    if not isinstance(norm['uncertainty'], list) or len(norm['uncertainty']) > 30 or any(
+        not isinstance(s, str) or not s or len(s) > 40 for s in norm['uncertainty']
+    ):
+        raise ValueError('review_preset_invalid_uncertainty')
+    if not isinstance(norm['vocal_group'], str) or norm['vocal_group'] in canonical or not norm['vocal_group']:
+        raise ValueError('review_preset_invalid_vocal_group')
     t = data['temperature']
     if isinstance(t, bool) or not isinstance(t, (int, float)) or not 0 <= t <= 1:
         raise ValueError('review_preset_invalid_temperature')

@@ -535,20 +535,18 @@ class LocalAIProvider(AIReviewProvider):
         raise ValueError("local_ai_json_object_required")
 
     @staticmethod
-    def _normalize_local_dimensions(value: Any) -> dict[str, Any]:
+    def _normalize_local_dimensions(value: Any, normalization: dict | None = None) -> dict[str, Any]:
         """Normalize advisory AI output, never infer a musical match from an unknown label."""
         canonical = ('genre', 'instrumentation', 'lead_vocal', 'backing_vocals', 'choir')
-        aliases = {
-            'genres': 'genre', 'music_genre': 'genre', 'musical_genre': 'genre',
-            'instruments': 'instrumentation', 'instrument': 'instrumentation',
-            'lead_vocals': 'lead_vocal', 'lead_voice': 'lead_vocal',
-            'main_vocal': 'lead_vocal', 'main_vocals': 'lead_vocal',
-            'background_vocals': 'backing_vocals', 'background_vocal': 'backing_vocals',
-            'backing_vocal': 'backing_vocals', 'backing_voice': 'backing_vocals',
-            'choirs': 'choir', 'choral_vocals': 'choir',
+        # Compatible default for direct validators; runtime always supplies MAIN preset.
+        config = normalization if normalization is not None else {
+            "aliases": {"genres":"genre","music_genre":"genre","musical_genre":"genre","instruments":"instrumentation","instrument":"instrumentation","lead_vocals":"lead_vocal","lead_voice":"lead_vocal","main_vocal":"lead_vocal","main_vocals":"lead_vocal","background_vocals":"backing_vocals","background_vocal":"backing_vocals","backing_vocal":"backing_vocals","backing_voice":"backing_vocals","choirs":"choir","choral_vocals":"choir"},
+            "uncertainty": ["possible","possibly","inconclusive","inconclusif","indeterminate","indéterminé","ambiguous","maybe","unclear"],
+            "vocal_group": "vocals",
         }
-        uncertainty = {'possible', 'possibly', 'inconclusive', 'inconclusif',
-                       'indeterminate', 'indéterminé', 'ambiguous', 'maybe', 'unclear'}
+        aliases = config["aliases"]
+        uncertainty = set(config["uncertainty"])
+        vocal_group = config["vocal_group"]
         def unknown(reason: str) -> dict[str, Any]:
             return {'decision':'not_scored', 'confidence':None, 'evidence':[],
                     'rationale':'', 'reason':reason}
@@ -576,7 +574,7 @@ class LocalAIProvider(AIReviewProvider):
         # as evidence for lead, backing or choir.
         expanded = []
         for raw_name, datum in items:
-            if isinstance(raw_name, str) and raw_name.strip().casefold() == 'vocals' and isinstance(datum, dict):
+            if isinstance(raw_name, str) and raw_name.strip().casefold() == vocal_group and isinstance(datum, dict):
                 for child, child_value in datum.items():
                     child_key = str(child).strip().casefold().replace('-', '_').replace(' ', '_')
                     if aliases.get(child_key, child_key) in ('lead_vocal', 'backing_vocals', 'choir'):
@@ -620,7 +618,7 @@ class LocalAIProvider(AIReviewProvider):
         return result
 
     @staticmethod
-    def _validate_local_result(value: Any, *, model: str, sent_evidence: dict | None = None) -> dict[str, Any]:
+    def _validate_local_result(value: Any, *, model: str, sent_evidence: dict | None = None, normalization: dict | None = None) -> dict[str, Any]:
         if not isinstance(value, dict): raise ValueError("ai_profile_review_json_object_required")
         confidence = value.get("confidence")
         if confidence is not None:
@@ -634,18 +632,17 @@ class LocalAIProvider(AIReviewProvider):
         # independent-evidence validator; do not infer or fabricate claims.
         raw_dimensions = value.get("dimensions")
         if raw_dimensions is None:
-            accepted_root_keys = {
-                'genre', 'genres', 'music_genre', 'musical_genre',
-                'instrumentation', 'instruments', 'instrument',
-                'lead_vocal', 'lead_vocals', 'lead_voice', 'main_vocal', 'main_vocals',
-                'vocals', 'backing_vocals', 'backing_vocal', 'backing_voice',
-                'background_vocals', 'background_vocal', 'choir', 'choirs', 'choral_vocals',
-            }
+            canonical_keys = {'genre', 'instrumentation', 'lead_vocal', 'backing_vocals', 'choir'}
+            accepted_root_keys = canonical_keys | (set(normalization['aliases']) | {normalization['vocal_group']} if normalization else {
+                'genre', 'genres', 'music_genre', 'musical_genre', 'instrumentation', 'instruments', 'instrument',
+                'lead_vocal', 'lead_vocals', 'lead_voice', 'main_vocal', 'main_vocals', 'vocals', 'backing_vocals',
+                'backing_vocal', 'backing_voice', 'background_vocals', 'background_vocal', 'choir', 'choirs', 'choral_vocals',
+            })
             raw_dimensions = {
                 key: item for key, item in value.items()
                 if key in accepted_root_keys
             }
-        dimensions = LocalAIProvider._normalize_local_dimensions(raw_dimensions)
+        dimensions = LocalAIProvider._normalize_local_dimensions(raw_dimensions, normalization=normalization)
         dimensions = _verified_dimension_evidence(dimensions, sent_evidence or {})
         coverage = _profile_ai_coverage(dimensions)
         dimensions = coverage["dimensions"]
@@ -720,7 +717,7 @@ class LocalAIProvider(AIReviewProvider):
             trace_emit("qwen.content.parse",start_ns=parse_ns)
             trace_snap("qwen.content.decoded",value)
             validate_ns=time.perf_counter_ns()
-            result = self._validate_local_result(value, model=self.model_path, sent_evidence=json.loads(evidence_json))
+            result = self._validate_local_result(value, model=self.model_path, sent_evidence=json.loads(evidence_json), normalization=preset['dimension_normalization'])
             trace_emit("qwen.validate.duration",start_ns=validate_ns)
             trace_snap("qwen.validated",result)
             result["review_preset"] = {"id": preset["id"], "phase": preset["phase"], "sha256": preset_hash}
