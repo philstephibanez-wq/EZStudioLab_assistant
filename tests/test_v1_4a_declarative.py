@@ -20,7 +20,7 @@ def baseline():
         'provider': 'local',
         'prompt': 'Review the profile against independent evidence. ' * 8,
         'temperature': 0.1,
-        'max_tokens': 1200,
+        'max_tokens': 3072,
         'context_max_chars': 6500,
     }
 
@@ -37,8 +37,17 @@ class DeclarativeContract(unittest.TestCase):
         with patch('pathlib.Path.read_bytes', return_value=encoded(baseline())):
             preset, digest = load_review_preset(path=MAIN_PRESET)
         self.assertEqual(preset['temperature'], 0.1)
-        self.assertEqual(preset['max_tokens'], 1200)
+        self.assertEqual(preset['max_tokens'], 3072)
         self.assertEqual(len(digest), 64)
+
+    def test_repository_preset_matches_budget_contract(self):
+        path = ROOT / 'presets' / 'assistant' / 'profile-baseline-1.json'
+        data = json.loads(path.read_text(encoding='utf-8'))
+        self.assertEqual(data['max_tokens'], baseline()['max_tokens'])
+        self.assertEqual(data['context_max_chars'], baseline()['context_max_chars'])
+        self.assertEqual(data['temperature'], baseline()['temperature'])
+        self.assertEqual(data['schema'], baseline()['schema'])
+        self.assertEqual(data['phase'], 'profile')
 
     def test_missing_path_fails_closed(self):
         with patch.dict('os.environ', {'EZSTUDIOLAB_REVIEW_PRESET_PATH': ''}):
