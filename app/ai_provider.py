@@ -188,8 +188,21 @@ def _local_profile_evidence(row, research):
             if isinstance(label, str) and label.strip():
                 genre_facts.append({'source':'MusicBrainz','scope':'recording',
                                     'source_url':url,'genre':label.strip()[:80]})
+    # Wikipedia is available as an identity-matched quotation source, not as a
+    # machine-verifiable dimension assertion. Preserve bounded text for review.
+    wikipedia_quotes = []
+    for source in verified_sources:
+        if source.get('source') != 'Wikipedia':
+            continue
+        url = source.get('url')
+        extract = source.get('extract')
+        if isinstance(url, str) and url.startswith('https://en.wikipedia.org/wiki/') and isinstance(extract, str):
+            wikipedia_quotes.append({
+                'source': 'Wikipedia', 'source_url': url,
+                'scope': 'identity_matched_page', 'extract': extract[:2500],
+            })
     # Explicitly keep reference metadata if present, but never raw website bodies.
-    refs = {'recording_credits': credits[:12], 'recording_genres': genre_facts[:12]}
+    refs = {'recording_credits': credits[:12], 'recording_genres': genre_facts[:12], 'wikipedia_quotes': wikipedia_quotes[:2]}
     for key in ('identity', 'genres', 'genre_labels', 'instruments', 'instrumentation', 'vocals', 'matches', 'references', 'sources'):
         value = research.get(key)
         if isinstance(value, list):
@@ -236,7 +249,7 @@ def _local_profile_budget(evidence, system_prompt, *, max_chars=6500):
         "tempo", "bpm", "meter", "key", "rhythm", "semantic", "clap",
     )
     research_priority = (
-        "recording_credits", "recording_genres", "identity", "genres", "genre_labels", "instruments", "instrumentation",
+        "recording_credits", "recording_genres", "wikipedia_quotes", "identity", "genres", "genre_labels", "instruments", "instrumentation",
         "vocals", "matches", "references", "sources", "warnings",
     )
     selected_profile = {key: profile[key] for key in profile_priority if key in profile}
@@ -612,7 +625,7 @@ class LocalAIProvider(AIReviewProvider):
             "NOT independent evidence. Never infer no choir from absent credits. "
             "If no dimension-level external evidence exists, use not_scored with "
             "confidence null and evidence []. Do not nest these keys in vocals. "
-            "If MusicBrainz recording_genres supplies a genre, cite exactly the supplied genre string with source=MusicBrainz, scope=recording, source_url, and genre. Artist or release tags cannot support a match. If a recording-level MusicBrainz credit directly supports a dimension, cite it as an evidence object containing source=MusicBrainz, scope=recording, source_url (identical to the supplied credit URL), role, and instrument if applicable. Other dimension decisions must be not_scored until independent typed proof is available. Do not invent references, credits or confidence values."
+            "If MusicBrainz recording_genres supplies a genre, cite exactly the supplied genre string with source=MusicBrainz, scope=recording, source_url, and genre. Artist or release tags cannot support a match. If a recording-level MusicBrainz credit directly supports a dimension, cite it as an evidence object containing source=MusicBrainz, scope=recording, source_url (identical to the supplied credit URL), role, and instrument if applicable. Wikipedia extracts are contextual only and NEVER suffice alone to mark a dimension as match or mismatch; quote them as provisional review notes, not verified evidence. Other dimension decisions must be not_scored until independent typed proof is available. Do not invent references, credits or confidence values."
         )
         system_prompt = preset["prompt"] + output_contract
         try:
