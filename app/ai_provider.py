@@ -261,6 +261,17 @@ def _local_profile_budget(evidence, system_prompt, *, max_chars=6500):
         compact_research = _local_profile_compact(
             selected_research, max_depth=depth, list_limit=elements, text_limit=text
         )
+        # Recording-scoped facts are the only independently verifiable scoring
+        # inputs. Generic depth compaction replaces their nested fields with
+        # None, which silently turns available evidence into abstentions.
+        # Preserve complete, bounded source facts from the already-filtered
+        # research; never synthesize or promote a missing source.
+        for typed_key in ("recording_genres", "recording_credits"):
+            facts = selected_research.get(typed_key)
+            if isinstance(facts, list) and facts:
+                compact_research[typed_key] = [
+                    dict(item) for item in facts[:elements] if isinstance(item, dict)
+                ]
         # The reduced representation must not silently drop the scientific
         # dimension containers. Preserve missing-data status per dimension.
         preserved = {
