@@ -265,6 +265,58 @@ def _local_profile_budget(evidence, system_prompt, *, max_chars=6500):
 
 
 
+def _verified_dimension_evidence(dimensions: dict, sent_evidence: dict) -> dict:
+    """Accept only recording-scoped public credits selected by the identity-matched researcher.
+
+    A model's own claims, LAB modules, and broad MusicBrainz tags cannot
+    authenticate themselves. Other external research awaits its own typed verifier.
+    """
+    public = sent_evidence.get('public_research') if isinstance(sent_evidence, dict) else {}
+    public = public if isinstance(public, dict) else {}
+    allowed = public.get('recording_credits')
+    allowed = allowed if isinstance(allowed, list) else []
+    result = {}
+    for name, item in dimensions.items():
+        if not isinstance(item, dict):
+            continue
+        original = item.get('evidence')
+        entries = original if isinstance(original, list) else []
+        accepted = []
+        for claim in entries:
+            if not isinstance(claim, dict) or claim.get('scope') != 'recording':
+                continue
+            if claim.get('source') != 'MusicBrainz':
+                continue
+            url = claim.get('source_url')
+            role = str(claim.get('role') or '').strip().casefold()
+            instrument = str(claim.get('instrument') or '').strip().casefold()
+            if not isinstance(url, str) or not url.startswith('https://musicbrainz.org/'):
+                continue
+            for credit in allowed:
+                if not isinstance(credit, dict) or credit.get('scope') != 'recording':
+                    continue
+                if credit.get('source_url') != url:
+                    continue
+                credited_role = str(credit.get('role') or '').strip().casefold()
+                credited_instruments = [str(v).strip().casefold() for v in credit.get('instruments', []) if isinstance(v, str)]
+                if name == 'instrumentation' and instrument and instrument in credited_instruments:
+                    accepted.append(dict(claim)); break
+                if name == 'lead_vocal' and 'lead vocal' in credited_role and role == credited_role:
+                    accepted.append(dict(claim)); break
+                if name == 'backing_vocals' and ('backing vocal' in credited_role or 'background vocal' in credited_role) and role == credited_role:
+                    accepted.append(dict(claim)); break
+                if name == 'choir' and ('choir' in credited_role or 'chorus' in credited_role) and role == credited_role:
+                    accepted.append(dict(claim)); break
+        normalized = dict(item)
+        if normalized.get('decision') in ('match','mismatch') and not accepted:
+            normalized['decision'] = 'not_scored'
+            normalized['confidence'] = None
+            normalized['reason'] = 'no_verified_external_dimension_evidence'
+        normalized['evidence'] = accepted
+        result[name] = normalized
+    return result
+
+
 def _profile_ai_coverage(dimensions: dict) -> dict:
     """Advisory-only coverage; never infer musical evidence from prose."""
     names = ('genre', 'instrumentation', 'lead_vocal', 'backing_vocals', 'choir')
@@ -462,7 +514,7 @@ class LocalAIProvider(AIReviewProvider):
         return result
 
     @staticmethod
-    def _validate_local_result(value: Any, *, model: str) -> dict[str, Any]:
+    def _validate_local_result(value: Any, *, model: str, sent_evidence: dict | None = None) -> dict[str, Any]:
         if not isinstance(value, dict): raise ValueError("ai_profile_review_json_object_required")
         confidence = value.get("confidence")
         if confidence is not None:
@@ -472,6 +524,7 @@ class LocalAIProvider(AIReviewProvider):
             if not 0.0 <= confidence <= 1.0:
                 raise ValueError("ai_profile_review_confidence_out_of_range")
         dimensions = LocalAIProvider._normalize_local_dimensions(value.get("dimensions"))
+        dimensions = _verified_dimension_evidence(dimensions, sent_evidence or {})
         coverage = _profile_ai_coverage(dimensions)
         dimensions = coverage["dimensions"]
         # Global confidence is optional; scored dimensions require their own confidence.
@@ -523,7 +576,7 @@ class LocalAIProvider(AIReviewProvider):
             "NOT independent evidence. Never infer no choir from absent credits. "
             "If no dimension-level external evidence exists, use not_scored with "
             "confidence null and evidence []. Do not nest these keys in vocals. "
-            "Do not invent references, credits or confidence values."
+            "If a recording-level MusicBrainz credit directly supports a dimension, cite it as an evidence object containing source=MusicBrainz, scope=recording, source_url (identical to the supplied credit URL), role, and instrument if applicable. Other dimension decisions must be not_scored until independent typed proof is available. Do not invent references, credits or confidence values."
         )
         system_prompt = preset["prompt"] + output_contract
         try:
@@ -558,7 +611,7 @@ class LocalAIProvider(AIReviewProvider):
             trace_emit("qwen.content.parse",start_ns=parse_ns)
             trace_snap("qwen.content.decoded",value)
             validate_ns=time.perf_counter_ns()
-            result = self._validate_local_result(value, model=self.model_path)
+            result = self._validate_local_result(value, model=self.model_path, sent_evidence=json.loads(evidence_json))
             trace_emit("qwen.validate.duration",start_ns=validate_ns)
             trace_snap("qwen.validated",result)
             result["review_preset"] = {"id": preset["id"], "phase": preset["phase"], "sha256": preset_hash}
