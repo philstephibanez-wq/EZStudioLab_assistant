@@ -1,12 +1,13 @@
 """Do not promote scientific model outputs to independent external evidence."""
 import ast
+import re
 from pathlib import Path
 import unittest
 
 source = Path(__file__).resolve().parents[1] / 'app' / 'ai_provider.py'
 tree = ast.parse(source.read_text(encoding='utf-8'))
-functions = [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name in ('_verified_dimension_evidence', '_profile_ai_coverage')]
-scope = {}
+functions = [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name in ('_verified_wikipedia_song_genre', '_verified_dimension_evidence', '_profile_ai_coverage')]
+scope = {'re': re}
 exec(compile(ast.fix_missing_locations(ast.Module(body=functions,type_ignores=[])),str(source),'exec'), scope)
 
 URL = 'https://musicbrainz.org/recording/example'
