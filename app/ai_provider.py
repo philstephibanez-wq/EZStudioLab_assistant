@@ -327,11 +327,21 @@ def _verified_dimension_evidence(dimensions: dict, sent_evidence: dict) -> dict:
                 credited_instruments = [str(v).strip().casefold() for v in credit.get('instruments', []) if isinstance(v, str)]
                 if name == 'instrumentation' and instrument and instrument in credited_instruments:
                     accepted.append(dict(claim)); break
-                if name == 'lead_vocal' and 'lead vocal' in credited_role and role == credited_role:
+                # MusicBrainz may represent vocal specialization in relation
+                # attributes (instruments), while the relation role is "vocal".
+                # A generic "vocal" credit does NOT establish lead vocals.
+                credited_terms = {credited_role, *credited_instruments}
+                if name == 'lead_vocal' and role == credited_role and (
+                    'lead vocal' in credited_terms or 'lead vocals' in credited_terms
+                ):
                     accepted.append(dict(claim)); break
-                if name == 'backing_vocals' and ('backing vocal' in credited_role or 'background vocal' in credited_role) and role == credited_role:
+                if name == 'backing_vocals' and role == credited_role and credited_terms.intersection(
+                    {'backing vocal', 'backing vocals', 'background vocal', 'background vocals'}
+                ):
                     accepted.append(dict(claim)); break
-                if name == 'choir' and ('choir' in credited_role or 'chorus' in credited_role) and role == credited_role:
+                if name == 'choir' and role == credited_role and credited_terms.intersection(
+                    {'choir', 'chorus', 'choral vocals', 'choir vocals'}
+                ):
                     accepted.append(dict(claim)); break
         normalized = dict(item)
         if normalized.get('decision') in ('match','mismatch') and not accepted:
