@@ -453,7 +453,20 @@ def _profile_ai_coverage(dimensions: dict) -> dict:
             conf = None
         else:
             scored += 1
+        # Musical judgement remains independent of documentary validation.
+        advisory = value.get('advisory')
+        if not isinstance(advisory, str) or not advisory.strip():
+            advisory = None
+        certainty = value.get('certainty')
+        if certainty not in ('faible', 'moyenne', 'forte', 'indéterminée'):
+            certainty = 'indéterminée'
+        recommendation = value.get('recommendation')
+        if not isinstance(recommendation, str) or not recommendation.strip():
+            recommendation = None
         details[name] = {
+            'advisory': advisory.strip()[:600] if advisory else None,
+            'certainty': certainty,
+            'recommendation': recommendation.strip()[:350] if recommendation else None,
             'decision': decision, 'confidence': float(conf) if conf is not None else None,
             'evidence': evidence if has_evidence else [],
             'rationale': value.get('rationale') or '',
@@ -614,6 +627,9 @@ class LocalAIProvider(AIReviewProvider):
                 'decision':decision, 'confidence':datum.get('confidence'),
                 'evidence':datum.get('evidence'), 'rationale':datum.get('rationale'),
                 'reason':datum.get('reason'),
+                'advisory': datum.get('advisory'),
+                'certainty': datum.get('certainty'),
+                'recommendation': datum.get('recommendation'),
             }
         return result
 
