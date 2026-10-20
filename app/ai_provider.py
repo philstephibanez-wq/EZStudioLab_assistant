@@ -629,7 +629,23 @@ class LocalAIProvider(AIReviewProvider):
             confidence = float(confidence)
             if not 0.0 <= confidence <= 1.0:
                 raise ValueError("ai_profile_review_confidence_out_of_range")
-        dimensions = LocalAIProvider._normalize_local_dimensions(value.get("dimensions"))
+        # Qwen can return the named dimensions at JSON root instead of nesting
+        # them in "dimensions". Reuse the exact same normalization and
+        # independent-evidence validator; do not infer or fabricate claims.
+        raw_dimensions = value.get("dimensions")
+        if raw_dimensions is None:
+            accepted_root_keys = {
+                'genre', 'genres', 'music_genre', 'musical_genre',
+                'instrumentation', 'instruments', 'instrument',
+                'lead_vocal', 'lead_vocals', 'lead_voice', 'main_vocal', 'main_vocals',
+                'vocals', 'backing_vocals', 'backing_vocal', 'backing_voice',
+                'background_vocals', 'background_vocal', 'choir', 'choirs', 'choral_vocals',
+            }
+            raw_dimensions = {
+                key: item for key, item in value.items()
+                if key in accepted_root_keys
+            }
+        dimensions = LocalAIProvider._normalize_local_dimensions(raw_dimensions)
         dimensions = _verified_dimension_evidence(dimensions, sent_evidence or {})
         coverage = _profile_ai_coverage(dimensions)
         dimensions = coverage["dimensions"]

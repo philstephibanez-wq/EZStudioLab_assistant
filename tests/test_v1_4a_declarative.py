@@ -8,7 +8,7 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'app'))
 from declarative_review import load_review_preset, PHASES
-from ai_provider import _local_profile_budget
+from ai_provider import _local_profile_budget, LocalAIProvider
 
 MAIN_PRESET = r'\\EZSTUDIO-MAIN\EZStudio_lab\presets\assistant\profile-baseline-1.json'
 
@@ -49,6 +49,36 @@ class DeclarativeContract(unittest.TestCase):
         self.assertEqual(data['temperature'], baseline()['temperature'])
         self.assertEqual(data['schema'], baseline()['schema'])
         self.assertEqual(data['phase'], 'profile')
+
+    def test_qwen_root_dimensions_are_not_silently_lost(self):
+        raw = {
+            'genre': {'decision': 'match', 'confidence': 0.9,
+                      'evidence': [{'source': 'MusicBrainz', 'scope': 'recording',
+                                    'source_url': 'https://musicbrainz.org/recording/a',
+                                    'genre': 'pop'}], 'rationale': 'typed genre'},
+            'instrumentation': {'decision': 'not_scored'},
+            'vocals': {'lead_vocal': {'decision': 'not_scored'}},
+            'backing_vocals': {'decision': 'not_scored'},
+            'choir': {'decision': 'not_scored'},
+        }
+        evidence = {'public_research': {'recording_genres': [
+            {'source': 'MusicBrainz', 'scope': 'recording',
+             'source_url': 'https://musicbrainz.org/recording/a', 'genre': 'pop'}
+        ]}}
+        reviewed = LocalAIProvider._validate_local_result(raw, model='test', sent_evidence=evidence)
+        self.assertEqual(reviewed['coverage']['scored_count'], 1)
+        self.assertEqual(reviewed['dimensions']['genre']['decision'], 'match')
+        self.assertEqual(reviewed['dimensions']['lead_vocal']['decision'], 'not_scored')
+        self.assertEqual(reviewed['dimensions']['instrumentation']['decision'], 'not_scored')
+
+    def test_qwen_root_dimensions_do_not_bypass_provenance(self):
+        raw = {'genre': {'decision': 'match', 'confidence': 0.9,
+                         'evidence': [{'source': 'MusicBrainz', 'scope': 'recording',
+                                       'source_url': 'https://musicbrainz.org/recording/a',
+                                       'genre': 'pop'}]}}
+        reviewed = LocalAIProvider._validate_local_result(raw, model='test', sent_evidence={})
+        self.assertEqual(reviewed['coverage']['scored_count'], 0)
+        self.assertEqual(reviewed['dimensions']['genre']['decision'], 'not_scored')
 
     def test_reduced_context_preserves_recording_scoped_evidence(self):
         evidence = {
