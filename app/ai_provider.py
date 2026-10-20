@@ -474,8 +474,7 @@ class LocalAIProvider(AIReviewProvider):
         dimensions = LocalAIProvider._normalize_local_dimensions(value.get("dimensions"))
         coverage = _profile_ai_coverage(dimensions)
         dimensions = coverage["dimensions"]
-        if confidence is None and coverage["scored_count"] > 0:
-            raise ValueError("ai_profile_review_confidence_required_for_scored_dimensions")
+        # Global confidence is optional; scored dimensions require their own confidence.
         summary = value.get("summary")
         if summary is not None and not isinstance(summary, str): raise ValueError("ai_profile_review_summary_string_required")
         # Model prose is not independent evidence. Without any substantiated
@@ -511,7 +510,7 @@ class LocalAIProvider(AIReviewProvider):
         # Runtime output contract, not a mutation of the MAIN-owned preset.
         # A missing per-dimension confidence is NOT supplied by the validator.
         output_contract = (
-            "\\nPROFILE OUTPUT CONTRACT: Return a JSON object with dimensions containing "
+            "\nPROFILE OUTPUT CONTRACT: Return a JSON object with dimensions containing "
             "exactly these five keys: genre, instrumentation, lead_vocal, backing_vocals, choir. "
             "For EACH key return an object with decision (match, mismatch, uncertain, "
             "or not_scored), confidence (a JSON number between 0 and 1 ONLY when "
