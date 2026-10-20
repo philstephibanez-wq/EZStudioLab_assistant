@@ -291,6 +291,45 @@ def _local_profile_budget(evidence, system_prompt, *, max_chars=6500):
 
 
 
+def _verified_wikipedia_song_genre(claim: dict, public: dict, identity: dict) -> bool:
+    """Admit only an exact, explicitly attributed song-genre sentence.
+
+    This checks documentary provenance, not acoustic correctness. Vague page
+    matches, artist biographies and inferred genres remain non-scoring.
+    """
+    if claim.get('source') != 'Wikipedia' or claim.get('scope') != 'song_statement':
+        return False
+    url, quote, genre = claim.get('source_url'), claim.get('quote'), claim.get('genre')
+    title, artist = identity.get('title'), identity.get('artist')
+    if not all(isinstance(v, str) and v.strip() for v in (url, quote, genre, title, artist)):
+        return False
+    if len(quote) > 320 or '\\n' in quote or '\\r' in quote:
+        return False
+    if genre.strip().casefold() not in {'pop', 'rock', 'folk', 'blues', 'jazz', 'country', 'disco', 'chanson'}:
+        return False
+    # Exact sentence, not a model paraphrase or a substring of an article
+    # about a different version / artist.
+    sentence = quote.strip()
+    if not re.fullmatch(
+        r'(?i)' + re.escape(title.strip()) +
+        r'\\s+is\\s+an?\\s+' + re.escape(genre.strip()) +
+        r'\\s+song\\s+by\\s+' + re.escape(artist.strip()) + r'[.!]?',
+        sentence
+    ):
+        return False
+    pages = public.get('wikipedia_quotes')
+    if not isinstance(pages, list):
+        return False
+    return any(
+        isinstance(page, dict) and page.get('source') == 'Wikipedia'
+        and page.get('scope') == 'identity_matched_page'
+        and page.get('source_url') == url
+        and isinstance(page.get('extract'), str)
+        and sentence in page['extract']
+        for page in pages
+    )
+
+
 def _verified_dimension_evidence(dimensions: dict, sent_evidence: dict) -> dict:
     """Accept only recording-scoped public credits selected by the identity-matched researcher.
 
@@ -303,6 +342,8 @@ def _verified_dimension_evidence(dimensions: dict, sent_evidence: dict) -> dict:
     allowed = allowed if isinstance(allowed, list) else []
     known_genres = public.get('recording_genres')
     known_genres = known_genres if isinstance(known_genres, list) else []
+    identity = sent_evidence.get('identity') if isinstance(sent_evidence, dict) else {}
+    identity = identity if isinstance(identity, dict) else {}
     result = {}
     for name, item in dimensions.items():
         if not isinstance(item, dict):
@@ -311,7 +352,12 @@ def _verified_dimension_evidence(dimensions: dict, sent_evidence: dict) -> dict:
         entries = original if isinstance(original, list) else []
         accepted = []
         for claim in entries:
-            if not isinstance(claim, dict) or claim.get('scope') != 'recording':
+            if not isinstance(claim, dict):
+                continue
+            if name == 'genre' and _verified_wikipedia_song_genre(claim, public, identity):
+                accepted.append(dict(claim))
+                continue
+            if claim.get('scope') != 'recording':
                 continue
             if claim.get('source') != 'MusicBrainz':
                 continue
@@ -625,7 +671,7 @@ class LocalAIProvider(AIReviewProvider):
             "NOT independent evidence. Never infer no choir from absent credits. "
             "If no dimension-level external evidence exists, use not_scored with "
             "confidence null and evidence []. Do not nest these keys in vocals. "
-            "If MusicBrainz recording_genres supplies a genre, cite exactly the supplied genre string with source=MusicBrainz, scope=recording, source_url, and genre. Artist or release tags cannot support a match. If a recording-level MusicBrainz credit directly supports a dimension, cite it as an evidence object containing source=MusicBrainz, scope=recording, source_url (identical to the supplied credit URL), role, and instrument if applicable. Wikipedia extracts are contextual only and NEVER suffice alone to mark a dimension as match or mismatch; quote them as provisional review notes, not verified evidence. Other dimension decisions must be not_scored until independent typed proof is available. Do not invent references, credits or confidence values."
+            "If MusicBrainz recording_genres supplies a genre, cite exactly the supplied genre string with source=MusicBrainz, scope=recording, source_url, and genre. Artist or release tags cannot support a match. If a recording-level MusicBrainz credit directly supports a dimension, cite it as an evidence object containing source=MusicBrainz, scope=recording, source_url (identical to the supplied credit URL), role, and instrument if applicable. Wikipedia genre citations are admissible ONLY for an exact quote in the form \\"<title> is a <genre> song by <artist>.\\" that appears verbatim in a supplied identity-matched page. Evidence must contain source=Wikipedia, scope=song_statement, source_url, genre and quote. Other Wikipedia statements are review-only, never sufficient for a scored dimension. Other dimension decisions must be not_scored until independent typed proof is available. Do not invent references, credits or confidence values."
         )
         system_prompt = preset["prompt"] + output_contract
         try:
