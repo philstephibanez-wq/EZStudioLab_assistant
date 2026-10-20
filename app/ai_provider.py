@@ -413,6 +413,19 @@ class LocalAIProvider(AIReviewProvider):
                         items.append((k, v if isinstance(v,dict) else {'decision':v}))
         else:
             return result
+        # Qwen may group separate named vocal dimensions under "vocals".
+        # Expand only explicit subkeys; never interpret a generic vocals claim
+        # as evidence for lead, backing or choir.
+        expanded = []
+        for raw_name, datum in items:
+            if isinstance(raw_name, str) and raw_name.strip().casefold() == 'vocals' and isinstance(datum, dict):
+                for child, child_value in datum.items():
+                    child_key = str(child).strip().casefold().replace('-', '_').replace(' ', '_')
+                    if aliases.get(child_key, child_key) in ('lead_vocal', 'backing_vocals', 'choir'):
+                        expanded.append((child, child_value))
+            else:
+                expanded.append((raw_name, datum))
+        items = expanded
         seen = set()
         for raw_name, datum in items:
             if not isinstance(raw_name, str):
