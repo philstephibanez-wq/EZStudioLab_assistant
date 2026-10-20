@@ -22,6 +22,7 @@ from profile_auto_review import (
 )
 from ai_provider import build_ai_provider_from_env
 from profile_trace import Trace, activate, enabled, emit, snap, purge
+from profile_report import publish_trace
 
 BASE = os.environ.get('EZSTUDIOLAB_ASSISTANT_BASE_URL', 'http://EZSTUDIO-MAIN:8702').rstrip('/')
 TOKEN = os.environ.get('EZSTUDIOLAB_ASSISTANT_TOKEN', '')
@@ -148,6 +149,7 @@ def once(client):
                 trace = Trace(rid)
             except Exception as trace_exc:
                 print('PROFILE_TRACE_INIT_ERROR ' + type(trace_exc).__name__ + ':' + str(trace_exc), flush=True)
+        outcome = None
         context = activate(trace) if trace else nullcontext()
         with context:
             try:
@@ -170,6 +172,11 @@ def once(client):
                 finally:
                     if trace:
                         trace.finish({'status': status, 'message': message})
+                        try:
+                            published = publish_trace(trace, outcome)
+                            print('PROFILE_REPORT=' + published, flush=True)
+                        except Exception as export_exc:
+                            print('PROFILE_REPORT_ERROR=' + type(export_exc).__name__ + ':' + str(export_exc)[:120], flush=True)
                         print('PROFILE_TRACE=' + str(trace.folder), flush=True)
 
 def main():
