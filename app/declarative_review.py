@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 
 PHASES = ('profile', 'stems', 'chords_n', 'lyrics')
-ALLOWED = {'schema', 'id', 'phase', 'provider', 'prompt', 'output_contract', 'dimension_normalization', 'temperature', 'max_tokens', 'context_max_chars'}
+ALLOWED = {'schema', 'id', 'phase', 'provider', 'prompt', 'output_contract', 'dimension_normalization', 'identity_resolution', 'temperature', 'max_tokens', 'context_max_chars'}
 # On XPS this must be an explicitly configured UNC/read-only MAIN path.
 # Never fall back to an XPS-local preset.
 DEFAULT_PATH = None
@@ -57,6 +57,15 @@ def load_review_preset(phase='profile', path=None):
         raise ValueError('review_preset_invalid_uncertainty')
     if not isinstance(norm['vocal_group'], str) or norm['vocal_group'] in canonical or not norm['vocal_group']:
         raise ValueError('review_preset_invalid_vocal_group')
+    identity = data['identity_resolution']
+    if not isinstance(identity, dict) or set(identity) != {'enabled', 'prompt', 'max_candidates', 'min_mb_score'}:
+        raise ValueError('review_preset_invalid_identity_resolution')
+    if not isinstance(identity['enabled'], bool) or not isinstance(identity['prompt'], str) or not 80 <= len(identity['prompt']) <= 2000:
+        raise ValueError('review_preset_invalid_identity_resolution')
+    for key, low, high in (('max_candidates', 1, 5), ('min_mb_score', 70, 100)):
+        value = identity[key]
+        if isinstance(value, bool) or not isinstance(value, int) or not low <= value <= high:
+            raise ValueError('review_preset_invalid_identity_resolution')
     t = data['temperature']
     if isinstance(t, bool) or not isinstance(t, (int, float)) or not 0 <= t <= 1:
         raise ValueError('review_preset_invalid_temperature')

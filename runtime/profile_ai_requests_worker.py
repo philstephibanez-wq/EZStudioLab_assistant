@@ -23,6 +23,7 @@ from profile_auto_review import (
 from ai_provider import build_ai_provider_from_env
 from profile_trace import Trace, activate, enabled, emit, snap, purge
 from profile_report import publish_trace
+from profile_identity import resolve_missing_artist
 
 BASE = os.environ.get('EZSTUDIOLAB_ASSISTANT_BASE_URL', 'http://EZSTUDIO-MAIN:8702').rstrip('/')
 TOKEN = os.environ.get('EZSTUDIOLAB_ASSISTANT_TOKEN', '')
@@ -75,8 +76,18 @@ def process(run_id, client):
     row = api('/internal/analysis/desktop/profile/reviews/run/' + str(run_id))['item']
     snap('lab.profile.row', row)
     ident = row.get('normalized_identity') or normalize_track_identity(row)
-    if not ident.get('title') or not ident.get('artist'):
-        raise RuntimeError('identite_musicale_incomplete')
+    if not ident.get('title'):
+        raise RuntimeError('titre_musical_absent')
+    if not ident.get('artist'):
+        candidate = resolve_missing_artist(ident['title'], build_ai_provider_from_env())
+        emit('identity.resolution', {'status': candidate['status'], 'candidate_count': candidate['candidate_count']})
+        if candidate['status'] == 'resolved':
+            ident = {**ident, 'artist': candidate['artist'], 'method': 'assistant_mb_title_artist_match',
+                     'requires_verification': True, 'confidence': None}
+            row = {**row, 'artist': candidate['artist'], 'normalized_identity': ident}
+        else:
+            # Do not invent a performer: public research returns an abstention.
+            row = {**row, 'normalized_identity': ident}
     started = time.perf_counter_ns()
     emit('research.begin', {'identity': ident})
     try:

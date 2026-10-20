@@ -21,6 +21,7 @@ def baseline():
         'provider': 'local',
         'prompt': 'Review the profile against independent evidence. ' * 8,
         'output_contract': 'Return five separate dimensions with evidence provenance. ' * 5,
+        'identity_resolution': {"enabled":true,"prompt":"Given an exact musical song title, propose up to three plausible recording artists. Return ONLY JSON of shape {\"artists\":[\"artist name\"]}. Never invent confidence or references. If unsure, return an empty artists list. This is candidate discovery only: MusicBrainz must independently confirm title-artist identity.","max_candidates":3,"min_mb_score":90},
         'dimension_normalization': {"aliases":{"genres":"genre","music_genre":"genre","musical_genre":"genre","instruments":"instrumentation","instrument":"instrumentation","lead_vocals":"lead_vocal","lead_voice":"lead_vocal","main_vocal":"lead_vocal","main_vocals":"lead_vocal","background_vocals":"backing_vocals","background_vocal":"backing_vocals","backing_vocal":"backing_vocals","backing_voice":"backing_vocals","choirs":"choir","choral_vocals":"choir"},"uncertainty":["possible","possibly","inconclusive","inconclusif","indeterminate","indéterminé","ambiguous","maybe","unclear"],"vocal_group":"vocals"},
         'temperature': 0.1,
         'max_tokens': 3072,
@@ -115,6 +116,13 @@ class DeclarativeContract(unittest.TestCase):
         result = LocalAIProvider._normalize_local_dimensions(
             {'main_singer': {'decision': 'uncertain'}}, normalization=custom)
         self.assertEqual(result['lead_vocal']['decision'], 'uncertain')
+
+    def test_identity_resolution_preset_required(self):
+        data = baseline()
+        del data['identity_resolution']
+        with patch('pathlib.Path.read_bytes', return_value=encoded(data)):
+            with self.assertRaisesRegex(ValueError, 'invalid_keys'):
+                load_review_preset(path=MAIN_PRESET)
 
     def test_missing_normalization_fails_closed(self):
         broken = baseline()

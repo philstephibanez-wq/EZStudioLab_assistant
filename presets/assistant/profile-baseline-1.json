@@ -38,5 +38,11 @@
       "unclear"
     ],
     "vocal_group": "vocals"
+  },
+  "identity_resolution": {
+    "enabled": true,
+    "prompt": "Given an exact musical song title, propose up to three plausible recording artists. Return ONLY JSON of shape {\"artists\":[\"artist name\"]}. Never invent confidence or references. If unsure, return an empty artists list. This is candidate discovery only: MusicBrainz must independently confirm title-artist identity.",
+    "max_candidates": 3,
+    "min_mb_score": 90
   }
 }
