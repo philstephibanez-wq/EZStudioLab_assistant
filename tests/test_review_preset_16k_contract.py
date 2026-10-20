@@ -1,6 +1,8 @@
 """Vérifier la limite de génération du preset déclaratif Assistant."""
 import ast
 import json
+import os
+from types import SimpleNamespace
 import tempfile
 from pathlib import Path
 import unittest
@@ -9,6 +11,8 @@ P = Path(__file__).resolve().parents[1] / 'app' / 'declarative_review.py'
 tree = ast.parse(P.read_text(encoding='utf-8'))
 ns = {'__name__': 'declarative_review_contract'}
 exec(compile(tree, str(P), 'exec'), ns)
+# Cette suite isole le contrat de valeur ; la règle UNC Windows a ses propres tests.
+ns['os'] = SimpleNamespace(name='posix', getenv=os.getenv)
 
 class ReviewPreset16KContract(unittest.TestCase):
     def setUp(self):
