@@ -20,6 +20,7 @@ def baseline():
         'phase': 'profile',
         'provider': 'local',
         'prompt': 'Review the profile against independent evidence. ' * 8,
+        'output_contract': 'Return five separate dimensions with evidence provenance. ' * 5,
         'temperature': 0.1,
         'max_tokens': 3072,
         'context_max_chars': 6500,
@@ -48,6 +49,7 @@ class DeclarativeContract(unittest.TestCase):
         self.assertEqual(data['context_max_chars'], baseline()['context_max_chars'])
         self.assertEqual(data['temperature'], baseline()['temperature'])
         self.assertEqual(data['schema'], baseline()['schema'])
+        self.assertGreater(len(data['output_contract']), 100)
         self.assertEqual(data['phase'], 'profile')
 
     def test_qwen_root_dimensions_are_not_silently_lost(self):
@@ -105,6 +107,22 @@ class DeclarativeContract(unittest.TestCase):
         self.assertEqual(public['recording_credits'][0]['instruments'], ['guitar'])
         self.assertEqual(public['recording_credits'][0]['source_url'],
                          'https://musicbrainz.org/recording/example')
+
+    def test_missing_output_contract_fails_closed(self):
+        broken = baseline()
+        del broken['output_contract']
+        with patch('pathlib.Path.read_bytes', return_value=encoded(broken)):
+            with self.assertRaisesRegex(ValueError, 'invalid_keys'):
+                load_review_preset(path=MAIN_PRESET)
+
+    def test_output_contract_hot_reload(self):
+        first_data = baseline()
+        second_data = {**first_data, 'output_contract': 'New independent decision protocol. ' * 7}
+        with patch('pathlib.Path.read_bytes', side_effect=[encoded(first_data), encoded(second_data)]):
+            first, a = load_review_preset(path=MAIN_PRESET)
+            second, b = load_review_preset(path=MAIN_PRESET)
+        self.assertNotEqual(first['output_contract'], second['output_contract'])
+        self.assertNotEqual(a, b)
 
     def test_missing_path_fails_closed(self):
         with patch.dict('os.environ', {'EZSTUDIOLAB_REVIEW_PRESET_PATH': ''}):

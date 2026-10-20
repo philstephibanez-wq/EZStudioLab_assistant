@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 
 PHASES = ('profile', 'stems', 'chords_n', 'lyrics')
-ALLOWED = {'schema', 'id', 'phase', 'provider', 'prompt', 'temperature', 'max_tokens', 'context_max_chars'}
+ALLOWED = {'schema', 'id', 'phase', 'provider', 'prompt', 'output_contract', 'temperature', 'max_tokens', 'context_max_chars'}
 # On XPS this must be an explicitly configured UNC/read-only MAIN path.
 # Never fall back to an XPS-local preset.
 DEFAULT_PATH = None
@@ -38,6 +38,9 @@ def load_review_preset(phase='profile', path=None):
         raise ValueError('review_preset_provider_not_supported')
     if not isinstance(data['prompt'], str) or not 100 <= len(data['prompt']) <= 12000:
         raise ValueError('review_preset_invalid_prompt')
+    contract = data['output_contract']
+    if not isinstance(contract, str) or not 100 <= len(contract) <= 12000:
+        raise ValueError('review_preset_invalid_output_contract')
     t = data['temperature']
     if isinstance(t, bool) or not isinstance(t, (int, float)) or not 0 <= t <= 1:
         raise ValueError('review_preset_invalid_temperature')

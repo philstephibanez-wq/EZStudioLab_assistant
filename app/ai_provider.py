@@ -686,25 +686,8 @@ class LocalAIProvider(AIReviewProvider):
         trace_snap("qwen.evidence",evidence)
         preset, preset_hash = load_review_preset("profile")
         trace_snap("qwen.preset",{"id":preset.get("id"),"sha256":preset_hash,"phase":preset.get("phase"),"settings":{k:v for k,v in preset.items() if k!="prompt"}})
-        # Runtime output contract, not a mutation of the MAIN-owned preset.
-        # A missing per-dimension confidence is NOT supplied by the validator.
-        output_contract = (
-            "\nPROFILE OUTPUT CONTRACT: Return a JSON object with dimensions containing "
-            "exactly these five keys: genre, instrumentation, lead_vocal, backing_vocals, choir. "
-            "For EACH key return an object with decision (match, mismatch, uncertain, "
-            "or not_scored), confidence (a JSON number between 0 and 1 ONLY when "
-            "independently sourced evidence supports match/mismatch; otherwise null), "
-            "evidence (list of source-specific facts identifying the public source), "
-            "rationale, and reason. Each match/mismatch MUST have its OWN numeric "
-            "confidence and directly relevant verified external evidence. The overall "
-            "confidence does not replace dimension confidence. LAB model predictions, "
-            "unverified genre tags, missing instrument credits, and your own prose are "
-            "NOT independent evidence. Never infer no choir from absent credits. "
-            "If no dimension-level external evidence exists, use not_scored with "
-            "confidence null and evidence []. Do not nest these keys in vocals. "
-            "If MusicBrainz recording_genres supplies a genre, cite exactly the supplied genre string with source=MusicBrainz, scope=recording, source_url, and genre. Artist or release tags cannot support a match. If a recording-level MusicBrainz credit directly supports a dimension, cite it as an evidence object containing source=MusicBrainz, scope=recording, source_url (identical to the supplied credit URL), role, and instrument if applicable. Wikipedia genre citations are admissible ONLY for an exact quote in the form '<title> is a <genre> song by <artist>.' that appears verbatim in a supplied identity-matched page. Evidence must contain source=Wikipedia, scope=song_statement, source_url, genre and quote. Other Wikipedia statements are review-only, never sufficient for a scored dimension. Other dimension decisions must be not_scored until independent typed proof is available. Do not invent references, credits or confidence values."
-        )
-        system_prompt = preset["prompt"] + output_contract
+        # Phase-specific generation constraints belong to the MAIN preset.
+        system_prompt = preset["prompt"] + "\n" + preset["output_contract"]
         try:
             budget_ns=time.perf_counter_ns()
             evidence_json = _local_profile_budget(evidence, system_prompt, max_chars=preset["context_max_chars"])
