@@ -236,7 +236,7 @@ def _local_profile_budget(evidence, system_prompt, *, max_chars=6500):
         "tempo", "bpm", "meter", "key", "rhythm", "semantic", "clap",
     )
     research_priority = (
-        "recording_credits", "identity", "genres", "genre_labels", "instruments", "instrumentation",
+        "recording_credits", "recording_genres", "identity", "genres", "genre_labels", "instruments", "instrumentation",
         "vocals", "matches", "references", "sources", "warnings",
     )
     selected_profile = {key: profile[key] for key in profile_priority if key in profile}
