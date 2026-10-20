@@ -8,6 +8,7 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'app'))
 from declarative_review import load_review_preset, PHASES
+from ai_provider import _local_profile_budget
 
 MAIN_PRESET = r'\\EZSTUDIO-MAIN\EZStudio_lab\presets\assistant\profile-baseline-1.json'
 
@@ -48,6 +49,32 @@ class DeclarativeContract(unittest.TestCase):
         self.assertEqual(data['temperature'], baseline()['temperature'])
         self.assertEqual(data['schema'], baseline()['schema'])
         self.assertEqual(data['phase'], 'profile')
+
+    def test_reduced_context_preserves_recording_scoped_evidence(self):
+        evidence = {
+            'identity': {'title': 'Example', 'artist': 'Example'},
+            'profile_view': {'genre': {'predictions': ['rock'] * 300}},
+            'public_research': {
+                'recording_genres': [{
+                    'source': 'MusicBrainz', 'scope': 'recording',
+                    'source_url': 'https://musicbrainz.org/recording/example',
+                    'genre': 'rock'
+                }],
+                'recording_credits': [{
+                    'musician': 'Example', 'role': 'instrument',
+                    'instruments': ['guitar'], 'scope': 'recording',
+                    'source_url': 'https://musicbrainz.org/recording/example'
+                }],
+            },
+        }
+        reduced = json.loads(_local_profile_budget(evidence, 'system' * 200,
+                                                   max_chars=2300))
+        self.assertTrue(reduced['context_reduction']['active'])
+        public = reduced['public_research']
+        self.assertEqual(public['recording_genres'][0]['genre'], 'rock')
+        self.assertEqual(public['recording_credits'][0]['instruments'], ['guitar'])
+        self.assertEqual(public['recording_credits'][0]['source_url'],
+                         'https://musicbrainz.org/recording/example')
 
     def test_missing_path_fails_closed(self):
         with patch.dict('os.environ', {'EZSTUDIOLAB_REVIEW_PRESET_PATH': ''}):
