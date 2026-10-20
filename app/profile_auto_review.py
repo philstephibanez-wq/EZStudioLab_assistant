@@ -22,7 +22,7 @@ class NetworkBudget:
     min_interval_seconds: float = 2.0
     max_response_bytes: int = 262_144
     timeout_seconds: float = 8.0
-    max_requests_per_item: int = 6
+    max_requests_per_item: int = 10
 
 
 class ThrottledPublicHttp:
@@ -178,6 +178,10 @@ def _musicbrainz(http: ThrottledPublicHttp, title: str, artist: str) -> dict[str
             tags.append(_compact(t.get("name")))
 
     recording_url = f"https://musicbrainz.org/recording/{mbid}" if mbid else None
+    # Preserve the boundary between recording metadata and broad artist/album
+    # enrichment. Neither set alone constitutes scientific genre validation.
+    recording_genres = list(genres)
+    recording_tags = list(tags)
     recording_credits = _recording_credits(detail.get("relations"), recording_url)
     # A relation attribute is not automatically an instrument (e.g. "live").
     # Use only artist/performer relations on the recording itself.
@@ -268,6 +272,8 @@ def _musicbrainz(http: ThrottledPublicHttp, title: str, artist: str) -> dict[str
         "canonical_artist": best[2],
         "genres": sorted(set(genres)),
         "tags": sorted(set(tags)),
+        "recording_genres": sorted(set(recording_genres)),
+        "recording_tags": sorted(set(recording_tags)),
         "performers": performers[:30],
         "recording_credits": recording_credits,
         "instruments": sorted(set(instruments)),
@@ -487,18 +493,20 @@ def research_public_sources(identity: dict[str, Any], budget: NetworkBudget) -> 
         warnings.append(f"MusicBrainz:{type(exc).__name__}:{exc}")
         mb = {"source": "MusicBrainz", "available": False}
 
+    # Search Wikipedia before Wikidata: the former can provide a recording-specific
+    # narrative; Wikidata may consume multiple calls for an unrelated entity.
+    # Do not claim either is relevant without the subsequent identity check.
+    try:
+        wp = _wikipedia(http, title, artist, None)
+        sources.append(wp)
+    except Exception as exc:
+        warnings.append(f"Wikipedia:{type(exc).__name__}:{exc}")
+
     try:
         wd = _wikidata(http, title, artist)
         sources.append(wd)
     except Exception as exc:
         warnings.append(f"Wikidata:{type(exc).__name__}:{exc}")
-        wd = {"source": "Wikidata", "available": False}
-
-    try:
-        wp = _wikipedia(http, title, artist, wd.get("wikipedia_title") if isinstance(wd, dict) else None)
-        sources.append(wp)
-    except Exception as exc:
-        warnings.append(f"Wikipedia:{type(exc).__name__}:{exc}")
 
     available = [x for x in sources if isinstance(x, dict) and x.get("available")]
     relevant = []
