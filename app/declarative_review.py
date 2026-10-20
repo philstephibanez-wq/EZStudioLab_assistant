@@ -41,7 +41,7 @@ def load_review_preset(phase='profile', path=None):
     t = data['temperature']
     if isinstance(t, bool) or not isinstance(t, (int, float)) or not 0 <= t <= 1:
         raise ValueError('review_preset_invalid_temperature')
-    for field, low, high in [('max_tokens', 200, 4096), ('context_max_chars', 2000, 16000)]:
+    for field, low, high in [('max_tokens', 200, 16384), ('context_max_chars', 2000, 16000)]:
         n = data[field]
         if isinstance(n, bool) or not isinstance(n, int) or not low <= n <= high:
             raise ValueError('review_preset_invalid_' + field)
