@@ -23,6 +23,7 @@ from profile_auto_review import (
 from ai_provider import build_ai_provider_from_env
 from profile_trace import Trace, activate, enabled, emit, snap, purge
 from profile_report import publish_trace
+from profile_lab_observations import attach_lab_observations
 from profile_identity import resolve_missing_artist
 
 BASE = os.environ.get('EZSTUDIOLAB_ASSISTANT_BASE_URL', 'http://EZSTUDIO-MAIN:8702').rstrip('/')
@@ -104,6 +105,7 @@ def process(run_id, client):
     emit('ai.review.duration', start_ns=started)
     snap('ai.review.normalized', ai)
     dimensions = require_completed_ai_review(ai)
+    ai = attach_lab_observations(ai, row)
     for dim, value in dimensions.items():
         emit('ai.dimension.validation', {'dimension': dim, 'result': value})
     scored_count = sum(
