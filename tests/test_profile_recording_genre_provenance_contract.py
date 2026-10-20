@@ -1,11 +1,12 @@
 """Only identity-checked recording genres are admissible; no artist/album tags."""
 import ast
+import re
 from pathlib import Path
 import unittest
 p=Path(__file__).resolve().parents[1]/'app'/'ai_provider.py'
 root=ast.parse(p.read_text(encoding='utf-8'))
-functions=[n for n in root.body if isinstance(n,ast.FunctionDef) and n.name in ('_verified_dimension_evidence','_profile_ai_coverage')]
-scope={}
+functions=[n for n in root.body if isinstance(n,ast.FunctionDef) and n.name in ('_verified_wikipedia_song_genre', '_verified_dimension_evidence', '_profile_ai_coverage')]
+scope={'re': re}
 exec(compile(ast.fix_missing_locations(ast.Module(body=functions,type_ignores=[])),str(p),'exec'),scope)
 url='https://musicbrainz.org/recording/example'
 def run(claim, references):
