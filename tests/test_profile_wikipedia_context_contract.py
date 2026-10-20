@@ -1,13 +1,14 @@
 """Wikipedia remains bounded context, never a self-validating model citation."""
 import ast
+import re
 from pathlib import Path
 import unittest
 
 P=Path(__file__).resolve().parents[1]/'app'/'ai_provider.py'
 src=P.read_text(encoding='utf-8')
 tree=ast.parse(src)
-fns=[n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name in ('_verified_dimension_evidence','_profile_ai_coverage')]
-ns={}
+fns=[n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name in ('_verified_wikipedia_song_genre', '_verified_dimension_evidence', '_profile_ai_coverage')]
+ns={'re': re}
 exec(compile(ast.fix_missing_locations(ast.Module(body=fns,type_ignores=[])),str(P),'exec'),ns)
 
 class WikipediaContextContract(unittest.TestCase):
