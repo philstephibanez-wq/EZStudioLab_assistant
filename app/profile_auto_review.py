@@ -684,6 +684,24 @@ def build_review_payload(row: dict[str, Any], research: dict[str, Any], *, min_c
             }
         )
 
+    # Preserve consulted public URLs without treating them as validated evidence.
+    recorded_urls = {v.get("url") for v in source_payload}
+    for candidate in research.get("sources") or []:
+        if not isinstance(candidate, dict):
+            continue
+        url = candidate.get("url")
+        if not isinstance(url, str) or not url.startswith(("https://", "http://")) or url in recorded_urls:
+            continue
+        source_payload.append({
+            "name": _compact(candidate.get("source")) or "Public reference",
+            "type": "consulted_reference",
+            "url": url,
+            "identity_relevant": candidate in identity_rows,
+            "evidence_accepted": False,
+            "evidence": {},
+        })
+        recorded_urls.add(url)
+
     external_genres = sorted(set(external_genres))
     external_instruments = sorted(set(external_instruments))
 
