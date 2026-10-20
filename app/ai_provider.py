@@ -655,11 +655,15 @@ class LocalAIProvider(AIReviewProvider):
         # Model prose is not independent evidence. Without any substantiated
         # dimension, do not publish free-form hypotheses as findings.
         if coverage["scored_count"] == 0:
+            # Preserve the model's observation as an explicitly unverified
+            # hypothesis, never as musical proof or preset validation.
+            hypothesis = summary.strip()[:700] if isinstance(summary, str) else ""
             summary = (
-                "Révision IA non concluante : aucune des cinq dimensions musicales "
-                "ne dispose de preuves suffisantes pour une comparaison. "
-                "Les hypothèses non vérifiées du modèle ne sont pas retenues."
+                "Validation externe : 0/5 dimension vérifiée. "
+                "Aucune conclusion musicale confirmée ; aucune promotion de preset."
             )
+            if hypothesis:
+                summary += " Hypothèse Qwen NON VÉRIFIÉE : " + hypothesis
             confidence = None
         elif isinstance(summary, str) and summary.strip():
             summary = (
