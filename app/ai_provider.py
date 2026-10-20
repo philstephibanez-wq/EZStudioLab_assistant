@@ -175,8 +175,21 @@ def _local_profile_evidence(row, research):
                 'scope': 'recording',
                 'source_url': source.get('url'),
             })
+    # Typed genre assertions: only genres on the identity-matched recording,
+    # never artist/release enrichment or free-form user tags.
+    genre_facts = []
+    for source in verified_sources:
+        if source.get('source') != 'MusicBrainz':
+            continue
+        url = source.get('url')
+        if not isinstance(url, str) or not url.startswith('https://musicbrainz.org/recording/'):
+            continue
+        for label in source.get('recording_genres', [])[:12]:
+            if isinstance(label, str) and label.strip():
+                genre_facts.append({'source':'MusicBrainz','scope':'recording',
+                                    'source_url':url,'genre':label.strip()[:80]})
     # Explicitly keep reference metadata if present, but never raw website bodies.
-    refs = {'recording_credits': credits[:12]} if credits else {}
+    refs = {'recording_credits': credits[:12], 'recording_genres': genre_facts[:12]}
     for key in ('identity', 'genres', 'genre_labels', 'instruments', 'instrumentation', 'vocals', 'matches', 'references', 'sources'):
         value = research.get(key)
         if isinstance(value, list):
@@ -275,6 +288,8 @@ def _verified_dimension_evidence(dimensions: dict, sent_evidence: dict) -> dict:
     public = public if isinstance(public, dict) else {}
     allowed = public.get('recording_credits')
     allowed = allowed if isinstance(allowed, list) else []
+    known_genres = public.get('recording_genres')
+    known_genres = known_genres if isinstance(known_genres, list) else []
     result = {}
     for name, item in dimensions.items():
         if not isinstance(item, dict):
@@ -291,6 +306,17 @@ def _verified_dimension_evidence(dimensions: dict, sent_evidence: dict) -> dict:
             role = str(claim.get('role') or '').strip().casefold()
             instrument = str(claim.get('instrument') or '').strip().casefold()
             if not isinstance(url, str) or not url.startswith('https://musicbrainz.org/'):
+                continue
+            if name == 'genre':
+                genre = str(claim.get('genre') or '').strip().casefold()
+                if genre and any(
+                    isinstance(ref, dict) and ref.get('scope') == 'recording'
+                    and ref.get('source') == 'MusicBrainz'
+                    and ref.get('source_url') == url
+                    and str(ref.get('genre') or '').strip().casefold() == genre
+                    for ref in known_genres
+                ):
+                    accepted.append(dict(claim))
                 continue
             for credit in allowed:
                 if not isinstance(credit, dict) or credit.get('scope') != 'recording':
@@ -576,7 +602,7 @@ class LocalAIProvider(AIReviewProvider):
             "NOT independent evidence. Never infer no choir from absent credits. "
             "If no dimension-level external evidence exists, use not_scored with "
             "confidence null and evidence []. Do not nest these keys in vocals. "
-            "If a recording-level MusicBrainz credit directly supports a dimension, cite it as an evidence object containing source=MusicBrainz, scope=recording, source_url (identical to the supplied credit URL), role, and instrument if applicable. Other dimension decisions must be not_scored until independent typed proof is available. Do not invent references, credits or confidence values."
+            "If MusicBrainz recording_genres supplies a genre, cite exactly the supplied genre string with source=MusicBrainz, scope=recording, source_url, and genre. Artist or release tags cannot support a match. If a recording-level MusicBrainz credit directly supports a dimension, cite it as an evidence object containing source=MusicBrainz, scope=recording, source_url (identical to the supplied credit URL), role, and instrument if applicable. Other dimension decisions must be not_scored until independent typed proof is available. Do not invent references, credits or confidence values."
         )
         system_prompt = preset["prompt"] + output_contract
         try:
