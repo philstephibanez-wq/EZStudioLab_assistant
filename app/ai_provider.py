@@ -312,8 +312,8 @@ def _verified_wikipedia_song_genre(claim: dict, public: dict, identity: dict) ->
     sentence = quote.strip()
     if not re.fullmatch(
         r'(?i)' + re.escape(title.strip()) +
-        r'\\s+is\\s+an?\\s+' + re.escape(genre.strip()) +
-        r'\\s+song\\s+by\\s+' + re.escape(artist.strip()) + r'[.!]?',
+        r'\s+is\s+an?\s+' + re.escape(genre.strip()) +
+        r'\s+song\s+by\s+' + re.escape(artist.strip()) + r'[.!]?',
         sentence
     ):
         return False
