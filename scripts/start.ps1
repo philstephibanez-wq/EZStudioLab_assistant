@@ -47,12 +47,12 @@ function Assert-Qwen-Context([string]$path) {
     throw 'QWEN_PORT_OWNER_NOT_EXPECTED'
   }
   $cmd=[string]$proc.CommandLine
-  if ($cmd -notmatch '(?i)(?:^|\s)(?:-c|--ctx-size)\s+8192(?:\s|$)' -or
+  if ($cmd -notmatch '(?i)(?:^|\s)(?:-c|--ctx-size)\s+24576(?:\s|$)' -or
       $cmd -notmatch '(?i)(?:^|\s)(?:-np|--parallel)\s+1(?:\s|$)') {
-    throw 'QWEN_CONTEXT_CONFIG_INCOMPATIBLE: expected -c 8192 -np 1; existing instance not killed. Stop only when inference is idle, then rerun start.'
+    throw 'QWEN_CONTEXT_CONFIG_INCOMPATIBLE: expected -c 24576 -np 1; existing instance not killed. Stop only when inference is idle, then rerun start.'
   }
   if (-not (Qwen-Ready)) { throw 'QWEN_NOT_READY' }
-  Write-Output "QWEN_READY pid=$($proc.ProcessId) context=8192 slots=1"
+  Write-Output "QWEN_READY pid=$($proc.ProcessId) context=24576 slots=1"
 }
 
 # Validate dependencies before changing any service.
@@ -69,7 +69,7 @@ Write-Output 'ASSISTANT_WEB_READY'
 
 $owner=Get-Listener 8720
 if ($null -eq $owner) {
-  $args=@('-m',('"'+$qwenModel+'"'),'--host','127.0.0.1','--port','8720','-c','8192','-np','1')
+  $args=@('-m',('"'+$qwenModel+'"'),'--host','127.0.0.1','--port','8720','-c','24576','-np','1')
   $q=Start-Process -FilePath $qwenExe -ArgumentList $args -WorkingDirectory $root -WindowStyle Hidden -PassThru `
     -RedirectStandardOutput (Join-Path $logDir 'qwen.out.log') `
     -RedirectStandardError (Join-Path $logDir 'qwen.err.log')
