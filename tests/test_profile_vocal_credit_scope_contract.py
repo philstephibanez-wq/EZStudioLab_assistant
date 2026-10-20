@@ -1,11 +1,12 @@
 """Recording-level vocal categories must be explicit, not inferred from generic vocals."""
 import ast
+import re
 from pathlib import Path
 import unittest
 P=Path(__file__).resolve().parents[1]/'app'/'ai_provider.py'
 root=ast.parse(P.read_text(encoding='utf-8'))
-funcs=[n for n in root.body if isinstance(n,ast.FunctionDef) and n.name in ('_verified_dimension_evidence','_profile_ai_coverage')]
-ns={}
+funcs=[n for n in root.body if isinstance(n,ast.FunctionDef) and n.name in ('_verified_wikipedia_song_genre', '_verified_dimension_evidence', '_profile_ai_coverage')]
+ns={'re': re}
 exec(compile(ast.fix_missing_locations(ast.Module(body=funcs,type_ignores=[])),str(P),'exec'),ns)
 URL='https://musicbrainz.org/recording/example'
 def score(dimension, role, attributes, claim_role=None):
