@@ -22,8 +22,13 @@ function Get-ProfileConfig([string]$name) {
  if($matches.Count -ne 1){return ''}
  $rhs=$matches[0].Right
  if($rhs -is [System.Management.Automation.Language.CommandExpressionAst]){$rhs=$rhs.Expression}
- if($rhs -isnot [System.Management.Automation.Language.StringConstantExpressionAst]){return ''}
- return [string]$rhs.Value
+ if($rhs -is [System.Management.Automation.Language.StringConstantExpressionAst]){return [string]$rhs.Value}
+ # A nonliteral token must not be evaluated blindly. Report its syntax type only.
+ $kind=$rhs.GetType().Name
+ if($name -eq 'EZSTUDIOLAB_ASSISTANT_TOKEN') {
+  throw ('PROFILE_LAB_TOKEN_SOURCE_NEEDS_ADAPTER_AST_' + $kind)
+ }
+ return ''
 }
 $relay=Get-ProfileConfig 'EZSTUDIOLAB_ASSISTANT_BASE_URL'
 if(-not $relay){$relay='http://EZSTUDIO-MAIN:8702'}
