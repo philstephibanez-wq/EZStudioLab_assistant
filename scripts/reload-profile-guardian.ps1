@@ -67,8 +67,22 @@ function Get-ProfileConfig([string]$name) {
   }
   if($pathNode -is [System.Management.Automation.Language.CommandExpressionAst]){$pathNode=$pathNode.Expression}
  }
- if($pathNode -isnot [System.Management.Automation.Language.StringConstantExpressionAst]){throw ('PROFILE_SECURE_PATH_SOURCE_UNSUPPORTED_'+$pathNode.GetType().Name)}
- $filePath=[string]$pathNode.Value
+ $filePath=''
+ if($pathNode -is [System.Management.Automation.Language.StringConstantExpressionAst]){
+  $filePath=[string]$pathNode.Value
+ } elseif($pathNode -is [System.Management.Automation.Language.CommandAst] -and $pathNode.GetCommandName() -eq 'Join-Path'){
+  $e=@($pathNode.CommandElements)
+  if($e.Count -ne 3 -or $e[1] -isnot [System.Management.Automation.Language.VariableExpressionAst] -or
+     $e[1].VariablePath.UserPath -ne 'root' -or
+     $e[2] -isnot [System.Management.Automation.Language.StringConstantExpressionAst]){
+   throw 'PROFILE_SECURE_JOIN_PATH_NOT_ALLOWLISTED'
+  }
+  $relative=[string]$e[2].Value
+  if([IO.Path]::IsPathRooted($relative) -or $relative -match '(^|[\\/])\.\.([\\/]|$)'){throw 'PROFILE_SECURE_RELATIVE_PATH_INVALID'}
+  $filePath=Join-Path $root $relative
+ } else {
+  throw ('PROFILE_SECURE_PATH_SOURCE_UNSUPPORTED_'+$pathNode.GetType().Name)
+ }
  if(-not [IO.Path]::IsPathRooted($filePath)){throw 'PROFILE_SECURE_PATH_NOT_ABSOLUTE'}
  $secure=Get-Content -LiteralPath $filePath -Raw -ErrorAction Stop | ConvertTo-SecureString -ErrorAction Stop
  return ([System.Management.Automation.PSCredential]::new('profile',$secure)).GetNetworkCredential().Password
