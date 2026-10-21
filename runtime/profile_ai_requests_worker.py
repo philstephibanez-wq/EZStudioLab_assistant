@@ -25,6 +25,8 @@ from profile_trace import Trace, activate, enabled, emit, snap, purge
 from profile_report import publish_trace
 from profile_lab_observations import attach_lab_observations
 from profile_identity import resolve_missing_artist
+from profile_sequential_review import examine_modules
+from profile_module_qwen import infer_module
 
 BASE = os.environ.get('EZSTUDIOLAB_ASSISTANT_BASE_URL', 'http://EZSTUDIO-MAIN:8702').rstrip('/')
 TOKEN = os.environ.get('EZSTUDIOLAB_ASSISTANT_TOKEN', '')
@@ -101,7 +103,15 @@ def process(run_id, client):
     emit('review.base_payload.duration', start_ns=started)
     snap('review.base_payload', payload)
     started = time.perf_counter_ns()
-    ai = _run_ai_profile_review(build_ai_provider_from_env(), row, research)
+    provider = build_ai_provider_from_env()
+    sequential = examine_modules(
+        run_id, api, lambda request: infer_module(provider, request),
+        on_progress=lambda index, total, item_id: emit('module.progress', {
+            'item_index': index, 'item_total': total, 'current_item': item_id}),
+        on_record=lambda request, record: snap('module.review.completed', record),
+    )
+    snap('module.review.summary', sequential)
+    ai = _run_ai_profile_review(provider, row, research)
     emit('ai.review.duration', start_ns=started)
     snap('ai.review.normalized', ai)
     dimensions = require_completed_ai_review(ai)
@@ -120,6 +130,12 @@ def process(run_id, client):
         'abstention': scored_count == 0,
     })
     payload = enrich_review_payload_with_ai(payload, ai)
+    # Preserve module-level consultative observations separately from documentary validation.
+    payload.setdefault('comparison', {})['module_consultations'] = sequential
+    payload.setdefault('consensus', {})['module_review_coverage'] = {
+        'examined': sequential['examined'], 'total': sequential['item_total'],
+        'complete': sequential['complete'], 'advisory_only': True}
+
     # A completed inference is an advisory DRAFT, never independent validation.
     payload['status'] = 'draft'
     payload['reviewer'] = 'assistant-lab-ui-qwen'
