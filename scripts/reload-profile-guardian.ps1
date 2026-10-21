@@ -118,10 +118,12 @@ $reloadSucceeded=$false
 try {
  $v=Maintenance 'pause';$paused=$true
  if($v.maintenance -ne $true -or $v.active -ne $false){throw 'PROFILE_MAINTENANCE_NOT_IDLE'}
- $jobs=Invoke-RestMethod 'http://EZSTUDIO-MAIN:8700/api/jobs' -TimeoutSec 8
- if($jobs.ok -ne $true -or $null -eq $jobs.jobs -or $null -eq $jobs.queue_errors){throw 'ORCHESTRATOR_QUEUE_STATUS_UNVERIFIED'}
- if($jobs.queue_errors.PSObject.Properties.Name -contains 'lab_ai'){throw 'ORCHESTRATOR_PROFILE_QUEUE_UNREADABLE'}
- if(@($jobs.jobs | Where-Object {$_.kind -eq 'assistant.profile.review' -and $_.state -in @('running','claimed','cancelling')}).Count -gt 0){throw 'PROFILE_ACTIVE_JOB'}
+ # LAB canonical maintenance is authoritative. Its active count is transactional with claim().
+ $verified=Maintenance 'status'
+ if($verified.maintenance -ne $true -or $verified.active -ne $false -or
+    $null -eq $verified.active_count -or [int]$verified.active_count -ne 0) {
+  throw 'PROFILE_CANONICAL_QUEUE_NOT_IDLE'
+ }
  $g=@(Processes $guardianFile);$w=@(Processes $workerFile)
  if($g.Count -ne 1 -or $w.Count -ne 1){throw "PROFILE_PROCESS_COUNTS_INVALID guardian=$($g.Count) worker=$($w.Count)"}
  $old=$w[0]
