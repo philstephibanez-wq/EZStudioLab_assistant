@@ -11,6 +11,13 @@
   <div class="card"><div class="label">Base Assistant</div><div class="value">Aucune</div></div>
 </div>
 <div class="card" style="margin-top:14px">
+  <div class="label">Contre-analyse PROFILE · Qwen (consultative)</div>
+  <div id="consultation-state" class="value">Aucun traitement observé</div>
+  <div id="consultation-detail">—</div>
+  <progress id="consultation-progress" max="12" value="0" style="width:100%"></progress>
+  <div class="label">Source : journal local du worker · aucune validation scientifique implicite</div>
+</div>
+<div class="card" style="margin-top:14px">
   <div class="label">Runtime Python</div>
   <pre id="runtime">—</pre>
 </div>
@@ -33,6 +40,11 @@
       .text((m.accessible?'OK · ':'KO · ')+(m.root||'SMB'))
       .attr('class','value '+(m.accessible?'ok':'bad'));
 
+    var c=s.profile_consultation||{};
+    var name={not_started:'Non démarré',in_progress:'En cours',completed:'Terminé',error:'Échec',unavailable:'Indisponible'};
+    $('#consultation-state').text(name[c.state]||'État inconnu');
+    $('#consultation-detail').text(c.run_id ? ('Analyse #'+c.run_id+' · '+(c.completed||0)+' / '+(c.total||'?')+' modules · '+(c.current_item||'—')) : 'Aucune contre-analyse locale');
+    $('#consultation-progress').attr('max',c.total||12).val(c.completed||0);
     $('#runtime').text(JSON.stringify(s.runtime||{},null,2));
   }).fail(function(xhr){
     $('#state').text('ERROR').attr('class','value bad');

@@ -3,6 +3,7 @@ import json
 import urllib.request
 from declarative_review import load_review_preset
 from profile_trace import snap
+from profile_module_compact import module_prompt_payload
 
 def infer_module(provider, request):
     ready, reason=provider._health()
@@ -12,10 +13,12 @@ def infer_module(provider, request):
             "Les scores du moteur sont des hypothèses, pas des faits. Retourne un objet JSON: "
             "status (completed ou abstain), summary, uncertainty, supporting_evidence (liste), conflicting_evidence (liste). "
             "Ne valide aucun preset et indique toute insuffisance de preuves.")
-    content=json.dumps(request,ensure_ascii=False,separators=(",",":"),allow_nan=False)
     bound=int(preset["context_max_chars"])
-    if max(len(prompt)+len(content),len(prompt.encode())+len(content.encode()))>bound:
-        return {"status":"error","reason":"module_context_over_budget","required_chars":len(content)}
+    try:
+        content, projection = module_prompt_payload(request,bound,prompt)
+    except ValueError as exc:
+        return {"status":"error","reason":str(exc)}
+    snap("qwen.module.projection",{"item_id":request["item_id"],**projection})
     body={"model":"local","messages":[{"role":"system","content":prompt},{"role":"user","content":content}],
           "temperature":preset["temperature"],"max_tokens":preset["max_tokens"],"stream":False,
           "response_format":{"type":"json_object"}}

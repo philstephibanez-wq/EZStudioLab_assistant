@@ -163,6 +163,38 @@ def _probe_model_root(model_root: Path) -> dict:
     return result
 
 
+
+def _profile_consultation_status() -> dict:
+    """Read the latest local PROFILE timeline; expose only progress metadata."""
+    import re
+    root = Path(os.getenv("EZS_PROFILE_TRACE_ROOT") or r"C:\temp\EZS_PROFILE_DEBUG")
+    try:
+        folders = sorted((p for p in root.iterdir()
+            if p.is_dir() and re.fullmatch(r"run-\d+-[0-9a-f]{12}", p.name)),
+            key=lambda p:p.stat().st_mtime,reverse=True)
+        if not folders:
+            return {"state":"not_started"}
+        timeline=folders[0]/"timeline.jsonl"
+        if not timeline.is_file(): return {"state":"not_started"}
+        progress={"state":"in_progress","run_id":int(folders[0].name.split("-")[1]),
+                  "completed":0,"total":None,"current_item":None}
+        with timeline.open(encoding="utf-8") as stream:
+            for line in stream:
+                try: event=json.loads(line)
+                except (ValueError,TypeError): continue
+                name=event.get("event")
+                data=event.get("data") or {}
+                if name=="module.progress" and isinstance(data,dict):
+                    progress["completed"]=data.get("item_index",0)
+                    progress["total"]=data.get("item_total")
+                    progress["current_item"]=data.get("current_item")
+                elif name=="trace.finish":
+                    outcome=data.get("status") if isinstance(data,dict) else None
+                    progress["state"]="completed" if outcome=="completed" else "error"
+        return progress
+    except (OSError,ValueError):
+        return {"state":"unavailable"}
+
 def main() -> int:
     version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
 
@@ -206,6 +238,7 @@ def main() -> int:
         ),
         "lab_rest": lab_rest,
         "models": models,
+        "profile_consultation": _profile_consultation_status(),
         "runtime": {
             "status_file": str(status_file),
             "pid": runtime.get("pid"),
