@@ -145,7 +145,17 @@ def _gh(endpoint, *, payload=None):
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=40, check=False,
     )
     if result.returncode:
-        raise RuntimeError("report_github_http_error")
+        stderr=result.stderr.decode("utf-8","replace")
+        match=re.search(r"(?i)(?:HTTP\\s+|status\\s*[:=]\\s*)(401|403|404|409|422|429|500|502|503)",stderr)
+        if re.search(r"(?i)authentication required|not logged into|gh auth login",stderr):
+            category="authentication_missing"
+        elif re.search(r"(?i)resource not accessible|permission|forbidden",stderr):
+            category="permission_denied"
+        elif re.search(r"(?i)not found|404",stderr):
+            category="repository_or_path_not_found"
+        else:
+            category="http_"+match.group(1) if match else "unclassified"
+        raise RuntimeError("report_github_http_error:"+category+":exit="+str(result.returncode))
     return json.loads(result.stdout)
 
 
