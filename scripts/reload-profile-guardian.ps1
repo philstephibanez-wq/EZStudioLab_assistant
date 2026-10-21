@@ -1,4 +1,4 @@
-# Guardian-managed PROFILE-only reload, fail closed on missing relay maintenance.
+# Guardian-managed PROFILE-only reload using LAB canonical queue maintenance.
 $ErrorActionPreference='Stop'
 $root=(Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $workerFile=Join-Path $root 'runtime\profile_ai_requests_worker.py'
@@ -25,9 +25,10 @@ function Get-ProfileConfig([string]$name) {
  if($rhs -isnot [System.Management.Automation.Language.StringConstantExpressionAst]){return ''}
  return [string]$rhs.Value
 }
-$relay=Get-ProfileConfig 'EZS_R2E_RELAY_URL'
-$token=Get-ProfileConfig 'EZS_R2E_RELAY_TOKEN'
-if (-not $relay -or -not $token) { throw 'PROFILE_RELOAD_RELAY_CREDENTIALS_UNAVAILABLE_IN_APPROVED_SOURCES' }
+$relay=Get-ProfileConfig 'EZSTUDIOLAB_ASSISTANT_BASE_URL'
+if(-not $relay){$relay='http://EZSTUDIO-MAIN:8702'}
+$token=Get-ProfileConfig 'EZSTUDIOLAB_ASSISTANT_TOKEN'
+if (-not $relay -or -not $token) { throw 'PROFILE_RELOAD_LAB_TOKEN_UNAVAILABLE_IN_APPROVED_SOURCES' }
 $uri=$null
 if (-not [Uri]::TryCreate($relay,[UriKind]::Absolute,[ref]$uri) -or
  $uri.Scheme -notin @('http','https') -or -not $uri.Host -or $uri.UserInfo) {
@@ -35,11 +36,13 @@ if (-not [Uri]::TryCreate($relay,[UriKind]::Absolute,[ref]$uri) -or
 }
 
 function Maintenance([string]$mode) {
- $suffix='/r2e/profile/maintenance'
- if($mode -ne 'status'){$suffix+='/'+$mode}
+ $suffix='/internal/analysis/desktop/profile/ai-requests/maintenance'
+ 
  $method=if($mode -eq 'status'){'GET'}else{'POST'}
- $v=Invoke-RestMethod -Method $method -Uri ($relay.TrimEnd('/')+$suffix) -Headers @{'X-EZS-R2E-Token'=$token} -TimeoutSec 8
- if($v.ok -ne $true){throw "PROFILE_MAINTENANCE_FAILED:$mode"}
+ $args=@{Method=$method;Uri=($relay.TrimEnd('/')+$suffix);Headers=@{'X-EZScore-Analysis-Token'=$token};TimeoutSec=8}
+ if($method -eq 'POST'){$args.ContentType='application/json';$args.Body=('{"mode":"'+$mode+'"}')}
+ $v=Invoke-RestMethod @args
+ if($v.ok -ne $true){throw "PROFILE_LAB_MAINTENANCE_FAILED:$mode"}
  return $v
 }
 function Processes([string]$path) {
