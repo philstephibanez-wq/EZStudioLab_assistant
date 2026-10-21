@@ -5,7 +5,40 @@
     <title>{% block title %}EZStudioLab Assistant{% endblock %}</title>
     <style>:root{color-scheme:dark;font-family:Inter,Segoe UI,Arial,sans-serif}body{margin:0;background:#0d1519;color:#edf4f7}header{padding:18px 24px;border-bottom:1px solid #2a3b43}main{padding:24px;max-width:1180px;margin:0 auto 0 calc(var(--ezs-perf-width,320px) + 18px)}@media(max-width:900px){main{margin-left:0;padding-top:24px}.perf-panel{display:none}}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}.card{background:#121f25;border:1px solid #29404a;border-radius:12px;padding:16px}.label{color:#91a8b3;font-size:.84rem;text-transform:uppercase}.value{margin-top:7px;font-size:1.05rem;font-weight:650}.ok{color:#8ee3b1}.bad{color:#ff8585}pre{white-space:pre-wrap;word-break:break-word;font-size:.85rem}</style>
     <script src="https://code.jquery.com/jquery-3.7.1.min.js" integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo=" crossorigin="anonymous"></script>
-    </head>
+    <style>
+/* GPU performance panel: override the component's light inline CSS. */
+.perf-drawer{
+  background:#11171d!important;
+  color:#e6edf4!important;
+  border-right-color:#2d3742!important;
+}
+.perf-kicker,
+.perf-device,
+.perf-chart-head span,
+.perf-scale,
+.perf-mini small,
+.perf-stats span,
+.perf-foot{
+  color:#93a0ae!important;
+}
+.perf-primary,
+.perf-mini{
+  background:#171e26!important;
+  border-color:#303b47!important;
+}
+.perf-chart{
+  background:#10161c!important;
+  border-color:#303b47!important;
+}
+.perf-grid line{stroke:#27323d!important}
+.perf-line{stroke:#6fa3d8!important}
+.perf-area{fill:#284563!important;opacity:.55!important}
+.perf-stats{border-top-color:#303b47!important}
+.perf-stats>div{border-bottom-color:#26313c!important}
+.perf-live-on{color:#55cc84!important}
+
+</style>
+</head>
     <body>
         <header><strong>EZStudioLab Assistant</strong><span style="opacity:.65"> · v{{ version|default('?') }}</span></header>
         {% include "_gpu_monitor.html.twig" %}
