@@ -14,7 +14,7 @@ from profile_report import make_report, publish_report
 def select_trace(root: Path, run: int, revision: int):
     matches=[]
     for folder in sorted(root.glob(f"run-{run}-*")):
-        if not re.fullmatch(r"run-\\d+-[0-9a-f]{12}", folder.name):
+        if not (folder.name.startswith(f"run-{run}-") and re.fullmatch("[0-9a-f]{12}",folder.name.rsplit("-",1)[-1])):
             continue
         timeline=folder/"timeline.jsonl"
         if not timeline.is_file():
