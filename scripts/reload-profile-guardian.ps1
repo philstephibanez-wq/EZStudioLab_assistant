@@ -40,8 +40,21 @@ function Get-ProfileConfig([string]$name) {
  if($read.Count -ne 1 -or $convert.Count -ne 1){throw 'PROFILE_SECURE_COMMANDS_INVALID'}
  $read=$read[0]
  $convert=$convert[0]
- $pathNodes=@($read.CommandElements | Where-Object {$_ -is [System.Management.Automation.Language.StringConstantExpressionAst] -or $_ -is [System.Management.Automation.Language.VariableExpressionAst]})
- if($pathNodes.Count -ne 1){throw 'PROFILE_SECURE_PATH_AMBIGUOUS'}
+ # Exclude command name and parameter names; select only the argument to -Path/-LiteralPath.
+ $elements=@($read.CommandElements)
+ $pathNodes=@()
+ for($i=1;$i -lt $elements.Count;$i++){
+  $element=$elements[$i]
+  if($element -is [System.Management.Automation.Language.CommandParameterAst]){
+   if($element.ParameterName -in @('Path','LiteralPath')){
+    if($null -ne $element.Argument){$pathNodes+=@($element.Argument)}
+    elseif($i+1 -lt $elements.Count){$i++;$pathNodes+=@($elements[$i])}
+   }
+   continue
+  }
+  if($i -eq 1 -and $element -is [System.Management.Automation.Language.VariableExpressionAst]){$pathNodes+=@($element)}
+ }
+ if($pathNodes.Count -ne 1){throw ('PROFILE_SECURE_PATH_AMBIGUOUS_COUNT_'+$pathNodes.Count)}
  $pathNode=$pathNodes[0]
  if($pathNode -is [System.Management.Automation.Language.VariableExpressionAst]){
   $pathVariable=[string]::Concat('$',$pathNode.VariablePath.UserPath)
