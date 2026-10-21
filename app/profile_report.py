@@ -175,6 +175,9 @@ def publish_report(report):
     if previous:
         payload["sha"] = previous["sha"]
     _gh(endpoint, payload=payload)
+    verified = _gh(endpoint)
+    if base64.b64decode(verified.get("content", "")) != raw:
+        raise RuntimeError("profile_report_github_roundtrip_mismatch")
     return "published"
 
 
