@@ -22,8 +22,32 @@ function Get-ProfileConfig([string]$name) {
  if($matches.Count -ne 1){return ''}
  $rhs=$matches[0].Right
  if($rhs -is [System.Management.Automation.Language.CommandExpressionAst]){$rhs=$rhs.Expression}
- if($rhs -isnot [System.Management.Automation.Language.StringConstantExpressionAst]){return ''}
- return [string]$rhs.Value
+ if($rhs -is [System.Management.Automation.Language.StringConstantExpressionAst]){return [string]$rhs.Value}
+ if($name -ne 'EZSTUDIOLAB_ASSISTANT_TOKEN'){return ''}
+ if($rhs -isnot [System.Management.Automation.Language.MemberExpressionAst] -or $rhs.Member.Extent.Text -ne 'Password'){throw 'PROFILE_TOKEN_SHAPE_INVALID'}
+ $method=$rhs.Expression
+ if($method -isnot [System.Management.Automation.Language.InvokeMemberExpressionAst] -or $method.Member.Extent.Text -ne 'GetNetworkCredential'){throw 'PROFILE_CREDENTIAL_METHOD_INVALID'}
+ $secureNodes=@($ast.FindAll({param($n) $n -is [System.Management.Automation.Language.AssignmentStatementAst] -and $n.Left.Extent.Text -eq '$secure'},$true))
+ if($secureNodes.Count -ne 1){throw 'PROFILE_SECURE_SOURCE_INVALID'}
+ $pipe=$secureNodes[0].Right
+ if($pipe -isnot [System.Management.Automation.Language.PipelineAst] -or $pipe.PipelineElements.Count -ne 2){throw 'PROFILE_SECURE_PIPELINE_INVALID'}
+ $read=$pipe.PipelineElements[0];$convert=$pipe.PipelineElements[1]
+ if($read -isnot [System.Management.Automation.Language.CommandAst] -or $read.GetCommandName() -ne 'Get-Content' -or $convert -isnot [System.Management.Automation.Language.CommandAst] -or $convert.GetCommandName() -ne 'ConvertTo-SecureString'){throw 'PROFILE_SECURE_COMMANDS_INVALID'}
+ $pathNodes=@($read.CommandElements | Where-Object {$_ -is [System.Management.Automation.Language.StringConstantExpressionAst] -or $_ -is [System.Management.Automation.Language.VariableExpressionAst]})
+ if($pathNodes.Count -ne 1){throw 'PROFILE_SECURE_PATH_AMBIGUOUS'}
+ $pathNode=$pathNodes[0]
+ if($pathNode -is [System.Management.Automation.Language.VariableExpressionAst]){
+  $pathVariable=[string]::Concat('$',$pathNode.VariablePath.UserPath)
+  $assignments=@($ast.FindAll({param($n) $n -is [System.Management.Automation.Language.AssignmentStatementAst] -and $n.Left.Extent.Text -eq $pathVariable},$true))
+  if($assignments.Count -ne 1){throw 'PROFILE_SECURE_PATH_SOURCE_INVALID'}
+  $pathNode=$assignments[0].Right
+  if($pathNode -is [System.Management.Automation.Language.CommandExpressionAst]){$pathNode=$pathNode.Expression}
+ }
+ if($pathNode -isnot [System.Management.Automation.Language.StringConstantExpressionAst]){throw ('PROFILE_SECURE_PATH_SOURCE_UNSUPPORTED_'+$pathNode.GetType().Name)}
+ $filePath=[string]$pathNode.Value
+ if(-not [IO.Path]::IsPathRooted($filePath)){throw 'PROFILE_SECURE_PATH_NOT_ABSOLUTE'}
+ $secure=Get-Content -LiteralPath $filePath -Raw -ErrorAction Stop | ConvertTo-SecureString -ErrorAction Stop
+ return ([System.Management.Automation.PSCredential]::new('profile',$secure)).GetNetworkCredential().Password
 }
 $relay=Get-ProfileConfig 'EZSTUDIOLAB_ASSISTANT_BASE_URL'
 if(-not $relay){$relay='http://EZSTUDIO-MAIN:8702'}
