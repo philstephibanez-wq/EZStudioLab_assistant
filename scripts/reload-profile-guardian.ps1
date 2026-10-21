@@ -29,10 +29,17 @@ function Get-ProfileConfig([string]$name) {
  if($method -isnot [System.Management.Automation.Language.InvokeMemberExpressionAst] -or $method.Member.Extent.Text -ne 'GetNetworkCredential'){throw 'PROFILE_CREDENTIAL_METHOD_INVALID'}
  $secureNodes=@($ast.FindAll({param($n) $n -is [System.Management.Automation.Language.AssignmentStatementAst] -and $n.Left.Extent.Text -eq '$secure'},$true))
  if($secureNodes.Count -ne 1){throw 'PROFILE_SECURE_SOURCE_INVALID'}
- $pipe=$secureNodes[0].Right
- if($pipe -isnot [System.Management.Automation.Language.PipelineAst] -or $pipe.PipelineElements.Count -ne 2){throw 'PROFILE_SECURE_PIPELINE_INVALID'}
- $read=$pipe.PipelineElements[0];$convert=$pipe.PipelineElements[1]
- if($read -isnot [System.Management.Automation.Language.CommandAst] -or $read.GetCommandName() -ne 'Get-Content' -or $convert -isnot [System.Management.Automation.Language.CommandAst] -or $convert.GetCommandName() -ne 'ConvertTo-SecureString'){throw 'PROFILE_SECURE_COMMANDS_INVALID'}
+ $secureRhs=$secureNodes[0].Right
+ $commands=@($secureRhs.FindAll({
+  param($n)
+  $n -is [System.Management.Automation.Language.CommandAst]
+ },$true))
+ if($commands.Count -ne 2){throw ('PROFILE_SECURE_COMMAND_COUNT_'+$commands.Count)}
+ $read=@($commands | Where-Object {$_.GetCommandName() -eq 'Get-Content'})
+ $convert=@($commands | Where-Object {$_.GetCommandName() -eq 'ConvertTo-SecureString'})
+ if($read.Count -ne 1 -or $convert.Count -ne 1){throw 'PROFILE_SECURE_COMMANDS_INVALID'}
+ $read=$read[0]
+ $convert=$convert[0]
  $pathNodes=@($read.CommandElements | Where-Object {$_ -is [System.Management.Automation.Language.StringConstantExpressionAst] -or $_ -is [System.Management.Automation.Language.VariableExpressionAst]})
  if($pathNodes.Count -ne 1){throw 'PROFILE_SECURE_PATH_AMBIGUOUS'}
  $pathNode=$pathNodes[0]
