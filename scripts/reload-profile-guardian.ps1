@@ -3,9 +3,37 @@ $ErrorActionPreference='Stop'
 $root=(Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $workerFile=Join-Path $root 'runtime\profile_ai_requests_worker.py'
 $guardianFile=Join-Path $root 'app\profile_guardian.py'
-$relay=[string]$env:EZS_R2E_RELAY_URL
-$token=[string]$env:EZS_R2E_RELAY_TOKEN
-if (-not $relay -or -not $token) { throw 'PROFILE_RELOAD_RELAY_MAINTENANCE_REQUIRED' }
+# Discover existing credentials without executing the local launcher or printing them.
+function Get-ProfileConfig([string]$name) {
+ foreach($scope in @('Process','User','Machine')) {
+  $value=[Environment]::GetEnvironmentVariable($name,$scope)
+  if($value){return [string]$value}
+ }
+ $launcher=Join-Path $root 'runtime\start_profile_ai_requests.ps1'
+ if(-not (Test-Path -LiteralPath $launcher -PathType Leaf)){return ''}
+ $tokens=$null;$errors=$null
+ $ast=[System.Management.Automation.Language.Parser]::ParseFile($launcher,[ref]$tokens,[ref]$errors)
+ if(@($errors).Count -gt 0){throw 'PROFILE_LAUNCHER_PARSE_ERROR'}
+ $matches=@($ast.FindAll({
+  param($node)
+  $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and
+  $node.Left.Extent.Text -ieq ('$env:'+$name)
+ },$true))
+ if($matches.Count -ne 1){return ''}
+ $rhs=$matches[0].Right
+ if($rhs -is [System.Management.Automation.Language.CommandExpressionAst]){$rhs=$rhs.Expression}
+ if($rhs -isnot [System.Management.Automation.Language.StringConstantExpressionAst]){return ''}
+ return [string]$rhs.Value
+}
+$relay=Get-ProfileConfig 'EZS_R2E_RELAY_URL'
+$token=Get-ProfileConfig 'EZS_R2E_RELAY_TOKEN'
+if (-not $relay -or -not $token) { throw 'PROFILE_RELOAD_RELAY_CREDENTIALS_UNAVAILABLE_IN_APPROVED_SOURCES' }
+$uri=$null
+if (-not [Uri]::TryCreate($relay,[UriKind]::Absolute,[ref]$uri) -or
+ $uri.Scheme -notin @('http','https') -or -not $uri.Host -or $uri.UserInfo) {
+ throw 'PROFILE_RELAY_URL_INVALID'
+}
+
 function Maintenance([string]$mode) {
  $suffix='/r2e/profile/maintenance'
  if($mode -ne 'status'){$suffix+='/'+$mode}

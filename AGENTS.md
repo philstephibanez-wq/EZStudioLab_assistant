@@ -11,9 +11,9 @@
 
 ## PRÉFIXE DE COMMIT ET CONFORMITÉ DE LIVRAISON — OBLIGATOIRE
 
-- Tout **nouveau** message de commit commence exactement par `[v] `, suivi de `type(périmètre): résultat obtenu — VERSION`, en français. Exemple : `[v] fix(profile): préserver les preuves MusicBrainz — 1.4z`.
+- Commits intermédiaires : `type(périmètre): description` sans version et sans modification de VERSION. Livraison réellement validée uniquement : `[numéro réel] type(périmètre): description` (exemple `[1.5b] feat(profile): contre-analyse musicale validée`). Le préfixe `[v]` est interdit.
 - Corps de message multiligne : `Contexte`, `Modifications`, `Validation`, `Impact`, et `Limites / risques` si nécessaire.
-- Un changement livré comprend le code durable, ses tests et l'incrément de `VERSION` dans **un commit cohérent**, sauf impossibilité technique explicitée avant écriture. Ne jamais créer une succession de commits incomplets en prétendant que chacun satisfait au contrat.
+- Aucun incrément de `VERSION` pour test, refactorisation ou correction intermédiaire. Seule une livraison fonctionnelle validée ou un fix définitif validé peut changer `VERSION`, avec code, tests et version dans un commit cohérent.
 - Avant toute publication : confirmer fichiers concernés, absence de fichiers temporaires, version, préfixe, messages, vérifications statiques et tests pertinents. Aucun historique partagé n'est réécrit de force.
 - Un test CI qui échoue ne bloque pas à lui seul un push direct tant qu'une protection de branche n'impose pas le statut. Ne jamais annoncer un blocage effectif avant sa configuration et sa vérification.
 
