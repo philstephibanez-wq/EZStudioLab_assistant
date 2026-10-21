@@ -39,6 +39,22 @@ def crosscheck(lab, revision, xps):
                 and isinstance(m["raw"].get("audioset_scores"),dict)
                 and any(v=="[REDACTED_SECRET_OR_BINARY]" for v in m["raw"]["audioset_scores"].values())
             )
+    # Export-side attestations are only accepted when the archived object
+    # independently matches its post-redaction hash. Pre-redaction SHA must
+    # independently match both Qwen's source SHA and the XPS trace.
+    attestations=lab.get("module_integrity",[])
+    if not isinstance(attestations,list):
+        raise ValueError("crosscheck_module_integrity_invalid")
+    attested={}
+    if attestations:
+        if len(attestations)!=len(registry):
+            raise ValueError("crosscheck_module_integrity_coverage_invalid")
+        for item in attestations:
+            if not isinstance(item,dict) or not isinstance(item.get("module"),str) or item["module"] in attested:
+                raise ValueError("crosscheck_module_integrity_identity_invalid")
+            attested[item["module"]]=item
+        if set(attested)!={m.get("id") for m in registry}:
+            raise ValueError("crosscheck_module_integrity_identity_invalid")
     verified=[]
     mismatch_modules=[]
     for n,(source,review,trace) in enumerate(zip(registry,records,xps_records),1):
@@ -50,9 +66,25 @@ def crosscheck(lab, revision, xps):
             raise ValueError("crosscheck_source_or_provenance_mismatch:"+key)
         observed=digest(source)
         matched=observed==review.get("source_sha256")
-        if not matched and key not in redacted_modules:
+        att=attested.get(key)
+        source_attested=False
+        archive_changed=False
+        if att is not None:
+            if (att.get("archive_sha256_after_redaction")!=observed
+                or att.get("archive_changed")!=(att.get("source_sha256_before_redaction")!=observed)):
+                raise ValueError("crosscheck_archive_attestation_invalid:"+key)
+            source_attested=att.get("source_sha256_before_redaction")==review.get("source_sha256")
+            archive_changed=att["archive_changed"]
+            if matched and not source_attested:
+                raise ValueError("crosscheck_source_attestation_invalid:"+key)
+        # A pre-redaction digest corroborates the historical Qwen source;
+        # it cannot turn a modified archive into a bitwise verified archive.
+        if not matched and not (key in redacted_modules and source_attested and archive_changed):
             mismatch_modules.append(key)
         verified.append({"module":key,"source_sha256":observed,
+                         "source_provenance_attested":bool(matched or source_attested),
+                         "source_attestation_matches_qwen":source_attested if att is not None else None,
+                         "archive_changed":archive_changed if att is not None else None,
                          "original_source_sha256":review["source_sha256"],
                          "source_hash_verified":matched,
                          "unverified_reason":None if matched else ("privacy_redaction_in_archived_module" if key in redacted_modules else "unexplained_source_hash_mismatch"),
