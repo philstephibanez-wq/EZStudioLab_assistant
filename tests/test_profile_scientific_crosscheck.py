@@ -24,6 +24,7 @@ class CrosscheckTest(unittest.TestCase):
     def test_verified_consensus_does_not_mean_ground_truth(self):
         result=crosscheck(*fixture())
         self.assertTrue(result["scientific_crosscheck_performed"])
+        self.assertTrue(result["integrity_complete"])
         self.assertEqual(result["crosschecked_module_total"],2)
         self.assertEqual({x["code"] for x in result["scientific_findings"]},{"TONAL_LABEL_AGREEMENT","TONAL_CONFIDENCE_HETEROGENEOUS"})
         self.assertFalse(result["scientific_findings"][0]["ground_truth_validated"])
@@ -31,7 +32,10 @@ class CrosscheckTest(unittest.TestCase):
     def test_tampered_module_rejected(self):
         lab,rev,xps=fixture()
         lab["fields"]["diagnostics_json"]["module_registry"]["modules"][0]["normalized"]["label"]="D major"
-        with self.assertRaisesRegex(ValueError,"provenance_mismatch"):crosscheck(lab,rev,xps)
+        result=crosscheck(lab,rev,xps)
+        self.assertFalse(result["integrity_complete"])
+        self.assertEqual(result["blocking_source_mismatches"],["tonal.ks"])
+        self.assertEqual(result["crosschecked_module_total"],1)
     def test_trace_mismatch_rejected(self):
         lab,rev,xps=fixture()
         xps["module_audit"]["records"][1]["source_sha256"]="0"*64
