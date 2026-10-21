@@ -15,7 +15,7 @@ def fixture():
         h=digest(m)
         reviews.append({"item_id":name,"index":i,"status":"completed","source_sha256":h,"assessment":{"status":"completed","supporting_evidence":[],"conflicting_evidence":[],"uncertainty":"uncertain"}})
         traces.append({"item_id":name,"index":i,"status":"completed","source_sha256":h,"qwen_request_sha256":"a"*64,"qwen_response_sha256":"b"*64})
-    lab={"schema":"ezstudio.run-report.v1","producer":"lab","phase":"profile","run_id":153,"diagnostics":{"module_registry":{"modules":modules}}}
+    lab={"schema":"ezstudio.diagnostics.main.v1","producer":"lab","phase":"profile","run_id":153,"fields":{"id":153,"item":"profile","diagnostics_json":{"module_registry":{"modules":modules}}}}
     rev={"schema":"ezstudio.diagnostics.main.v1","producer":"assistant","run_id":153,"revision_id":52,"fields":{"run_id":153,"id":52,"comparison_json":{"module_consultations":{"complete":True,"item_total":2,"examined":2,"results":reviews},"assistant_ai":{"coverage":{"scored_count":0,"total_count":5}}}}}
     xps={"schema":"ezstudio.profile-execution-report.v1","run_id":153,"revision_id":52,"module_audit":{"records":traces}}
     return lab,rev,xps
@@ -30,7 +30,7 @@ class CrosscheckTest(unittest.TestCase):
         self.assertEqual(result,crosscheck(*fixture()))
     def test_tampered_module_rejected(self):
         lab,rev,xps=fixture()
-        lab["diagnostics"]["module_registry"]["modules"][0]["normalized"]["label"]="D major"
+        lab["fields"]["diagnostics_json"]["module_registry"]["modules"][0]["normalized"]["label"]="D major"
         with self.assertRaisesRegex(ValueError,"provenance_mismatch"):crosscheck(lab,rev,xps)
     def test_trace_mismatch_rejected(self):
         lab,rev,xps=fixture()
