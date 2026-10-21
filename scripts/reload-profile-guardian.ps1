@@ -23,18 +23,18 @@ function Get-ProfileConfig([string]$name) {
  $rhs=$matches[0].Right
  if($rhs -is [System.Management.Automation.Language.CommandExpressionAst]){$rhs=$rhs.Expression}
  if($rhs -is [System.Management.Automation.Language.StringConstantExpressionAst]){return [string]$rhs.Value}
- # Explicitly accept PSCredential.GetNetworkCredential().Password, not arbitrary expressions.
+ # Permit only the known PSCredential.GetNetworkCredential().Password shape.
  if($name -eq 'EZSTUDIOLAB_ASSISTANT_TOKEN' -and
     $rhs -is [System.Management.Automation.Language.MemberExpressionAst] -and
     $rhs.Member.Extent.Text -eq 'Password' -and
     $rhs.Expression -is [System.Management.Automation.Language.InvokeMemberExpressionAst] -and
     $rhs.Expression.Member.Extent.Text -eq 'GetNetworkCredential' -and
     $rhs.Expression.Expression -is [System.Management.Automation.Language.VariableExpressionAst]) {
-   $credVar=$rhs.Expression.Expression.VariablePath.UserPath
-   $sources=@($ast.FindAll({
-      param($node)
-      $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and
-      $node.Left.Extent.Text -ieq ('
+   $credentialName=$rhs.Expression.Expression.VariablePath.UserPath
+   $assignments=@($ast.FindAll({
+     param($node)
+     $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and
+     $node.Left.Extent.Text -ieq ('
 }
 $relay=Get-ProfileConfig 'EZSTUDIOLAB_ASSISTANT_BASE_URL'
 if(-not $relay){$relay='http://EZSTUDIO-MAIN:8702'}
@@ -98,26 +98,24 @@ try {
   }else{Write-Warning 'PROFILE_QUEUE_REMAINS_PAUSED_FOR_SAFETY'}
  }
 }
-+$credVar)
+ + $credentialName)
    },$true))
-   if($sources.Count -ne 1){throw 'PROFILE_LAB_CREDENTIAL_SOURCE_NOT_UNIQUE'}
-   $source=$sources[0].Right
-   if($source -is [System.Management.Automation.Language.PipelineAst] -and $source.PipelineElements.Count -eq 1) {
-      $source=$source.PipelineElements[0]
-   }
-   # Support only Import-Clixml <literal path> for a user-bound DPAPI credential.
+   if($assignments.Count -ne 1){throw 'PROFILE_CREDENTIAL_ASSIGNMENT_NOT_UNIQUE'}
+   $source=$assignments[0].Right
+   if($source -is [System.Management.Automation.Language.PipelineAst] -and
+      $source.PipelineElements.Count -eq 1){$source=$source.PipelineElements[0]}
    if($source -is [System.Management.Automation.Language.CommandAst] -and
       $source.CommandElements.Count -eq 2 -and
       $source.CommandElements[0].Extent.Text -eq 'Import-Clixml' -and
       $source.CommandElements[1] -is [System.Management.Automation.Language.StringConstantExpressionAst]) {
-      $securePath=$source.CommandElements[1].Value
-      $credential=Import-Clixml -LiteralPath $securePath -ErrorAction Stop
-      if($credential -isnot [System.Management.Automation.PSCredential]){throw 'PROFILE_LAB_CREDENTIAL_TYPE_INVALID'}
+      $filePath=$source.CommandElements[1].Value
+      $credential=Import-Clixml -LiteralPath $filePath -ErrorAction Stop
+      if($credential -isnot [System.Management.Automation.PSCredential]){throw 'PROFILE_CREDENTIAL_INVALID_TYPE'}
       return $credential.GetNetworkCredential().Password
    }
-   throw ('PROFILE_LAB_CREDENTIAL_SOURCE_UNSUPPORTED_' + $source.GetType().Name)
+   throw ('PROFILE_CREDENTIAL_SOURCE_UNSUPPORTED_' + $source.GetType().Name)
  }
- throw ('PROFILE_LAB_CONFIG_EXPRESSION_UNSUPPORTED_' + $rhs.GetType().Name)
+ throw ('PROFILE_CONFIG_EXPRESSION_UNSUPPORTED_' + $rhs.GetType().Name)
 }
 $relay=Get-ProfileConfig 'EZSTUDIOLAB_ASSISTANT_BASE_URL'
 if(-not $relay){$relay='http://EZSTUDIO-MAIN:8702'}
