@@ -13,12 +13,13 @@ def digest(value):
 def crosscheck(lab, revision, xps):
     base=audit(revision)
     run=base["run_id"]
-    if (lab.get("schema")!="ezstudio.run-report.v1" or lab.get("producer")!="lab"
+    if (lab.get("schema")!="ezstudio.diagnostics.main.v1" or lab.get("producer")!="lab"
         or lab.get("phase")!="profile" or lab.get("run_id")!=run
+        or lab.get("fields",{}).get("id")!=run or lab.get("fields",{}).get("item")!="profile"
         or xps.get("schema")!="ezstudio.profile-execution-report.v1"
         or xps.get("run_id")!=run or xps.get("revision_id")!=base["revision_id"]):
         raise ValueError("crosscheck_archive_identity_invalid")
-    registry=lab.get("diagnostics",{}).get("module_registry",{}).get("modules")
+    registry=lab.get("fields",{}).get("diagnostics_json",{}).get("module_registry",{}).get("modules")
     records=revision["fields"]["comparison_json"]["module_consultations"]["results"]
     xps_records=xps.get("module_audit",{}).get("records")
     if not isinstance(registry,list) or not isinstance(xps_records,list) or len(registry)!=len(records) or len(xps_records)!=len(records):
