@@ -22,8 +22,121 @@ function Get-ProfileConfig([string]$name) {
  if($matches.Count -ne 1){return ''}
  $rhs=$matches[0].Right
  if($rhs -is [System.Management.Automation.Language.CommandExpressionAst]){$rhs=$rhs.Expression}
- if($rhs -isnot [System.Management.Automation.Language.StringConstantExpressionAst]){return ''}
- return [string]$rhs.Value
+ if($rhs -is [System.Management.Automation.Language.StringConstantExpressionAst]){return [string]$rhs.Value}
+ if($name -ne 'EZSTUDIOLAB_ASSISTANT_TOKEN' -or
+    $rhs -isnot [System.Management.Automation.Language.MemberExpressionAst] -or
+    $rhs.Member.Extent.Text -ne 'Password' -or
+    $rhs.Expression -isnot [System.Management.Automation.Language.InvokeMemberExpressionAst] -or
+    $rhs.Expression.Member.Extent.Text -ne 'GetNetworkCredential') {return ''}
+ $object=$rhs.Expression.Expression
+ if($object -isnot [System.Management.Automation.Language.VariableExpressionAst]){throw 'PROFILE_CREDENTIAL_OBJECT_UNSUPPORTED'}
+ $credentialName=$object.VariablePath.UserPath
+ if($credentialName -ne 'credential'){throw 'PROFILE_CREDENTIAL_VARIABLE_UNEXPECTED'}
+ $secureAssignment=@($ast.FindAll({
+    param($node)
+    $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and
+    $node.Left.Extent.Text -eq '$secure'
+ },$true))
+ if($secureAssignment.Count -ne 1){throw 'PROFILE_SECURE_SOURCE_NOT_UNIQUE'}
+ $pipeline=$secureAssignment[0].Right
+ if($pipeline -isnot [System.Management.Automation.Language.PipelineAst] -or
+    $pipeline.PipelineElements.Count -ne 2){throw 'PROFILE_SECURE_PIPELINE_UNEXPECTED'}
+ $read=$pipeline.PipelineElements[0]
+ $convert=$pipeline.PipelineElements[1]
+ if($read -isnot [System.Management.Automation.Language.CommandAst] -or
+    $convert -isnot [System.Management.Automation.Language.CommandAst] -or
+    $read.GetCommandName() -ne 'Get-Content' -or
+    $convert.GetCommandName() -ne 'ConvertTo-SecureString' -or
+    $convert.CommandElements.Count -ne 1){throw 'PROFILE_SECURE_COMMANDS_UNSUPPORTED'}
+ $pathAst=@($read.CommandElements | Where-Object {
+    $_ -is [System.Management.Automation.Language.StringConstantExpressionAst] -or
+    $_ -is [System.Management.Automation.Language.VariableExpressionAst]
+ })
+ if($pathAst.Count -ne 1){throw 'PROFILE_SECURE_PATH_NOT_SIMPLE'}
+ $filePath=''
+ if($pathAst[0] -is [System.Management.Automation.Language.StringConstantExpressionAst]){
+    $filePath=$pathAst[0].Value
+ } else {
+    $varName=$pathAst[0].VariablePath.UserPath
+    $pathAssignments=@($ast.FindAll({
+       param($node)
+       $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and
+       $node.Left.Extent.Text -eq ('
+}
+$relay=Get-ProfileConfig 'EZSTUDIOLAB_ASSISTANT_BASE_URL'
+if(-not $relay){$relay='http://EZSTUDIO-MAIN:8702'}
+$token=Get-ProfileConfig 'EZSTUDIOLAB_ASSISTANT_TOKEN'
+if (-not $relay -or -not $token) { throw 'PROFILE_RELOAD_LAB_TOKEN_UNAVAILABLE_IN_APPROVED_SOURCES' }
+$uri=$null
+if (-not [Uri]::TryCreate($relay,[UriKind]::Absolute,[ref]$uri) -or
+ $uri.Scheme -notin @('http','https') -or -not $uri.Host -or $uri.UserInfo) {
+ throw 'PROFILE_RELAY_URL_INVALID'
+}
+
+function Maintenance([string]$mode) {
+ $suffix='/internal/analysis/desktop/profile/ai-requests/maintenance'
+ 
+ $method=if($mode -eq 'status'){'GET'}else{'POST'}
+ $args=@{Method=$method;Uri=($relay.TrimEnd('/')+$suffix);Headers=@{'X-EZScore-Analysis-Token'=$token};TimeoutSec=8}
+ if($method -eq 'POST'){$args.ContentType='application/json';$args.Body=('{"mode":"'+$mode+'"}')}
+ $v=Invoke-RestMethod @args
+ if($v.ok -ne $true){throw "PROFILE_LAB_MAINTENANCE_FAILED:$mode"}
+ return $v
+}
+function Processes([string]$path) {
+ @(Get-CimInstance Win32_Process -ErrorAction Stop | Where-Object {
+  $_.Name -in @('python.exe','pythonw.exe') -and $_.CommandLine -and
+  $_.CommandLine.IndexOf($path,[StringComparison]::OrdinalIgnoreCase) -ge 0
+ })
+}
+$paused=$false
+$reloadSucceeded=$false
+try {
+ $v=Maintenance 'pause';$paused=$true
+ if($v.maintenance -ne $true -or $v.active -ne $false){throw 'PROFILE_MAINTENANCE_NOT_IDLE'}
+ $jobs=Invoke-RestMethod 'http://EZSTUDIO-MAIN:8700/api/jobs' -TimeoutSec 8
+ if($jobs.ok -ne $true -or $null -eq $jobs.jobs -or $null -eq $jobs.queue_errors){throw 'ORCHESTRATOR_QUEUE_STATUS_UNVERIFIED'}
+ if($jobs.queue_errors.PSObject.Properties.Name -contains 'lab_ai'){throw 'ORCHESTRATOR_PROFILE_QUEUE_UNREADABLE'}
+ if(@($jobs.jobs | Where-Object {$_.kind -eq 'assistant.profile.review' -and $_.state -in @('running','claimed','cancelling')}).Count -gt 0){throw 'PROFILE_ACTIVE_JOB'}
+ $g=@(Processes $guardianFile);$w=@(Processes $workerFile)
+ if($g.Count -ne 1 -or $w.Count -ne 1){throw "PROFILE_PROCESS_COUNTS_INVALID guardian=$($g.Count) worker=$($w.Count)"}
+ $old=$w[0]
+ $check=Maintenance 'status'
+ if($check.maintenance -ne $true -or $check.active -ne $false){throw 'PROFILE_RELOAD_LOST_MAINTENANCE'}
+ $now=Get-CimInstance Win32_Process -Filter "ProcessId=$($old.ProcessId)"
+ if($null -eq $now -or $now.CreationDate -ne $old.CreationDate -or $now.CommandLine.IndexOf($workerFile,[StringComparison]::OrdinalIgnoreCase) -lt 0){throw 'PROFILE_WORKER_PID_RACE'}
+ Stop-Process -Id $old.ProcessId -ErrorAction Stop
+ $until=(Get-Date).AddSeconds(45)
+ do {
+  Start-Sleep -Seconds 2
+  $g=@(Processes $guardianFile);$w=@(Processes $workerFile)
+  if($g.Count -ne 1 -or $w.Count -gt 1){throw 'PROFILE_GUARDIAN_OR_WORKER_DUPLICATED'}
+  if($w.Count -eq 1 -and $w[0].ProcessId -ne $old.ProcessId){break}
+ }while((Get-Date) -lt $until)
+ if($w.Count -ne 1 -or $w[0].ProcessId -eq $old.ProcessId){throw 'PROFILE_GUARDIAN_RELOAD_TIMEOUT'}
+ $reloadSucceeded=$true
+ Write-Output "PROFILE_WORKER_RELOADED old=$($old.ProcessId) new=$($w[0].ProcessId)"
+}finally{
+ if($paused){
+  $status=Maintenance 'status'
+  if($reloadSucceeded -and $status.maintenance -eq $true -and $status.active -eq $false){
+   [void](Maintenance 'resume')
+   Write-Output 'PROFILE_QUEUE_RESUMED'
+  }else{Write-Warning 'PROFILE_QUEUE_REMAINS_PAUSED_FOR_SAFETY'}
+ }
+}
++$varName)
+    },$true))
+    if($pathAssignments.Count -ne 1){throw 'PROFILE_SECURE_PATH_SOURCE_UNAVAILABLE'}
+    $pathSource=$pathAssignments[0].Right
+    if($pathSource -is [System.Management.Automation.Language.CommandExpressionAst]){$pathSource=$pathSource.Expression}
+    if($pathSource -isnot [System.Management.Automation.Language.StringConstantExpressionAst]){throw ('PROFILE_SECURE_PATH_SOURCE_UNSUPPORTED_'+$pathSource.GetType().Name)}
+    $filePath=$pathSource.Value
+ }
+ if(-not [IO.Path]::IsPathRooted($filePath)){throw 'PROFILE_SECURE_PATH_NOT_ABSOLUTE'}
+ $secure=Get-Content -LiteralPath $filePath -Raw -ErrorAction Stop | ConvertTo-SecureString -ErrorAction Stop
+ $credential=New-Object System.Management.Automation.PSCredential('profile',$secure)
+ return $credential.GetNetworkCredential().Password
 }
 $relay=Get-ProfileConfig 'EZSTUDIOLAB_ASSISTANT_BASE_URL'
 if(-not $relay){$relay='http://EZSTUDIO-MAIN:8702'}
