@@ -24,5 +24,8 @@ def main():
     if output.exists():raise RuntimeError("output_exists")
     if not output.parent.is_dir():raise RuntimeError("output_parent_missing")
     output.write_text(json.dumps(result,ensure_ascii=False,sort_keys=True,indent=2)+"\n",encoding="utf-8")
+    if not result["integrity_complete"]:
+        print("PROFILE_SCIENTIFIC_CROSSCHECK_INCOMPLETE",result["run_id"],result["revision_id"],"verified",result["crosschecked_module_total"],"unverified",result["unverified_module_total"],"blocking",",".join(result["blocking_source_mismatches"]))
+        raise SystemExit(2)
     print("PROFILE_SCIENTIFIC_CROSSCHECK_OK",result["run_id"],result["revision_id"],result["crosschecked_module_total"],"findings",len(result["scientific_findings"]))
 if __name__=="__main__":main()
