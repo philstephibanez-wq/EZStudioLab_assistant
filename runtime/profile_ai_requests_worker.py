@@ -140,7 +140,7 @@ def process(run_id, client):
     payload['status'] = 'draft'
     payload['reviewer'] = 'assistant-lab-ui-qwen'
     digest = hashlib.sha256(json.dumps(
-        {'ai': ai, 'run_id': run_id}, sort_keys=True, ensure_ascii=True
+        {'ai': ai, 'sequential': sequential, 'run_id': run_id}, sort_keys=True, ensure_ascii=True
     ).encode('utf-8')).hexdigest()[:20]
     payload['revision_key'] = 'profile-ui-qwen-' + str(run_id) + '-' + digest
     snap('lab.submit.request', payload)
