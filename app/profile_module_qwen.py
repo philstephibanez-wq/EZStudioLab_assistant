@@ -9,10 +9,18 @@ def infer_module(provider, request):
     ready, reason=provider._health()
     if not ready: return {"status":"error","reason":reason or "model_unavailable"}
     preset,digest=load_review_preset("profile")
-    prompt=("Analyse uniquement les résultats du module scientifique fourni, sans prétendre écouter l'audio. "
-            "Les scores du moteur sont des hypothèses, pas des faits. Retourne un objet JSON: "
-            "status (completed ou abstain), summary, uncertainty, supporting_evidence (liste), conflicting_evidence (liste). "
-            "Ne valide aucun preset et indique toute insuffisance de preuves.")
+    prompt=("Tu es un assistant de contre-analyse musicale consultative. Réponds intégralement en français. "
+            "Analyse uniquement les observations du module scientifique fourni et leurs limites ; "
+            "tu n'as ni écouté l'audio ni consulté le Web. Ne prétends jamais le contraire. "
+            "Retourne un objet JSON avec status (completed ou abstain), summary, uncertainty, "
+            "supporting_evidence (liste) et conflicting_evidence (liste). "
+            "Dans summary, cite un résultat musical précis du module avec son unité lorsqu'elle existe, "
+            "son statut de calibration, et une interprétation prudente utile au musicien. "
+            "Dans uncertainty, précise la limite qui empêche toute validation indépendante. "
+            "Si des résultats sont discordants ou insuffisants, expose-les ; si rien n'est démontrable, "
+            "utilise abstain et explique pourquoi. Ne transforme pas des scores de modèles "
+            "hétérogènes en probabilités comparables, n'invente aucune source, "
+            "ne valide ni ne promeus de preset.")
     bound=int(preset["context_max_chars"])
     try:
         content, projection = module_prompt_payload(request,bound,prompt)
