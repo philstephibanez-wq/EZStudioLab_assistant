@@ -6,6 +6,7 @@ Requires an authenticated gh CLI on XPS; failures are non-fatal and observable.
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import os
 import re
@@ -92,6 +93,26 @@ def make_report(trace, outcome):
                 "conflicting_evidence_count": len(assessment.get("conflicting_evidence", [])) if isinstance(assessment.get("conflicting_evidence"), list) else None,
             },
         })
+    # Cryptographic provenance without publishing raw prompt/context or response bodies.
+    request_fingerprints = {}
+    response_fingerprints = {}
+    for event in events:
+        data = event.get("data")
+        if not isinstance(data, dict):
+            continue
+        item_id = data.get("item_id")
+        if not isinstance(item_id,str) or not SAFE_KEY.fullmatch(item_id.replace(".","_").replace("-","_")):
+            continue
+        if event.get("event") == "qwen.module.request" and isinstance(data.get("body"),dict):
+            raw = json.dumps(data["body"],sort_keys=True,ensure_ascii=False,separators=(",",":")).encode("utf-8")
+            request_fingerprints[item_id] = hashlib.sha256(raw).hexdigest()
+        if event.get("event") == "qwen.module.response" and isinstance(data.get("raw"),str):
+            raw = data["raw"].encode("utf-8")
+            response_fingerprints[item_id] = hashlib.sha256(raw).hexdigest()
+    for record in module_records:
+        item_id=record["item_id"]
+        record["qwen_request_sha256"] = request_fingerprints.get(item_id)
+        record["qwen_response_sha256"] = response_fingerprints.get(item_id)
     if module_records and (len(module_records) != 12 or any(
         record["status"] not in ("completed", "abstain") for record in module_records
     )):
