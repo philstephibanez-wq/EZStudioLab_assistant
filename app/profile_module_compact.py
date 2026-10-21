@@ -6,7 +6,14 @@ def _project(value, samples, depth=0):
     if depth >= 12:
         return {"truncated_depth": True, "type": type(value).__name__}
     if isinstance(value, dict):
-        return {str(k): _project(v, samples, depth+1) for k,v in value.items()}
+        priority=("id","status","family","name","summary","normalized","consensus","confidence","prediction","predictions","scores","top","labels","parameters","thresholds","timing","weights")
+        ordered=sorted(value,key=lambda k: (0,priority.index(str(k))) if str(k) in priority else (1,str(k)))
+        take=min(len(ordered),max(1,samples*3))
+        selected=ordered[:take]
+        result={str(k):_project(value[k],samples,depth+1) for k in selected}
+        if len(ordered)>take:
+            result["_projection_coverage"]={"kind":"dictionary_subset","original_keys":len(ordered),"retained_keys":take,"omitted_keys":len(ordered)-take}
+        return result
     if isinstance(value, list):
         if len(value) <= samples:
             return [_project(v,samples,depth+1) for v in value]
