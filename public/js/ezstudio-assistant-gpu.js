@@ -8,7 +8,9 @@ function saveHistory(a){try{const now=Date.now();localStorage.setItem(KEY,JSON.s
 function scale(samples,key,g){if(key==='util'||key==='memory')return[0,100];if(key==='power')return[0,Math.max(1,num(g.power_limit_w))];if(key==='temp')return[20,100];if(key==='clock'){let m=Math.max(300,num(g.sm_clock_mhz));$.each(samples,(_,r)=>m=Math.max(m,num(r.clock)));return[0,m*1.05];}return[0,100];}
 function plot($r,s,key,w,h,g){if(s.length<2){$r.find('[data-perf-line="'+key+'"],[data-perf-area="'+key+'"]').attr('points','');return;}const [lo,hi]=scale(s,key,g),span=Math.max(.0001,hi-lo),pts=$.map(s,(r,i)=>{const x=(i/(MAX-1))*w,v=Math.max(lo,Math.min(hi,num(r[key]))),y=h-2-((v-lo)/span)*(h-4);return[[x,y]];}),line=$.map(pts,p=>p[0].toFixed(1)+','+p[1].toFixed(1)).join(' '),last=pts[pts.length-1][0];$r.find('[data-perf-line="'+key+'"]').attr('points',line);$r.find('[data-perf-area="'+key+'"]').attr('points','0,'+h+' '+line+' '+last.toFixed(1)+','+h);}
 function initPerformance(){
- const $r=$('#ezs-performance-panel');if(!$r.length)return;const url=$r.data('telemetry-url');let samples=loadHistory(),timer=null,stopped=false;
+ window.ezsGpuMonitorBooted=true;
+ const $r=$('#ezs-performance-panel');if(!$r.length)return;const url=$r.data('telemetry-url');
+ $r.find('[data-perf-status]').text('Connexion télémétrie…');let samples=loadHistory(),timer=null,stopped=false;
  function rehydrate(){
   if(!samples.length)return;
   const last=samples[samples.length-1]||{};

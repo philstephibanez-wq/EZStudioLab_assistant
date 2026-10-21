@@ -178,6 +178,7 @@ def _profile_consultation_status() -> dict:
         if not timeline.is_file(): return {"state":"not_started"}
         progress={"state":"in_progress","run_id":int(folders[0].name.split("-")[1]),
                   "completed":0,"total":None,"current_item":None}
+        saw_module_event=False
         with timeline.open(encoding="utf-8") as stream:
             for line in stream:
                 try: event=json.loads(line)
@@ -185,12 +186,15 @@ def _profile_consultation_status() -> dict:
                 name=event.get("event")
                 data=event.get("data") or {}
                 if name=="module.progress" and isinstance(data,dict):
+                    saw_module_event=True
                     progress["completed"]=data.get("item_index",0)
                     progress["total"]=data.get("item_total")
                     progress["current_item"]=data.get("current_item")
                 elif name=="trace.finish":
                     outcome=data.get("status") if isinstance(data,dict) else None
                     progress["state"]="completed" if outcome=="completed" else "error"
+        if not saw_module_event:
+            return {"state":"not_started","run_id":progress["run_id"],"note":"historical_trace_without_sequential_review"}
         return progress
     except (OSError,ValueError):
         return {"state":"unavailable"}
