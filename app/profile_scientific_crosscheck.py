@@ -40,6 +40,7 @@ def crosscheck(lab, revision, xps):
                 and any(v=="[REDACTED_SECRET_OR_BINARY]" for v in m["raw"]["audioset_scores"].values())
             )
     verified=[]
+    mismatch_modules=[]
     for n,(source,review,trace) in enumerate(zip(registry,records,xps_records),1):
         key=review["item_id"]
         if (not isinstance(source,dict) or source.get("id")!=key or trace.get("item_id")!=key
@@ -50,11 +51,11 @@ def crosscheck(lab, revision, xps):
         observed=digest(source)
         matched=observed==review.get("source_sha256")
         if not matched and key not in redacted_modules:
-            raise ValueError("crosscheck_source_or_provenance_mismatch:"+key)
+            mismatch_modules.append(key)
         verified.append({"module":key,"source_sha256":observed,
                          "original_source_sha256":review["source_sha256"],
                          "source_hash_verified":matched,
-                         "unverified_reason":None if matched else "privacy_redaction_in_archived_module",
+                         "unverified_reason":None if matched else ("privacy_redaction_in_archived_module" if key in redacted_modules else "unexplained_source_hash_mismatch"),
                          "source_status":source.get("status"),"qwen_status":review["status"],
                          "qwen_request_sha256":trace.get("qwen_request_sha256"),
                          "qwen_response_sha256":trace.get("qwen_response_sha256")})
@@ -75,7 +76,12 @@ def crosscheck(lab, revision, xps):
             findings.append({"code":"TONAL_CONFIDENCE_HETEROGENEOUS","evidence":tonal_details,
                              "note":"Scores from heterogeneous calibration methods cannot be interpreted as directly comparable probabilities.",
                              "ground_truth_validated":False})
+    if mismatch_modules:
+        findings.append({"code":"SOURCE_HASH_MISMATCH_BLOCKING","modules":mismatch_modules,
+                         "ground_truth_validated":False,"requires_source_investigation":True})
     return {**base,"schema":"ezstudio.profile-crosscheck.r1","scientific_crosscheck_performed":True,
+            "integrity_complete":not mismatch_modules and all(item["source_hash_verified"] for item in verified),
+            "blocking_source_mismatches":mismatch_modules,
             "crosschecked_module_total":sum(1 for item in verified if item["source_hash_verified"]),
             "unverified_module_total":sum(1 for item in verified if not item["source_hash_verified"]),
             "provenance_checks":verified,
