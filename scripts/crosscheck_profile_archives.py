@@ -8,7 +8,7 @@ from profile_scientific_crosscheck import crosscheck
 
 def read_json(path):
     raw=Path(path).read_bytes()
-    if raw.startswith((b"\\xff\\xfe",b"\\xfe\\xff")):
+    if raw.startswith((b"\xff\xfe",b"\xfe\xff")):
         return json.loads(raw.decode("utf-16"))
     return json.loads(raw.decode("utf-8-sig"))
 
