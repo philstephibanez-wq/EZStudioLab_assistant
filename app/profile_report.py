@@ -61,6 +61,41 @@ def make_report(trace, outcome):
             us = event.get("duration_us")
             if isinstance(us, int) and 0 <= us <= 10**12:
                 durations[name.replace(".", "_")] = us
+    # Export a strictly allowlisted module audit: the raw trace stays on XPS.
+    module_records = []
+    for event in events:
+        if event.get("event") != "module.review.completed":
+            continue
+        data = event.get("data")
+        if not isinstance(data, dict):
+            continue
+        assessment = data.get("assessment")
+        if not isinstance(assessment, dict):
+            continue
+        def safe_text(value, limit):
+            if not isinstance(value, str):
+                return ""
+            if len(value) > limit or re.search(r"(?i)(?:bearer\\s+|github_pat_|gh[pousr]_|(?:https?://)|[a-z]:\\\\|\\\\\\\\|/home/|/users/)", value):
+                return "[REDACTED_UNSAFE_TEXT]"
+            return value
+        module_records.append({
+            "item_id": safe_text(data.get("item_id"), 128),
+            "index": data.get("index") if type(data.get("index")) is int else None,
+            "source_sha256": safe_text(data.get("source_sha256"), 64),
+            "status": safe_text(data.get("status"), 32),
+            "duration_ms": data.get("duration_ms") if type(data.get("duration_ms")) is int else None,
+            "assessment": {
+                "status": safe_text(assessment.get("status"), 32),
+                "summary": safe_text(assessment.get("summary"), 2000),
+                "uncertainty": safe_text(assessment.get("uncertainty"), 1000),
+                "supporting_evidence_count": len(assessment.get("supporting_evidence", [])) if isinstance(assessment.get("supporting_evidence"), list) else None,
+                "conflicting_evidence_count": len(assessment.get("conflicting_evidence", [])) if isinstance(assessment.get("conflicting_evidence"), list) else None,
+            },
+        })
+    if module_records and (len(module_records) != 12 or any(
+        record["status"] not in ("completed", "abstain") for record in module_records
+    )):
+        raise ValueError("profile_report_incomplete_module_audit")
     return {
         "schema": "ezstudio.profile-execution-report.v1",
         "run_id": trace.run_id,
@@ -73,6 +108,7 @@ def make_report(trace, outcome):
         "dimensions": dimensions,
         "durations_us": durations,
         "advisory_only": True,
+        "module_audit": {"count": len(module_records), "records": module_records, "raw_xps_requests_archived": False},
     }
 
 
@@ -101,7 +137,7 @@ def publish_report(report):
         raise ValueError("report_identity_invalid")
     path = f"diagnostics/profile/run-{run:06d}/trace-{trace_id}.json"
     raw = (json.dumps(report, ensure_ascii=False, sort_keys=True, indent=2) + "\n").encode("utf-8")
-    if len(raw) > 12000:
+    if len(raw) > 180000:
         raise ValueError("report_size_exceeded")
     endpoint = f"repos/{DEST}/contents/{path}"
     try:
