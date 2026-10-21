@@ -24,16 +24,40 @@ def crosscheck(lab, revision, xps):
     xps_records=xps.get("module_audit",{}).get("records")
     if not isinstance(registry,list) or not isinstance(xps_records,list) or len(registry)!=len(records) or len(xps_records)!=len(records):
         raise ValueError("crosscheck_module_coverage_invalid")
+    # A privacy-redacted archive cannot reproduce a source hash exactly.
+    # Report such modules as unverified; do not accept a hash mismatch as valid.
+    redactions=lab.get("redactions",[])
+    if not isinstance(redactions,list):
+        raise ValueError("crosscheck_redactions_invalid")
+    redacted_modules=set()
+    for entry in redactions:
+        path=entry.get("field","") if isinstance(entry,dict) else ""
+        if path.startswith("$.diagnostics_json.module_registry.modules[].raw.audioset_scores."):
+            redacted_modules.update(
+                m["id"] for m in registry
+                if isinstance(m,dict) and isinstance(m.get("raw"),dict)
+                and isinstance(m["raw"].get("audioset_scores"),dict)
+                and any(v=="[REDACTED_SECRET_OR_BINARY]" for v in m["raw"]["audioset_scores"].values())
+            )
     verified=[]
     for n,(source,review,trace) in enumerate(zip(registry,records,xps_records),1):
         key=review["item_id"]
         if (not isinstance(source,dict) or source.get("id")!=key or trace.get("item_id")!=key
             or review.get("index")!=n or trace.get("index")!=n
-            or digest(source)!=review.get("source_sha256") or trace.get("source_sha256")!=review.get("source_sha256")
+            or trace.get("source_sha256")!=review.get("source_sha256")
             or trace.get("status")!=review.get("status")):
             raise ValueError("crosscheck_source_or_provenance_mismatch:"+key)
-        verified.append({"module":key,"source_sha256":digest(source),"source_status":source.get("status"),"qwen_status":review["status"],
-                         "qwen_request_sha256":trace.get("qwen_request_sha256"),"qwen_response_sha256":trace.get("qwen_response_sha256")})
+        observed=digest(source)
+        matched=observed==review.get("source_sha256")
+        if not matched and key not in redacted_modules:
+            raise ValueError("crosscheck_source_or_provenance_mismatch:"+key)
+        verified.append({"module":key,"source_sha256":observed,
+                         "original_source_sha256":review["source_sha256"],
+                         "source_hash_verified":matched,
+                         "unverified_reason":None if matched else "privacy_redaction_in_archived_module",
+                         "source_status":source.get("status"),"qwen_status":review["status"],
+                         "qwen_request_sha256":trace.get("qwen_request_sha256"),
+                         "qwen_response_sha256":trace.get("qwen_response_sha256")})
     tonal=[m for m in registry if str(m["id"]).startswith("tonal.") and m.get("status")=="ok"]
     findings=[]
     tonal_details=[{"module":m["id"],"label":m.get("normalized",{}).get("label"),
@@ -52,6 +76,8 @@ def crosscheck(lab, revision, xps):
                              "note":"Scores from heterogeneous calibration methods cannot be interpreted as directly comparable probabilities.",
                              "ground_truth_validated":False})
     return {**base,"schema":"ezstudio.profile-crosscheck.r1","scientific_crosscheck_performed":True,
-            "crosschecked_module_total":len(verified),"provenance_checks":verified,
+            "crosschecked_module_total":sum(1 for item in verified if item["source_hash_verified"]),
+            "unverified_module_total":sum(1 for item in verified if not item["source_hash_verified"]),
+            "provenance_checks":verified,
             "scientific_findings":findings,"no_preset_mutation":True,
             "crosscheck_sha256":digest({"provenance":verified,"scientific_findings":findings})}
