@@ -61,6 +61,10 @@ function Get-ProfileConfig([string]$name) {
   $assignments=@($ast.FindAll({param($n) $n -is [System.Management.Automation.Language.AssignmentStatementAst] -and $n.Left.Extent.Text -eq $pathVariable},$true))
   if($assignments.Count -ne 1){throw 'PROFILE_SECURE_PATH_SOURCE_INVALID'}
   $pathNode=$assignments[0].Right
+  if($pathNode -is [System.Management.Automation.Language.PipelineAst]){
+   if($pathNode.PipelineElements.Count -ne 1){throw 'PROFILE_SECURE_PATH_PIPELINE_COMPLEX'}
+   $pathNode=$pathNode.PipelineElements[0]
+  }
   if($pathNode -is [System.Management.Automation.Language.CommandExpressionAst]){$pathNode=$pathNode.Expression}
  }
  if($pathNode -isnot [System.Management.Automation.Language.StringConstantExpressionAst]){throw ('PROFILE_SECURE_PATH_SOURCE_UNSUPPORTED_'+$pathNode.GetType().Name)}
