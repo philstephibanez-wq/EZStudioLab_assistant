@@ -115,11 +115,11 @@ def inspect_scans_with_local_ocr(documents, track_title, *, max_scans=2):
     """
     import os
     import subprocess
-    from profile_tesseract_runtime import resolve_tesseract
+    from profile_tesseract_runtime import resolve_tesseract, booklet_ocr_enabled
     import tempfile
     import urllib.request
 
-    if os.getenv("EZS_PROFILE_BOOKLET_OCR", "0") != "1":
+    if not booklet_ocr_enabled():
         return {"status": "disabled", "scans": []}
     runtime = resolve_tesseract()
     if runtime["status"] != "ready":
