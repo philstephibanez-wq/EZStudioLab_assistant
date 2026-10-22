@@ -3,6 +3,7 @@
 No audio, no science engine, no web access, and no external-validation scoring.
 """
 from __future__ import annotations
+import hashlib
 import json
 import urllib.request
 from ai_provider import _local_profile_evidence
@@ -102,14 +103,20 @@ def synthesize_dimensions(provider, row, sequential):
         with urllib.request.urlopen(req, timeout=max(10., float(provider.config.timeout_seconds))) as response:
             raw = response.read(200_000).decode("utf-8")
         choice = json.loads(raw)["choices"][0]
+        snap("qwen.dimension.response_metadata", {"finish_reason": choice.get("finish_reason"), "response_sha256": hashlib.sha256(raw.encode("utf-8")).hexdigest(), "response_bytes": len(raw.encode("utf-8"))})
         if choice.get("finish_reason") == "length":
             raise ValueError("dimension_inference_truncated")
         parsed = provider._decode_local_json(choice["message"]["content"])
+        if isinstance(parsed, dict):
+            dim = parsed.get("dimensions")
+            snap("qwen.dimension.response_shape", {"root_keys": sorted(str(k) for k in parsed), "dimension_keys": sorted(str(k) for k in dim) if isinstance(dim, dict) else None, "dimension_type": type(dim).__name__})
         outcome = _validate(parsed, available)
         snap("qwen.dimension.synthesis", {"status": "completed", "preset_sha256": preset_sha,
                                            "dimension_keys": list(outcome["dimensions"])})
         return outcome
     except Exception as exc:
-        snap("qwen.dimension.synthesis", {"status": "abstain", "reason": type(exc).__name__})
+        # ValueError messages are our fixed validation codes, not model prose.
+        code = str(exc) if isinstance(exc, ValueError) and str(exc).startswith("dimension_") else type(exc).__name__
+        snap("qwen.dimension.synthesis", {"status": "abstain", "reason": code})
         return {"schema": "ezstudio.profile-dimension-advisories.v1",
-                "status": "abstain", "reason": type(exc).__name__, "external_validation": False}
+                "status": "abstain", "reason": code, "external_validation": False}
