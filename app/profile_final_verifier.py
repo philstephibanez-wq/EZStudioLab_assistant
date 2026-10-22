@@ -57,33 +57,81 @@ def final_assertions(row):
             put(key,label,"absent")
     return out
 
+def _matched_recording_sources(identity, research):
+    """A source must be bound to the same artist/title; external research owns matching."""
+    title = _clean(identity.get("title"))
+    artist = _clean(identity.get("artist"))
+    if not title or not artist or identity.get("requires_verification"):
+        return []
+    return [s for s in research.get("sources", []) if isinstance(s, dict)
+            and s.get("available") is True and s.get("identity_relevant") is True
+            and _url(s)]
+
+def _evidence_for_assertion(item, source):
+    """Return corroborating recording evidence, never infer absence from missing credit."""
+    if source.get("source") != "MusicBrainz":
+        return None
+    value = _clean(item["value"]).casefold()
+    key = item["key"]
+    if key.startswith("instrument:"):
+        credits = source.get("recording_credits") or []
+        for credit in credits:
+            if not isinstance(credit, dict) or credit.get("scope") != "recording":
+                continue
+            instruments = {_clean(v).casefold() for v in credit.get("instruments") or []}
+            if value in instruments:
+                return ("MusicBrainz — crédits de l'enregistrement", "recording_credit")
+    if key == "genre":
+        # Explicit recording-level taxonomy only. Artist/release tags are not proof.
+        tags = {_clean(t).casefold() for t in source.get("recording_genres") or []}
+        if value in tags:
+            return ("MusicBrainz — genre de l'enregistrement", "recording_genre")
+    if key == "lead_vocal" and value == "présent":
+        credits = source.get("recording_credits") or []
+        if any(isinstance(c, dict) and c.get("scope")=="recording"
+               and c.get("role")=="vocal" and
+               not any("backing" in _clean(x).casefold() or
+                       "background" in _clean(x).casefold()
+                       for x in c.get("instruments") or [])
+               for c in credits):
+            return ("MusicBrainz — crédit vocal de l'enregistrement", "recording_vocal_credit")
+    if key == "backing_vocals" and value == "présent":
+        credits = source.get("recording_credits") or []
+        if any(isinstance(c, dict) and c.get("scope")=="recording" and
+               any("backing vocal" in _clean(x).casefold() or "background vocal" in _clean(x).casefold()
+                   for x in c.get("instruments") or [])
+               for c in credits):
+            return ("MusicBrainz — voix d'accompagnement créditées", "recording_backing_credit")
+    return None
+
 def verify_final_values(row, identity, research):
-    """Conservative deterministic verdicts: never convert absence of reference to FAUX."""
+    """One conservative, separately persisted verdict for EVERY final musical assertion.
+
+    Only explicit recording-level evidence can return BON. FAUX requires positive
+    contradictory recording evidence and is intentionally not guessed here.
+    """
     assertions = final_assertions(row)
-    sources = [s for s in research.get("sources", []) if isinstance(s,dict)
-               and s.get("available") is True and s.get("identity_relevant") is True and _url(s)]
+    sources = _matched_recording_sources(identity, research)
     result=[]
     for item in assertions:
-        key,value = item["key"],item["value"]
-        decision="non_trouve"; links=[]; reference=None
+        decision="non_trouve"
+        links=[]
+        reference=None
         for source in sources:
-            # A recording-level credit can establish presence, never absence.
-            if not key.startswith("instrument:") or source.get("source") != "MusicBrainz":
+            finding=_evidence_for_assertion(item, source)
+            if not finding:
                 continue
-            target = _clean(value).casefold()
-            credits = source.get("recording_credits") or []
-            found = any(
-                isinstance(credit,dict) and credit.get("scope")=="recording"
-                and any(_clean(v).casefold()==target for v in credit.get("instruments") or [])
-                for credit in credits
-            )
-            if found:
-                decision="bon"; reference=value
-                links=[{"title":"MusicBrainz — crédit de l'enregistrement","url":_url(source),
-                        "evidence_type":"recording_performer_credit"}]
-                break
+            safe_url=_url(source)
+            if not safe_url:
+                continue
+            decision="bon"
+            reference=item["value"]
+            links=[{"title":finding[0],"url":safe_url,"evidence_type":finding[1]}]
+            break
         result.append({**item,"verdict":decision,"confidence_pct":None,
-                       "reference_value":reference,"sources":links})
+                       "reference_value":reference,"sources":links,
+                       "reason":"Source indépendante concordante" if links else
+                                "Référence indépendante suffisante non trouvée"})
     return {"schema":"ezstudio.profile-final-verification.v1",
             "status":"completed","mode":"independent_recording_evidence",
             "verified_at":datetime.now(timezone.utc).isoformat(),
