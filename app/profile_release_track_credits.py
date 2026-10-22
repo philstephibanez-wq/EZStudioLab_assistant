@@ -33,5 +33,6 @@ def track_credits_on_release(http, release_ids, recording_id):
                     recording.get("relations"), "https://musicbrainz.org/recording/"+recording_id)
                 for credit in credits:
                     credit["edition_url"] = "https://musicbrainz.org/release/"+release_id
-                return credits
+                if credits:
+                    return credits
     return []
