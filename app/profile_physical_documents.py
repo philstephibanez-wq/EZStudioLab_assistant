@@ -114,16 +114,17 @@ def inspect_scans_with_local_ocr(documents, track_title, *, max_scans=2):
     transient files to temp and deletes them on both success and failure.
     """
     import os
-    import shutil
     import subprocess
+    from profile_tesseract_runtime import resolve_tesseract
     import tempfile
     import urllib.request
 
     if os.getenv("EZS_PROFILE_BOOKLET_OCR", "0") != "1":
         return {"status": "disabled", "scans": []}
-    executable = shutil.which("tesseract")
-    if not executable:
-        return {"status": "tesseract_not_installed", "scans": []}
+    runtime = resolve_tesseract()
+    if runtime["status"] != "ready":
+        return {"status": runtime["status"], "scans": []}
+    executable = runtime["executable"]
     scanned = []
     for doc in list(documents or [])[:max(0, min(2, max_scans))]:
         url = _safe_url(doc.get("document_url")) if isinstance(doc, dict) else None
@@ -149,7 +150,7 @@ def inspect_scans_with_local_ocr(documents, track_title, *, max_scans=2):
                 with open(scan_path, "wb") as output:
                     output.write(data)
                 completed = subprocess.run(
-                    [executable, scan_path, "stdout", "-l", "eng+fra"],
+                    [executable, scan_path, "stdout", "-l", "eng+fra", "--tessdata-dir", runtime["tessdata_dir"]],
                     capture_output=True, timeout=18, check=False)
                 if completed.returncode != 0:
                     raise ValueError("ocr_failed")
