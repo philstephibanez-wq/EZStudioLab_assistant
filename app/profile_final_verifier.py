@@ -6,6 +6,7 @@ Evidence comes exclusively from identity-matched recording-scoped references.
 from __future__ import annotations
 from datetime import datetime, timezone
 from urllib.parse import urlparse
+from profile_musical_facts import evaluate_reference
 
 DECISIONS = {"bon", "faux", "non_trouve"}
 UNKNOWN = {"", "possible", "inconclusive", "unknown", "unavailable", "undetermined", "not_scored", "non déterminé"}
@@ -159,6 +160,12 @@ def verify_final_values(row, identity, research):
         links=[]
         reference=None
         for source in sources:
+            structured = evaluate_reference(item, source)
+            if structured and _url(source) == structured["link"]["url"]:
+                decision = structured["verdict"]
+                reference = structured["reference_value"]
+                links = [structured["link"]]
+                break
             finding=_evidence_for_assertion(item, source)
             if not finding:
                 continue
@@ -171,7 +178,7 @@ def verify_final_values(row, identity, research):
             break
         result.append({**item,"verdict":decision,"confidence_pct":None,
                        "reference_value":reference,"sources":links,
-                       "reason":"Source indépendante concordante" if links else
+                       "reason":("Source indépendante concordante" if decision=="bon" else "Source indépendante contradictoire") if links else
                                 "Référence indépendante suffisante non trouvée"})
     return {"schema":"ezstudio.profile-final-verification.v1",
             "status":"completed","mode":"independent_recording_evidence",
