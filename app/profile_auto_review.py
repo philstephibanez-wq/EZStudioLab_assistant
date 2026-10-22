@@ -437,7 +437,8 @@ def _wikipedia(http: ThrottledPublicHttp, title: str, artist: str, preferred_tit
     extract = _compact(page.get("extract"))
     # Only a song-specific page, never an artist/album overview, can provide
     # recording-scoped documentary instrument claims.
-    song_page = _normalize_identity_text(page.get("title")) == title_norm
+    article_title = _normalize_identity_text(page.get("title"))
+    song_page = article_title == title_norm or (article_title.startswith(title_norm + " ") and artist_norm in article_title and article_title.endswith(" song"))
     facts = {}
     if song_page:
         # Restrict to positive performance phrases; a loose instrument mention
