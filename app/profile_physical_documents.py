@@ -66,3 +66,97 @@ def discover_release_documents(http, release_ids):
             })
         break
     return result[:16]
+
+# Candidate extraction is separate from evidence validation. Unverified OCR must
+# never be promoted directly to BON/FAUX in profile_final_verifier.py.
+def extract_printed_credit_candidates(text, track_title):
+    """Extract candidate performer:instrument lines only inside an explicit track section.
+
+    The scan must itself include the exact track heading. Album-wide personnel
+    credits are not recording-specific and are intentionally disregarded.
+    """
+    import unicodedata
+    def norm(value):
+        value = unicodedata.normalize("NFKD", str(value or "").casefold())
+        value = "".join(c for c in value if not unicodedata.combining(c))
+        return re.sub(r"[^a-z0-9]+", " ", value).strip()
+
+    title = norm(track_title)
+    if len(title) < 5:
+        return []
+    lines = [x.strip() for x in str(text or "").splitlines()][:300]
+    headings = [i for i, line in enumerate(lines) if norm(line) == title]
+    if len(headings) != 1:
+        return []
+    start = headings[0] + 1
+    candidates = []
+    # A short block is not a license to inherit credits from the next song.
+    for raw in lines[start:start + 12]:
+        if not raw:
+            break
+        match = re.fullmatch(r"([A-Za-zÀ-ÿ.' -]{3,70})\\s*[-:–]\\s*([A-Za-zÀ-ÿ, /() -]{3,90})", raw)
+        if match is None:
+            break
+        role = match.group(2).strip()
+        if not re.search(r"(?i)guitar|guitare|bass|basse|piano|keyboard|clavier|drum|batterie|"
+                         r"vocal|chant|voice|voix|organ|orgue|violin|violon|sax|flute|flûte", role):
+            break
+        candidates.append({"musician": match.group(1).strip(), "role_text": role,
+                           "raw_line": raw, "scope": "track_candidate_unverified",
+                           "evidence_eligible": False})
+    return candidates[:12]
+
+
+def inspect_scans_with_local_ocr(documents, track_title, *, max_scans=2):
+    """Optional bounded OCR. Never caches scans; never asserts musical facts.
+
+    Requires installed Tesseract and EZS_PROFILE_BOOKLET_OCR=1. Downloads
+    transient files to temp and deletes them on both success and failure.
+    """
+    import os
+    import shutil
+    import subprocess
+    import tempfile
+    import urllib.request
+
+    if os.getenv("EZS_PROFILE_BOOKLET_OCR", "0") != "1":
+        return {"status": "disabled", "scans": []}
+    executable = shutil.which("tesseract")
+    if not executable:
+        return {"status": "tesseract_not_installed", "scans": []}
+    scanned = []
+    for doc in list(documents or [])[:max(0, min(2, max_scans))]:
+        url = _safe_url(doc.get("document_url")) if isinstance(doc, dict) else None
+        if not url:
+            continue
+        record = {"document_url": url, "release_id": doc.get("release_id"),
+                  "status": "unreadable", "credit_candidates": [],
+                  "evidence_eligible": False}
+        try:
+            request = urllib.request.Request(url, headers={"User-Agent": "EZStudioLab_assistant/1.6 (physical credit reading)"})
+            with urllib.request.urlopen(request, timeout=10) as response:
+                final_url = _safe_url(response.geturl())
+                content_type = str(response.headers.get("Content-Type") or "").lower()
+                if not final_url or not content_type.startswith(("image/jpeg", "image/png", "image/tiff")):
+                    raise ValueError("non_image_or_untrusted_redirect")
+                if int(response.headers.get("Content-Length") or 0) > 5_000_000:
+                    raise ValueError("oversized_scan")
+                data = response.read(5_000_001)
+                if len(data) > 5_000_000:
+                    raise ValueError("oversized_scan")
+            with tempfile.TemporaryDirectory(prefix="ezs_booklet_") as folder:
+                scan_path = os.path.join(folder, "scan")
+                with open(scan_path, "wb") as output:
+                    output.write(data)
+                completed = subprocess.run(
+                    [executable, scan_path, "stdout", "-l", "eng+fra"],
+                    capture_output=True, timeout=18, check=False)
+                if completed.returncode != 0:
+                    raise ValueError("ocr_failed")
+                text = completed.stdout.decode("utf-8", "replace")
+            record["credit_candidates"] = extract_printed_credit_candidates(text, track_title)
+            record["status"] = "candidates_unverified" if record["credit_candidates"] else "no_track_scoped_credits"
+        except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
+            record["status"] = type(exc).__name__
+        scanned.append(record)
+    return {"status": "completed", "scans": scanned}
