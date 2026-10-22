@@ -76,7 +76,7 @@ def _validate(value, available):
             "status": "completed", "dimensions": clean, "external_validation": False}
 
 def _single_dimension(value, key, available):
-    """Validate one bounded advisory; reject invented model attribution."""
+    """Do not accept module descriptions as musical interpretation."""
     if not isinstance(value, dict):
         raise ValueError("dimension_response_not_object")
     entry = value.get(key, value)
@@ -84,17 +84,25 @@ def _single_dimension(value, key, available):
         raise ValueError("dimension_entry_not_object")
     advisory = entry.get("advisory")
     uncertainty = entry.get("uncertainty")
-    contributors = entry.get("contributors", [])
-    if not isinstance(advisory, str) or not advisory.strip() or len(advisory) > 750:
+    if not isinstance(advisory, str) or not advisory.strip() or len(advisory) > 450:
         raise ValueError("dimension_advisory_missing")
-    if not isinstance(uncertainty, str) or not uncertainty.strip() or len(uncertainty) > 500:
+    if not isinstance(uncertainty, str) or not uncertainty.strip() or len(uncertainty) > 240:
         raise ValueError("dimension_uncertainty_missing")
-    if not isinstance(contributors, list) or len(contributors) > 3 or any(
-        not isinstance(x, str) or x not in available for x in contributors
-    ):
-        raise ValueError("dimension_contributors_invalid")
+    text = advisory.casefold()
+    if any(x in text for x in ("bollywood", "clap open vocabulary",
+            "panns cnn14", "pasST audioset".casefold(), "le module", "le modèle")):
+        raise ValueError("dimension_off_topic")
+    topics = {
+        "genre": ("genre", "style", "rock", "pop", "folk", "cabaret", "chanson", "jazz", "blues", "singer"),
+        "instrumentation": ("instrument", "guitare", "guitar", "basse", "bass", "piano", "batterie", "orgue"),
+        "lead_vocal": ("voix", "chant", "vocal", "chanteur", "chanteuse"),
+        "backing_vocals": ("voix", "chant", "vocal", "harmonie", "choriste"),
+        "choir": ("chœur", "choeur", "chorale", "choriste", "voix"),
+    }
+    if not any(term in text for term in topics[key]):
+        raise ValueError("dimension_topic_missing")
     return {"advisory": advisory.strip(), "uncertainty": uncertainty.strip(),
-            "contributors": list(dict.fromkeys(contributors)), "advisory_only": True}
+            "contributors": sorted(available), "advisory_only": True}
 
 
 def _abstention(key, reason):
@@ -116,17 +124,17 @@ def synthesize_dimensions(provider, row, sequential):
             statuses[key] = health_reason or "model_unavailable"
             outcomes[key] = _abstention(key, statuses[key])
             continue
-        modules = {name: value for name, value in observations["module_consultations"].items()
-                   if name in CONTRIBUTORS[key]}
+        modules = {name: {"status": value["status"]} for name, value in
+                   observations["module_consultations"].items() if name in CONTRIBUTORS[key]}
         available = {name for name, item in modules.items() if item.get("status") == "completed"}
         prompt = (
             "Tu es un assistant musical consultatif SANS accès à l'audio. "
             "Réponds strictement en français, en JSON. Pour la dimension '" + key + "' uniquement, "
-            "retourne un objet JSON avec exactement advisory (avis musical argumenté), "
-            "uncertainty (limite explicite), contributors (tableau d'identifiants parmi ceux fournis). "
+            "retourne un objet JSON avec advisory (avis musical ciblé, 30 mots maximum), "
+            "uncertainty (limite explicite, 20 mots maximum). Aucun nom de moteur dans la réponse. "
             "Ne répète pas la description des logiciels. Ne compare jamais des scores non calibrés. "
             "Aucune preuve externe inventée, aucune certitude musicale, aucun changement de preset. "
-            "Si tu ne peux pas conclure, indique-le dans advisory et explique pourquoi."
+            "Pour une dimension vocale, parle uniquement de chant ou de voix. Pour le genre, parle de style ; pour l'instrumentation, des instruments. Si tu ne peux pas conclure, abstention explicite."
         )
         observation = {"dimension": key, "lab": observations["lab_observations"].get(
             "vocals" if key in ("lead_vocal", "backing_vocals", "choir") else key, {}),
@@ -134,7 +142,7 @@ def synthesize_dimensions(provider, row, sequential):
         body = {"model": "local", "messages": [
             {"role": "system", "content": prompt},
             {"role": "user", "content": json.dumps(observation, ensure_ascii=False)}],
-            "temperature": preset["temperature"], "max_tokens": min(650, preset["max_tokens"]),
+            "temperature": preset["temperature"], "max_tokens": min(1024, preset["max_tokens"]),
             "stream": False, "response_format": {"type": "json_object"}}
         encoded = json.dumps(body, ensure_ascii=False).encode("utf-8")
         if len(encoded) > int(preset["context_max_chars"]):
