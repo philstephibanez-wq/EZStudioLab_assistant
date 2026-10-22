@@ -131,6 +131,24 @@ def verify_final_values(row, identity, research):
     assertions = final_assertions(row)
     sources = _matched_recording_sources(identity, research)
     result=[]
+    audit = {
+        "identity_complete": bool(_clean(identity.get("title")) and _clean(identity.get("artist"))),
+        "research_status": research.get("status"),
+        "research_reason": research.get("reason"),
+        "request_count": research.get("request_count"),
+        "warnings": [str(x)[:180] for x in (research.get("warnings") or [])][:12],
+        "sources": [
+            {"provider": _clean(x.get("source")),
+             "available": x.get("available") is True,
+             "identity_relevant": x.get("identity_relevant") is True,
+             "recording_credit_count": len(x.get("recording_credits") or []),
+             "recording_genre_count": len(x.get("recording_genres") or []),
+             "reason": ("not_available" if x.get("available") is not True else
+                        "identity_not_matched" if x.get("identity_relevant") is not True else
+                        "eligible")}
+            for x in (research.get("sources") or []) if isinstance(x, dict)
+        ],
+    }
     for item in assertions:
         decision="non_trouve"
         links=[]
@@ -153,4 +171,5 @@ def verify_final_values(row, identity, research):
     return {"schema":"ezstudio.profile-final-verification.v1",
             "status":"completed","mode":"independent_recording_evidence",
             "verified_at":datetime.now(timezone.utc).isoformat(),
-            "assertions":result,"scientific_preset_mutation_allowed":False}
+            "assertions":result,"evidence_diagnostic":audit,
+            "scientific_preset_mutation_allowed":False}
