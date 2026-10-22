@@ -38,7 +38,7 @@ class DimensionSynthesisContract(unittest.TestCase):
         self.assertNotIn("embedding.mert-95m",result["module_consultations"])
         self.assertNotIn("audio",result.keys())
 
-    def test_invalid_model_shape_returns_coded_abstention_without_claiming_success(self):
+    def test_invalid_json_isolated_per_dimension_and_five_calls(self):
         from types import SimpleNamespace
         import json
         import profile_dimension_synthesis as m
@@ -48,17 +48,35 @@ class DimensionSynthesisContract(unittest.TestCase):
             def _health(self): return (True, None)
             def _decode_local_json(self, raw): return json.loads(raw)
         class Response:
+            def __init__(self, index): self.index=index
             def __enter__(self): return self
             def __exit__(self,*args): return False
-            def read(self,n): return json.dumps({"choices":[{"finish_reason":"stop","message":{"content":'{"dimensions":{}}'}}]}).encode("utf-8")
+            def read(self,n):
+                content = '{"bad":true}' if self.index==1 else json.dumps({
+                    "advisory":"Hypothèse consultative",
+                    "uncertainty":"Non calibré",
+                    "contributors":[]})
+                return json.dumps({"choices":[{"finish_reason":"stop",
+                    "message":{"content":content}}]}).encode("utf-8")
+        calls=[]
+        def urlopen(req,timeout):
+            calls.append(req)
+            return Response(len(calls))
         preset={"temperature":0.1,"max_tokens":3072,"context_max_chars":16000}
-        snapshots=[]
-        with patch.object(m,"load_review_preset",return_value=(preset,"digest")), patch.object(m.urllib.request,"urlopen",return_value=Response()), patch.object(m,"snap",side_effect=lambda *a:snapshots.append(a)):
+        with patch.object(m,"load_review_preset",return_value=(preset,"digest")), patch.object(m.urllib.request,"urlopen",side_effect=urlopen), patch.object(m,"snap"):
             out=synthesize_dimensions(Provider(),{"diagnostics":{}},{"results":[]})
-        self.assertEqual(out["status"],"abstain")
-        self.assertEqual(out["reason"],"dimension_advisory_keys_invalid")
-        self.assertTrue(any(name=="qwen.dimension.response_shape" for name,_ in snapshots))
-        self.assertNotIn("dimensions",out)
+        self.assertEqual(len(calls),5)
+        self.assertEqual(out["status"],"partial")
+        self.assertEqual(set(out["dimensions"]),set(KEYS))
+        self.assertEqual(out["dimension_statuses"]["genre"],"dimension_advisory_missing")
+        self.assertEqual(out["dimension_statuses"]["instrumentation"],"completed")
+        self.assertFalse(out["external_validation"])
+
+    def test_single_dimension_rejects_forged_module(self):
+        from profile_dimension_synthesis import _single_dimension
+        with self.assertRaisesRegex(ValueError,"dimension_contributors_invalid"):
+            _single_dimension({"advisory":"Sensible", "uncertainty":"Inconnu",
+                 "contributors":["faux.moteur"]}, "genre", set())
 
 if __name__=="__main__":
     unittest.main()
