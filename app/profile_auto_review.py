@@ -17,6 +17,7 @@ from profile_review import normalize_track_identity, profile_review_queue_snapsh
 from ai_provider import AIReviewProvider, build_ai_provider_from_env
 from profile_physical_documents import discover_release_documents, inspect_scans_with_local_ocr
 from profile_release_track_credits import track_credits_on_release
+from profile_recording_disambiguation import choose_candidate
 
 
 @dataclass(frozen=True)
@@ -127,7 +128,7 @@ _NON_CREDIT_ATTRIBUTES = {
 }
 
 
-def _musicbrainz(http: ThrottledPublicHttp, title: str, artist: str) -> dict[str, Any]:
+def _musicbrainz(http: ThrottledPublicHttp, title: str, artist: str, *, duration_ms: int | None = None) -> dict[str, Any]:
     # A trailing YEAR is catalogue metadata, not part of the recording title.
     # Preserve actual version qualifiers (live, demo, remix) to avoid wrong takes.
     lookup_title = re.sub(r"\s*\((?:18|19|20)\d{2}\)\s*$", "", title).strip()
@@ -170,9 +171,13 @@ def _musicbrainz(http: ThrottledPublicHttp, title: str, artist: str) -> dict[str
                 "reason": "no_matching_recording", "candidate_count": len(recordings)}
 
     ids = sorted({_compact(x[1].get('id')) for x in eligible if _compact(x[1].get('id'))})
-    if len(ids) > 1:
-        return {'source':'MusicBrainz','available':False,'reason':'ambiguous_recording_identity','candidate_count':len(ids),'candidate_recording_urls':['https://musicbrainz.org/recording/'+x for x in ids[:12]]}
-    row = best[1]
+    selected = choose_candidate(eligible, duration_ms)
+    if len(ids) > 1 and selected["status"] != "duration_match":
+        return {"source":"MusicBrainz","available":False,
+                "reason":"ambiguous_recording_identity","resolution_reason":selected["status"],
+                "candidate_count":len(ids),"candidate_recording_urls":
+                    ["https://musicbrainz.org/recording/"+x for x in ids[:12]]}
+    row = selected["candidate"][1] if selected.get("candidate") else best[1]
     mbid = _compact(row.get("id"))
     detail_url = "https://musicbrainz.org/ws/2/recording/" + urllib.parse.quote(mbid) + "?" + _query(
         {
@@ -308,6 +313,8 @@ def _musicbrainz(http: ThrottledPublicHttp, title: str, artist: str) -> dict[str
         "recording_tags": sorted(set(recording_tags)),
         "performers": performers[:30],
         "recording_credits": recording_credits,
+        "recording_resolution_method": selected["status"],
+        "recording_duration_difference_ms": selected.get("difference_ms"),
         "recording_detail_status": detail_status,
         "recording_detail_error": detail_error,
         "edition_track_credit_count": len(edition_track_credits),
@@ -536,7 +543,7 @@ def research_public_sources(identity: dict[str, Any], budget: NetworkBudget) -> 
     warnings = []
 
     try:
-        mb = _musicbrainz(http, title, artist)
+        mb = _musicbrainz(http, title, artist, duration_ms=identity.get("catalog_duration_ms"))
         sources.append(mb)
     except Exception as exc:
         warnings.append(f"MusicBrainz:{type(exc).__name__}:{exc}")
