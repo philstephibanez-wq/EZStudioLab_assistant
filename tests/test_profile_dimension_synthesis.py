@@ -53,7 +53,7 @@ class DimensionSynthesisContract(unittest.TestCase):
             def __exit__(self,*args): return False
             def read(self,n):
                 content = '{"bad":true}' if self.index==1 else json.dumps({
-                    "advisory":"Hypothèse consultative",
+                    "advisory":"Genre musical envisagé",
                     "uncertainty":"Non calibré",
                     "contributors":[]})
                 return json.dumps({"choices":[{"finish_reason":"stop",
@@ -72,11 +72,25 @@ class DimensionSynthesisContract(unittest.TestCase):
         self.assertEqual(out["dimension_statuses"]["instrumentation"],"completed")
         self.assertFalse(out["external_validation"])
 
-    def test_single_dimension_rejects_forged_module(self):
+    def test_contributors_derived_from_actual_completed_modules(self):
         from profile_dimension_synthesis import _single_dimension
-        with self.assertRaisesRegex(ValueError,"dimension_contributors_invalid"):
-            _single_dimension({"advisory":"Sensible", "uncertainty":"Inconnu",
-                 "contributors":["faux.moteur"]}, "genre", set())
+        actual={"semantic.clap-open-vocabulary"}
+        out=_single_dimension({"advisory":"Genre cabaret envisageable",
+            "uncertainty":"La classe est non calibrée.",
+            "contributors":["faux.moteur"]}, "genre", actual)
+        self.assertEqual(out["contributors"],sorted(actual))
+
+    def test_reject_irrelevant_vocal_comment(self):
+        from profile_dimension_synthesis import _single_dimension
+        with self.assertRaisesRegex(ValueError,"dimension_off_topic"):
+            _single_dimension({"advisory":"Le modèle CLAP Open Vocabulary dit musique Bollywood",
+                "uncertainty":"Non calibré"}, "lead_vocal", set())
+
+    def test_reject_generic_vocal_comment(self):
+        from profile_dimension_synthesis import _single_dimension
+        with self.assertRaisesRegex(ValueError,"dimension_topic_missing"):
+            _single_dimension({"advisory":"La musique est probable",
+                "uncertainty":"Non calibré"}, "choir", set())
 
 if __name__=="__main__":
     unittest.main()
