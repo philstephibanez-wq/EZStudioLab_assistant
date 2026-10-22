@@ -17,6 +17,9 @@ def evaluate_reference(item, source):
         return None
     key = item["key"]
     raw = facts.get(key)
+    if raw is None and key.startswith("instrument:"):
+        normalized = str(item["value"]).strip().casefold().replace(" ", "_")
+        raw = facts.get("instrument:" + normalized)
     if not isinstance(raw, dict) or raw.get("explicit") is not True:
         return None
     reference = str(raw.get("value") or "").strip()
