@@ -143,6 +143,8 @@ def verify_final_values(row, identity, research):
              "available": x.get("available") is True,
              "identity_relevant": x.get("identity_relevant") is True,
              "recording_credit_count": len(x.get("recording_credits") or []),
+             "recording_detail_status": x.get("recording_detail_status"),
+             "recording_detail_error": x.get("recording_detail_error"),
              "edition_track_credit_count": int(x.get("edition_track_credit_count") or 0),
              "recording_genre_count": len(x.get("recording_genres") or []),
              "physical_document_count": len(x.get("physical_documents") or []),
