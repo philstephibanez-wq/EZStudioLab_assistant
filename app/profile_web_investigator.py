@@ -7,6 +7,7 @@ first-party evidence verification step; no model output is trusted as proof.
 from __future__ import annotations
 import json, os, urllib.request, urllib.parse, re
 from profile_final_verifier import final_assertions
+from profile_web_assessment import read_assessment
 
 def _https_url(value):
     try:
@@ -63,6 +64,7 @@ def research_each_assertion(row, identity, *, opener=None, api_key=None, model=N
                 "status":"discovered" if web_calls and citations else "unverified",
                 "web_calls":web_calls,"citation_urls":citations[:12],
                 "investigator_text":" ".join(text_parts)[:3500],
+                "assessment":read_assessment(" ".join(text_parts), citations),
                 "eligible_for_verdict":False})
         except Exception as exc:
             results.append({"key":a["key"],"value":a["value"],
