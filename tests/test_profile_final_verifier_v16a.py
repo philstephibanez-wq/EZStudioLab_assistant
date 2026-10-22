@@ -64,6 +64,25 @@ class FinalVerificationV16a(unittest.TestCase):
                              {**evidence()["sources"][0],"url":"javascript:alert(1)"}]}
         out=verify_final_values(sample(),self.ident,research)
         self.assertTrue(all(a["verdict"]=="non_trouve" for a in out["assertions"]))
+    def test_specific_guitar_credit_supports_generic_guitar_only(self):
+        from profile_final_verifier import _instrument_matches
+        self.assertTrue(_instrument_matches("guitar","electric guitar"))
+        self.assertTrue(_instrument_matches("guitar","acoustic guitar"))
+        self.assertFalse(_instrument_matches("electric guitar","guitar"))
+        self.assertFalse(_instrument_matches("bass guitar","electric guitar"))
+
+    def test_separate_lead_and_backing_vocal_credits(self):
+        from profile_final_verifier import _evidence_for_assertion
+        source=evidence()["sources"][0]
+        self.assertIsNotNone(_evidence_for_assertion(
+            {"key":"lead_vocal","value":"présent"}, source))
+        self.assertIsNone(_evidence_for_assertion(
+            {"key":"backing_vocals","value":"présent"}, source))
+        source["recording_credits"].append({"scope":"recording","role":"vocal",
+                                             "instruments":["backing vocals"]})
+        self.assertIsNotNone(_evidence_for_assertion(
+            {"key":"backing_vocals","value":"présent"}, source))
+
     def test_missing_scientific_data_produces_no_fabricated_assertion(self):
         self.assertEqual(final_assertions({"metrics":{},"diagnostics":{}}),[])
 if __name__=="__main__":
