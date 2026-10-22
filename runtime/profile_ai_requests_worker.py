@@ -110,17 +110,17 @@ def process(run_id, client):
     # Independent evidence verification. No module results/presets in verifier inputs.
     verification = verify_final_values(row, ident, research)
     snap('profile.final_verification', verification)
-    # Optional real web searches for EACH final assertion. Results remain
-    # unverified leads, completely separate from the verdict evidence boundary.
-    if os.getenv("EZS_PROFILE_WEB_INVESTIGATION", "0").strip() == "1":
-        investigation = research_each_assertion(row, ident)
-        snap('profile.web_investigation', investigation)
-        emit('web.investigation.summary', {
-            'status': investigation.get('status'),
-            'searched': investigation.get('searched'),
-            'web_citations': sum(len(i.get('citation_urls') or []) for i in investigation.get('items') or [])
-        })
-        verification['web_investigation'] = investigation
+    # Research is an integral part of PROFILE, never a hidden opt-in.
+    # Missing provider credentials are reported to LAB, never silently skipped.
+    investigation = research_each_assertion(row, ident)
+    snap('profile.web_investigation', investigation)
+    emit('web.investigation.summary', {
+        'status': investigation.get('status'),
+        'reason': investigation.get('reason'),
+        'searched': investigation.get('searched'),
+        'web_citations': sum(len(i.get('citation_urls') or []) for i in investigation.get('items') or [])
+    })
+    verification['web_investigation'] = investigation
 
     # Retain existing LAB draft transport schema, without claiming AI-generated proof.
     ai = {
