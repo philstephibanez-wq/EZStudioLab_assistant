@@ -51,6 +51,14 @@ class FinalVerificationV16a(unittest.TestCase):
                                           "requires_verification":True},evidence())
         self.assertTrue(all(a["verdict"]=="non_trouve" for a in out["assertions"]))
         self.assertTrue(all(not a["sources"] for a in out["assertions"]))
+    def test_heuristic_identity_with_independent_recording_match_is_usable(self):
+        ident={"title":"Folsom Prison Blues","artist":"Johnny Cash",
+               "requires_verification":True}
+        out=verify_final_values(sample(),ident,evidence())
+        results={x["key"]:x for x in out["assertions"]}
+        self.assertEqual(results["instrument:0"]["verdict"],"bon")
+        self.assertEqual(results["instrument:0"]["sources"][0]["url"],
+                         "https://musicbrainz.org/recording/abc")
     def test_unrelated_sources_and_unsafe_urls_rejected(self):
         research={"sources":[{**evidence()["sources"][0],"identity_relevant":False},
                              {**evidence()["sources"][0],"url":"javascript:alert(1)"}]}
