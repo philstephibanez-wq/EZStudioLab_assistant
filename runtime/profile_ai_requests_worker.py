@@ -29,6 +29,7 @@ from profile_sequential_review import examine_modules
 from profile_module_qwen import infer_module
 from profile_final_verifier import verify_final_values
 from profile_recording_disambiguation import duration_from_catalog
+from profile_web_investigator import research_each_assertion
 
 BASE = os.environ.get('EZSTUDIOLAB_ASSISTANT_BASE_URL', 'http://EZSTUDIO-MAIN:8702').rstrip('/')
 TOKEN = os.environ.get('EZSTUDIOLAB_ASSISTANT_TOKEN', '')
@@ -109,6 +110,18 @@ def process(run_id, client):
     # Independent evidence verification. No module results/presets in verifier inputs.
     verification = verify_final_values(row, ident, research)
     snap('profile.final_verification', verification)
+    # Optional real web searches for EACH final assertion. Results remain
+    # unverified leads, completely separate from the verdict evidence boundary.
+    if os.getenv("EZS_PROFILE_WEB_INVESTIGATION", "0").strip() == "1":
+        investigation = research_each_assertion(row, ident)
+        snap('profile.web_investigation', investigation)
+        emit('web.investigation.summary', {
+            'status': investigation.get('status'),
+            'searched': investigation.get('searched'),
+            'web_citations': sum(len(i.get('citation_urls') or []) for i in investigation.get('items') or [])
+        })
+        verification['web_investigation'] = investigation
+
     # Retain existing LAB draft transport schema, without claiming AI-generated proof.
     ai = {
         'schema': 'EZStudioLab_assistant.ai-profile-review.v1',
