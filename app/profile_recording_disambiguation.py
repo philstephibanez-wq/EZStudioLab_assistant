@@ -8,6 +8,13 @@ import math
 def duration_from_catalog(row):
     """Only declared, non-scientific duration fields; refuse inconsistent metadata."""
     values=[]
+    metrics=row.get("metrics") if isinstance(row.get("metrics"),dict) else {}
+    for field in ("duration_seconds",):
+        value=metrics.get(field)
+        if isinstance(value,(int,float)) and not isinstance(value,bool) and math.isfinite(value):
+            ms=int(round(value*1000))
+            if 30_000 <= ms <= 3_600_000:
+                values.append(ms)
     for field,scale in (("audio_duration_ms",1),("duration_ms",1),("audio_duration_seconds",1000),("duration_seconds",1000)):
         value=row.get(field)
         if isinstance(value,(int,float)) and not isinstance(value,bool) and math.isfinite(value):
