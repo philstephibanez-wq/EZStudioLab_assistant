@@ -75,48 +75,96 @@ def _validate(value, available):
     return {"schema": "ezstudio.profile-dimension-advisories.v1",
             "status": "completed", "dimensions": clean, "external_validation": False}
 
+def _single_dimension(value, key, available):
+    """Validate one bounded advisory; reject invented model attribution."""
+    if not isinstance(value, dict):
+        raise ValueError("dimension_response_not_object")
+    entry = value.get(key, value)
+    if not isinstance(entry, dict):
+        raise ValueError("dimension_entry_not_object")
+    advisory = entry.get("advisory")
+    uncertainty = entry.get("uncertainty")
+    contributors = entry.get("contributors", [])
+    if not isinstance(advisory, str) or not advisory.strip() or len(advisory) > 750:
+        raise ValueError("dimension_advisory_missing")
+    if not isinstance(uncertainty, str) or not uncertainty.strip() or len(uncertainty) > 500:
+        raise ValueError("dimension_uncertainty_missing")
+    if not isinstance(contributors, list) or len(contributors) > 3 or any(
+        not isinstance(x, str) or x not in available for x in contributors
+    ):
+        raise ValueError("dimension_contributors_invalid")
+    return {"advisory": advisory.strip(), "uncertainty": uncertainty.strip(),
+            "contributors": list(dict.fromkeys(contributors)), "advisory_only": True}
+
+
+def _abstention(key, reason):
+    return {"advisory": "Avis musical non établi : les données ou la réponse IA ne permettent pas une conclusion fiable.",
+            "uncertainty": "Synthèse indisponible (" + reason + "). Analyse humaine requise.",
+            "contributors": [], "advisory_only": True, "status": "abstain",
+            "reason": reason}
+
+
 def synthesize_dimensions(provider, row, sequential):
-    available = {item.get("item_id") for item in sequential.get("results", [])
-                 if item.get("status") == "completed"}
+    """Five independently bounded requests. One malformed answer cannot erase the other four."""
     observations = _observations(row, sequential)
     preset, preset_sha = load_review_preset("profile")
-    body = {
-        "model": "local",
-        "messages": [{"role": "system", "content": PROMPT},
-                     {"role": "user", "content": json.dumps(observations, ensure_ascii=False)}],
-        "temperature": preset["temperature"], "max_tokens": min(1800, preset["max_tokens"]),
-        "stream": False, "response_format": {"type": "json_object"},
-    }
-    # Fail closed if projected evidence exceeds configured MAIN declarative context.
-    encoded = json.dumps(body, ensure_ascii=False).encode("utf-8")
-    if len(encoded) > int(preset["context_max_chars"]):
-        return {"status": "abstain", "reason": "dimension_context_over_budget"}
-    ready, reason = provider._health()
-    if not ready:
-        return {"status": "abstain", "reason": reason or "model_unavailable"}
-    req = urllib.request.Request(
-        provider.endpoint + "/v1/chat/completions", data=encoded,
-        headers={"Content-Type": "application/json", "Accept": "application/json"},
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=max(10., float(provider.config.timeout_seconds))) as response:
-            raw = response.read(200_000).decode("utf-8")
-        choice = json.loads(raw)["choices"][0]
-        snap("qwen.dimension.response_metadata", {"finish_reason": choice.get("finish_reason"), "response_sha256": hashlib.sha256(raw.encode("utf-8")).hexdigest(), "response_bytes": len(raw.encode("utf-8"))})
-        if choice.get("finish_reason") == "length":
-            raise ValueError("dimension_inference_truncated")
-        parsed = provider._decode_local_json(choice["message"]["content"])
-        if isinstance(parsed, dict):
-            dim = parsed.get("dimensions")
-            snap("qwen.dimension.response_shape", {"root_keys": sorted(str(k) for k in parsed), "dimension_keys": sorted(str(k) for k in dim) if isinstance(dim, dict) else None, "dimension_type": type(dim).__name__})
-        outcome = _validate(parsed, available)
-        snap("qwen.dimension.synthesis", {"status": "completed", "preset_sha256": preset_sha,
-                                           "dimension_keys": list(outcome["dimensions"])})
-        return outcome
-    except Exception as exc:
-        # ValueError messages are our fixed validation codes, not model prose.
-        code = str(exc) if isinstance(exc, ValueError) and str(exc).startswith("dimension_") else type(exc).__name__
-        snap("qwen.dimension.synthesis", {"status": "abstain", "reason": code})
-        return {"schema": "ezstudio.profile-dimension-advisories.v1",
-                "status": "abstain", "reason": code, "external_validation": False}
+    ready, health_reason = provider._health()
+    outcomes = {}
+    statuses = {}
+    for key in KEYS:
+        if not ready:
+            statuses[key] = health_reason or "model_unavailable"
+            outcomes[key] = _abstention(key, statuses[key])
+            continue
+        modules = {name: value for name, value in observations["module_consultations"].items()
+                   if name in CONTRIBUTORS[key]}
+        available = {name for name, item in modules.items() if item.get("status") == "completed"}
+        prompt = (
+            "Tu es un assistant musical consultatif SANS accès à l'audio. "
+            "Réponds strictement en français, en JSON. Pour la dimension '" + key + "' uniquement, "
+            "retourne un objet JSON avec exactement advisory (avis musical argumenté), "
+            "uncertainty (limite explicite), contributors (tableau d'identifiants parmi ceux fournis). "
+            "Ne répète pas la description des logiciels. Ne compare jamais des scores non calibrés. "
+            "Aucune preuve externe inventée, aucune certitude musicale, aucun changement de preset. "
+            "Si tu ne peux pas conclure, indique-le dans advisory et explique pourquoi."
+        )
+        observation = {"dimension": key, "lab": observations["lab_observations"].get(
+            "vocals" if key in ("lead_vocal", "backing_vocals", "choir") else key, {}),
+            "module_consultations": modules}
+        body = {"model": "local", "messages": [
+            {"role": "system", "content": prompt},
+            {"role": "user", "content": json.dumps(observation, ensure_ascii=False)}],
+            "temperature": preset["temperature"], "max_tokens": min(650, preset["max_tokens"]),
+            "stream": False, "response_format": {"type": "json_object"}}
+        encoded = json.dumps(body, ensure_ascii=False).encode("utf-8")
+        if len(encoded) > int(preset["context_max_chars"]):
+            statuses[key] = "dimension_context_over_budget"
+            outcomes[key] = _abstention(key, statuses[key])
+            continue
+        try:
+            req = urllib.request.Request(provider.endpoint + "/v1/chat/completions",
+                data=encoded, headers={"Content-Type": "application/json",
+                                       "Accept": "application/json"}, method="POST")
+            with urllib.request.urlopen(req, timeout=max(10., float(provider.config.timeout_seconds))) as response:
+                raw = response.read(200_000).decode("utf-8")
+            choice = json.loads(raw)["choices"][0]
+            snap("qwen.dimension.response_metadata", {"dimension": key,
+                "finish_reason": choice.get("finish_reason"),
+                "response_sha256": hashlib.sha256(raw.encode("utf-8")).hexdigest()})
+            if choice.get("finish_reason") == "length":
+                raise ValueError("dimension_output_truncated")
+            parsed = provider._decode_local_json(choice["message"]["content"])
+            outcomes[key] = _single_dimension(parsed, key, available)
+            statuses[key] = "completed"
+        except Exception as exc:
+            code = str(exc) if isinstance(exc, ValueError) and str(exc).startswith("dimension_") else type(exc).__name__
+            statuses[key] = code
+            outcomes[key] = _abstention(key, code)
+        snap("qwen.dimension.result", {"dimension": key, "status": statuses[key]})
+    complete = all(statuses[key] == "completed" for key in KEYS)
+    snap("qwen.dimension.synthesis", {"status": "completed" if complete else "partial",
+        "statuses": statuses, "preset_sha256": preset_sha})
+    return {"schema": "ezstudio.profile-dimension-advisories.v1",
+            "status": "completed" if complete else "partial",
+            "dimensions": outcomes, "dimension_statuses": statuses,
+            "external_validation": False}
