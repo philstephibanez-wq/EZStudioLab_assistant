@@ -126,9 +126,13 @@ _NON_CREDIT_ATTRIBUTES = {
 
 
 def _musicbrainz(http: ThrottledPublicHttp, title: str, artist: str) -> dict[str, Any]:
-    query = f'recording:"{title}" AND artist:"{artist}"'
+    # A trailing YEAR is catalogue metadata, not part of the recording title.
+    # Preserve actual version qualifiers (live, demo, remix) to avoid wrong takes.
+    lookup_title = re.sub(r"\\s*\\((?:18|19|20)\\d{2}\\)\\s*$", "", title).strip()
+    lookup_title = lookup_title or title
+    query = f'recording:"{lookup_title}" AND artist:"{artist}"'
     search_url = "https://musicbrainz.org/ws/2/recording/?" + _query(
-        {"query": query, "fmt": "json", "limit": 5}
+        {"query": query, "fmt": "json", "limit": 20}
     )
     data = http.get_json(search_url)
     recordings = data.get("recordings") or []
@@ -146,7 +150,7 @@ def _musicbrainz(http: ThrottledPublicHttp, title: str, artist: str) -> dict[str
             if isinstance(credit, dict):
                 names.append(_compact(credit.get("name") or (credit.get("artist") or {}).get("name")))
         candidate_artist = ", ".join(x for x in names if x)
-        title_match = _compact(row.get("title")).casefold() == title.casefold()
+        title_match = _normalize_identity_text(row.get("title")) == _normalize_identity_text(lookup_title)
         artist_match = artist.casefold() in candidate_artist.casefold()
         rank = (1 if title_match else 0, 1 if artist_match else 0, score)
         if best is None or rank > best[0]:
@@ -154,6 +158,11 @@ def _musicbrainz(http: ThrottledPublicHttp, title: str, artist: str) -> dict[str
 
     if best is None:
         return {"source": "MusicBrainz", "available": False}
+
+    # Never fetch unrelated first-ranked recordings as alleged evidence.
+    if best[0][0] != 1 or best[0][1] != 1:
+        return {"source": "MusicBrainz", "available": False,
+                "reason": "no_matching_recording", "candidate_count": len(recordings)}
 
     row = best[1]
     mbid = _compact(row.get("id"))
