@@ -160,7 +160,7 @@ def _musicbrainz(http: ThrottledPublicHttp, title: str, artist: str) -> dict[str
     detail_url = "https://musicbrainz.org/ws/2/recording/" + urllib.parse.quote(mbid) + "?" + _query(
         {
             "fmt": "json",
-            "inc": "artist-credits+releases+tags+genres+url-rels+work-rels+instrument-rels",
+            "inc": "artist-credits+releases+tags+genres+artist-rels+url-rels+work-rels",
         }
     )
     try:
