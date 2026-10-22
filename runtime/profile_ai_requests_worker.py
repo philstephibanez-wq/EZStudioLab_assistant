@@ -27,7 +27,7 @@ from profile_lab_observations import attach_lab_observations
 from profile_identity import resolve_missing_artist
 from profile_sequential_review import examine_modules
 from profile_module_qwen import infer_module
-from profile_dimension_synthesis import synthesize_dimensions
+from profile_final_verifier import verify_final_values
 
 BASE = os.environ.get('EZSTUDIOLAB_ASSISTANT_BASE_URL', 'http://EZSTUDIO-MAIN:8702').rstrip('/')
 TOKEN = os.environ.get('EZSTUDIOLAB_ASSISTANT_TOKEN', '')
@@ -104,47 +104,37 @@ def process(run_id, client):
     emit('review.base_payload.duration', start_ns=started)
     snap('review.base_payload', payload)
     started = time.perf_counter_ns()
-    provider = build_ai_provider_from_env()
-    sequential = examine_modules(
-        run_id, api, lambda request: infer_module(provider, request),
-        on_progress=lambda index, total, item_id: emit('module.progress', {
-            'item_index': index, 'item_total': total, 'current_item': item_id}),
-        on_record=lambda request, record: snap('module.review.completed', record),
-    )
-    snap('module.review.summary', sequential)
-    # Separate musical interpretation from documentary validation.
-    dimension_advisories = synthesize_dimensions(provider, row, sequential)
-    ai = _run_ai_profile_review(provider, row, research)
-    emit('ai.review.duration', start_ns=started)
-    snap('ai.review.normalized', ai)
-    dimensions = require_completed_ai_review(ai)
-    ai = attach_lab_observations(ai, row)
-    for dim, value in dimensions.items():
-        emit('ai.dimension.validation', {'dimension': dim, 'result': value})
-    scored_count = sum(
-        1 for value in dimensions.values()
-        if value.get('decision') in ('match', 'mismatch')
-    )
-    emit('ai.review.disposition', {
-        'status': 'draft',
-        'scored_count': scored_count,
-        'dimension_count': len(dimensions),
-        'coverage': ai.get('coverage'),
-        'abstention': scored_count == 0,
-    })
+    # Independent evidence verification. No module results/presets in verifier inputs.
+    verification = verify_final_values(row, ident, research)
+    snap('profile.final_verification', verification)
+    # Retain existing LAB draft transport schema, without claiming AI-generated proof.
+    ai = {
+        'schema': 'EZStudioLab_assistant.ai-profile-review.v1',
+        'status': 'completed',
+        'provider': 'independent-evidence-verifier',
+        'model': None,
+        'confidence': None,
+        'summary': 'Vérification indépendante des valeurs musicales finales',
+        'dimensions': {
+            key: {'decision':'not_scored','confidence':None,
+                  'reason':'verification_in_final_assertions'}
+            for key in ('genre','instrumentation','lead_vocal','backing_vocals','choir')
+        },
+        'coverage': {'independent_verification': True}
+    }
     payload = enrich_review_payload_with_ai(payload, ai)
-    # Preserve module-level consultative observations separately from documentary validation.
-    payload.setdefault('comparison', {})['module_consultations'] = sequential
-    payload['comparison']['dimension_advisories'] = dimension_advisories
-    payload.setdefault('consensus', {})['module_review_coverage'] = {
-        'examined': sequential['examined'], 'total': sequential['item_total'],
-        'complete': sequential['complete'], 'advisory_only': True}
-
+    payload.setdefault('comparison', {})['final_verification'] = verification
+    payload.setdefault('consensus', {})['final_verification_summary'] = {
+        'bon': sum(x['verdict']=='bon' for x in verification['assertions']),
+        'faux': sum(x['verdict']=='faux' for x in verification['assertions']),
+        'non_trouve': sum(x['verdict']=='non_trouve' for x in verification['assertions'])
+    }
+    scored_count = 0
     # A completed inference is an advisory DRAFT, never independent validation.
     payload['status'] = 'draft'
     payload['reviewer'] = 'assistant-lab-ui-qwen'
     digest = hashlib.sha256(json.dumps(
-        {'ai': ai, 'sequential': sequential, 'run_id': run_id}, sort_keys=True, ensure_ascii=True
+        {'ai': ai, 'verification': verification, 'run_id': run_id}, sort_keys=True, ensure_ascii=True
     ).encode('utf-8')).hexdigest()[:20]
     payload['revision_key'] = 'profile-ui-qwen-' + str(run_id) + '-' + digest
     snap('lab.submit.request', payload)
