@@ -23,5 +23,21 @@ class ModulePromptContract(unittest.TestCase):
         for field in ("summary","uncertainty","supporting_evidence","conflicting_evidence"):
             self.assertIn(field,CODE)
 
+    def test_english_diagnostics_and_french_preserved(self):
+        from unittest.mock import patch
+        import sys
+        import types
+        # profile_module_qwen imports only local dependencies; avoid runtime integration.
+        sys.path.insert(0,str(Path(__file__).resolve().parents[1]/"app"))
+        from profile_module_qwen import _english_review
+        self.assertTrue(_english_review({"summary":"The module identified beats in the audio.","uncertainty":""}))
+        self.assertFalse(_english_review({"summary":"Le module identifie 92,3 battements par minute.","uncertainty":"Score non calibré."}))
+        self.assertFalse(_english_review({"summary":"","uncertainty":""}))
+
+    def test_retry_is_bounded_and_abstains(self):
+        self.assertIn("for attempt in range(2)",CODE)
+        self.assertIn("non_french_model_output",CODE)
+        self.assertIn("qwen.module.retry_language",CODE)
+
 if __name__=="__main__":
     unittest.main()
