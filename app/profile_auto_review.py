@@ -15,7 +15,7 @@ from typing import Any
 
 from profile_review import normalize_track_identity, profile_review_queue_snapshot
 from ai_provider import AIReviewProvider, build_ai_provider_from_env
-from profile_physical_documents import discover_release_documents
+from profile_physical_documents import discover_release_documents, inspect_scans_with_local_ocr
 
 
 @dataclass(frozen=True)
@@ -201,6 +201,7 @@ def _musicbrainz(http: ThrottledPublicHttp, title: str, artist: str) -> dict[str
         if isinstance(release, dict) and release.get("id")
     ]
     physical_documents = discover_release_documents(http, edition_ids[:3])
+    physical_credit_review = inspect_scans_with_local_ocr(physical_documents, lookup_title)
     # A relation attribute is not automatically an instrument (e.g. "live").
     # Use only artist/performer relations on the recording itself.
     performers = [
@@ -295,6 +296,7 @@ def _musicbrainz(http: ThrottledPublicHttp, title: str, artist: str) -> dict[str
         "performers": performers[:30],
         "recording_credits": recording_credits,
         "physical_documents": physical_documents,
+        "physical_credit_review": physical_credit_review,
         "instruments": sorted(set(instruments)),
         "lead_vocals": lead_vocals,
         "backing_vocals": backing_vocals,
