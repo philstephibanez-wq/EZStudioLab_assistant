@@ -53,7 +53,7 @@ class DimensionSynthesisContract(unittest.TestCase):
             def __exit__(self,*args): return False
             def read(self,n):
                 content = '{"bad":true}' if self.index==1 else json.dumps({
-                    "advisory":"Genre musical envisagé",
+                    "advisory":"Genre et instrumentation, voix principale, harmonies et chœurs à examiner",
                     "uncertainty":"Non calibré",
                     "contributors":[]})
                 return json.dumps({"choices":[{"finish_reason":"stop",
