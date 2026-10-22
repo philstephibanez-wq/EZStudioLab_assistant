@@ -165,39 +165,71 @@ def _probe_model_root(model_root: Path) -> dict:
 
 
 def _profile_consultation_status() -> dict:
-    """Read the latest local PROFILE timeline; expose only progress metadata."""
+    """Read real independent-verification stages; never claim Qwen module progress."""
     import re
     root = Path(os.getenv("EZS_PROFILE_TRACE_ROOT") or r"C:\temp\EZS_PROFILE_DEBUG")
     try:
         folders = sorted((p for p in root.iterdir()
             if p.is_dir() and re.fullmatch(r"run-\d+-[0-9a-f]{12}", p.name)),
-            key=lambda p:p.stat().st_mtime,reverse=True)
+            key=lambda p: p.stat().st_mtime, reverse=True)
         if not folders:
-            return {"state":"not_started"}
-        timeline=folders[0]/"timeline.jsonl"
-        if not timeline.is_file(): return {"state":"not_started"}
-        progress={"state":"in_progress","run_id":int(folders[0].name.split("-")[1]),
-                  "completed":0,"total":None,"current_item":None}
-        saw_module_event=False
+            return {"state": "not_started"}
+        timeline = folders[0] / "timeline.jsonl"
+        if not timeline.is_file():
+            return {"state": "not_started"}
+        progress = {"state": "in_progress",
+                    "run_id": int(folders[0].name.split("-")[1]),
+                    "stage": "initialisation", "completed": 0, "total": 4,
+                    "verified_count": None, "evidence_count": None,
+                    "revision": None}
+        saw_new = False
+        saw_finish = False
         with timeline.open(encoding="utf-8") as stream:
             for line in stream:
-                try: event=json.loads(line)
-                except (ValueError,TypeError): continue
-                name=event.get("event")
-                data=event.get("data") or {}
-                if name=="module.progress" and isinstance(data,dict):
-                    saw_module_event=True
-                    progress["completed"]=data.get("item_index",0)
-                    progress["total"]=data.get("item_total")
-                    progress["current_item"]=data.get("current_item")
-                elif name=="trace.finish":
-                    outcome=data.get("status") if isinstance(data,dict) else None
-                    progress["state"]="completed" if outcome=="completed" else "error"
-        if not saw_module_event:
-            return {"state":"not_started","run_id":progress["run_id"],"note":"historical_trace_without_sequential_review"}
+                try:
+                    event = json.loads(line)
+                except (ValueError, TypeError):
+                    continue
+                name = event.get("event")
+                data = event.get("data") or {}
+                if name == "research.begin":
+                    saw_new = True
+                    progress.update(stage="recherche des sources", completed=1)
+                elif name == "profile.final_verification":
+                    saw_new = True
+                    assertions = data.get("assertions") or []
+                    if isinstance(assertions, list):
+                        progress["verified_count"] = len(assertions)
+                        progress["evidence_count"] = sum(
+                            1 for a in assertions if isinstance(a, dict)
+                            and a.get("verdict") in ("bon", "faux")
+                            and a.get("sources"))
+                    progress.update(stage="verdicts calculés", completed=2)
+                elif name == "lab.submit.response":
+                    saw_new = True
+                    if isinstance(data, dict) and data.get("ok"):
+                        progress.update(stage="révision enregistrée", completed=3)
+                        revision = data.get("revision") or {}
+                        if isinstance(revision, dict):
+                            progress["revision"] = revision.get("id")
+                elif name == "trace.finish":
+                    saw_finish = True
+                    status = data.get("status") if isinstance(data, dict) else None
+                    progress["state"] = "completed" if status == "completed" else "error"
+                    progress["stage"] = "terminé" if status == "completed" else "échec"
+                    if status == "completed":
+                        progress["completed"] = 4
+                elif name == "module.progress" and not saw_new:
+                    # Legacy traces must never masquerade as v1.6a verification.
+                    pass
+        if not saw_new:
+            return {"state": "not_started", "run_id": progress["run_id"],
+                    "note": "ancienne trace sans vérification indépendante"}
+        if not saw_finish:
+            progress["state"] = "in_progress"
         return progress
-    except (OSError,ValueError):
-        return {"state":"unavailable"}
+    except (OSError, ValueError):
+        return {"state": "unavailable"}
 
 def main() -> int:
     version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
