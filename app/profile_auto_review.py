@@ -142,6 +142,7 @@ def _musicbrainz(http: ThrottledPublicHttp, title: str, artist: str) -> dict[str
         return {"source": "MusicBrainz", "available": False}
 
     best = None
+    eligible = []
     for row in recordings:
         if not isinstance(row, dict):
             continue
@@ -155,6 +156,8 @@ def _musicbrainz(http: ThrottledPublicHttp, title: str, artist: str) -> dict[str
         title_match = _normalize_identity_text(row.get("title")) == _normalize_identity_text(lookup_title)
         artist_match = artist.casefold() in candidate_artist.casefold()
         rank = (1 if title_match else 0, 1 if artist_match else 0, score)
+        if rank[0] == 1 and rank[1] == 1:
+            eligible.append((rank, row, candidate_artist))
         if best is None or rank > best[0]:
             best = (rank, row, candidate_artist)
 
@@ -166,6 +169,9 @@ def _musicbrainz(http: ThrottledPublicHttp, title: str, artist: str) -> dict[str
         return {"source": "MusicBrainz", "available": False,
                 "reason": "no_matching_recording", "candidate_count": len(recordings)}
 
+    ids = sorted({_compact(x[1].get('id')) for x in eligible if _compact(x[1].get('id'))})
+    if len(ids) > 1:
+        return {'source':'MusicBrainz','available':False,'reason':'ambiguous_recording_identity','candidate_count':len(ids),'candidate_recording_urls':['https://musicbrainz.org/recording/'+x for x in ids[:12]]}
     row = best[1]
     mbid = _compact(row.get("id"))
     detail_url = "https://musicbrainz.org/ws/2/recording/" + urllib.parse.quote(mbid) + "?" + _query(
