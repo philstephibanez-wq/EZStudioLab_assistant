@@ -443,7 +443,7 @@ def _wikipedia(http: ThrottledPublicHttp, title: str, artist: str, preferred_tit
     if song_page:
         # Restrict to positive performance phrases; a loose instrument mention
         # elsewhere in a story or list is not recording evidence.
-        if re.search(r"(?i)\\b(?:played|plays|performed|performs|using|with|on|strums?|strummed)\\s+(?:an?\\s+)?acoustic guitar\\b", extract):
+        if re.search(r"(?i)\b(?:played|plays|performed|performs|using|with|on|strums?|strummed)\s+(?:an?\s+)?acoustic guitar\b", extract):
             facts["instrument:acoustic_guitar"] = {"explicit": True, "value": "acoustic guitar",
                 "url": _compact(page.get("fullurl"))}
     return {
