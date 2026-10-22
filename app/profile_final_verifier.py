@@ -70,6 +70,30 @@ def _matched_recording_sources(identity, research):
             and s.get("available") is True and s.get("identity_relevant") is True
             and _url(s)]
 
+def _instrument_matches(proposed, credited):
+    """A specific credited guitar entails generic guitar, but not vice versa."""
+    proposed = _clean(proposed).casefold().replace("guitare", "guitar")
+    credited = _clean(credited).casefold().replace("guitare", "guitar")
+    if proposed == credited:
+        return True
+    guitar_family = {"guitar", "electric guitar", "acoustic guitar", "classical guitar"}
+    return proposed == "guitar" and credited in guitar_family
+
+
+def _vocal_role(credit):
+    if credit.get("scope") != "recording":
+        return None
+    role = _clean(credit.get("role")).casefold()
+    attributes = " ".join(_clean(x).casefold() for x in credit.get("instruments") or [])
+    if role not in {"vocal", "vocals", "performer"}:
+        return None
+    if "backing vocal" in attributes or "background vocal" in attributes:
+        return "backing"
+    if role in {"vocal", "vocals"} and ("lead" in attributes or not attributes):
+        return "lead"
+    return None
+
+
 def _evidence_for_assertion(item, source):
     """Return corroborating recording evidence, never infer absence from missing credit."""
     if source.get("source") != "MusicBrainz":
@@ -82,29 +106,20 @@ def _evidence_for_assertion(item, source):
             if not isinstance(credit, dict) or credit.get("scope") != "recording":
                 continue
             instruments = {_clean(v).casefold() for v in credit.get("instruments") or []}
-            if value in instruments:
+            if any(_instrument_matches(value, name) for name in instruments):
                 return ("MusicBrainz — crédits de l'enregistrement", "recording_credit")
     if key == "genre":
         # Explicit recording-level taxonomy only. Artist/release tags are not proof.
         tags = {_clean(t).casefold() for t in source.get("recording_genres") or []}
         if value in tags:
             return ("MusicBrainz — genre de l'enregistrement", "recording_genre")
-    if key == "lead_vocal" and value == "présent":
-        credits = source.get("recording_credits") or []
-        if any(isinstance(c, dict) and c.get("scope")=="recording"
-               and c.get("role")=="vocal" and
-               not any("backing" in _clean(x).casefold() or
-                       "background" in _clean(x).casefold()
-                       for x in c.get("instruments") or [])
-               for c in credits):
-            return ("MusicBrainz — crédit vocal de l'enregistrement", "recording_vocal_credit")
-    if key == "backing_vocals" and value == "présent":
-        credits = source.get("recording_credits") or []
-        if any(isinstance(c, dict) and c.get("scope")=="recording" and
-               any("backing vocal" in _clean(x).casefold() or "background vocal" in _clean(x).casefold()
-                   for x in c.get("instruments") or [])
-               for c in credits):
-            return ("MusicBrainz — voix d'accompagnement créditées", "recording_backing_credit")
+    if key in {"lead_vocal", "backing_vocals"} and value == "présent":
+        roles = {_vocal_role(c) for c in source.get("recording_credits") or []
+                 if isinstance(c, dict)}
+        target = "lead" if key == "lead_vocal" else "backing"
+        if target in roles:
+            return ("MusicBrainz — voix créditées pour cet enregistrement",
+                    "recording_vocal_credit")
     return None
 
 def verify_final_values(row, identity, research):
