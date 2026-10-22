@@ -11,6 +11,7 @@ import json
 import os
 import re
 import subprocess
+import shutil
 from pathlib import Path
 
 DEST = "philstephibanez-wq/EZStudio_Run_Reports"
@@ -134,7 +135,16 @@ def make_report(trace, outcome):
 
 
 def _gh(endpoint, *, payload=None):
-    args = ["gh", "api"]
+    # Scheduled workers may not inherit interactive PATH; resolve GitHub CLI
+    # deterministically without modifying machine environment or credentials.
+    gh_exe = shutil.which("gh")
+    if not gh_exe and os.name == "nt":
+        candidate = Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "GitHub CLI" / "gh.exe"
+        if candidate.is_file():
+            gh_exe = str(candidate)
+    if not gh_exe:
+        raise RuntimeError("report_github_cli_not_found")
+    args = [gh_exe, "api"]
     if payload is not None:
         args += ["--method", "PUT"]
     args += [endpoint]
