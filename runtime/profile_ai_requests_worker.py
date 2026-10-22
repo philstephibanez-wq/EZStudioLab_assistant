@@ -28,6 +28,7 @@ from profile_identity import resolve_missing_artist
 from profile_sequential_review import examine_modules
 from profile_module_qwen import infer_module
 from profile_final_verifier import verify_final_values
+from profile_recording_disambiguation import duration_from_catalog
 
 BASE = os.environ.get('EZSTUDIOLAB_ASSISTANT_BASE_URL', 'http://EZSTUDIO-MAIN:8702').rstrip('/')
 TOKEN = os.environ.get('EZSTUDIOLAB_ASSISTANT_TOKEN', '')
@@ -92,6 +93,7 @@ def process(run_id, client):
         else:
             # Do not invent a performer: public research returns an abstention.
             row = {**row, 'normalized_identity': ident}
+    ident = {**ident, 'catalog_duration_ms': duration_from_catalog(row)}
     started = time.perf_counter_ns()
     emit('research.begin', {'identity': ident})
     try:
