@@ -174,9 +174,13 @@ def _musicbrainz(http: ThrottledPublicHttp, title: str, artist: str) -> dict[str
             "inc": "artist-credits+releases+tags+genres+artist-rels+url-rels+work-rels",
         }
     )
+    detail_status = "available"
+    detail_error = None
     try:
         detail = http.get_json(detail_url)
-    except Exception:
+    except Exception as exc:
+        detail_status = "unavailable"
+        detail_error = type(exc).__name__
         detail = row
 
     genres = []
@@ -298,6 +302,8 @@ def _musicbrainz(http: ThrottledPublicHttp, title: str, artist: str) -> dict[str
         "recording_tags": sorted(set(recording_tags)),
         "performers": performers[:30],
         "recording_credits": recording_credits,
+        "recording_detail_status": detail_status,
+        "recording_detail_error": detail_error,
         "edition_track_credit_count": len(edition_track_credits),
         "physical_documents": physical_documents,
         "physical_credit_review": physical_credit_review,
