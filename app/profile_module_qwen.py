@@ -8,10 +8,10 @@ from profile_module_compact import module_prompt_payload
 
 # Detect common English narrative markers; short module names/units are exempt.
 _ENGLISH_PROSE = re.compile(
-    r"\\b(?:the (?:module|model|analysis|provided|result|evidence|confidence|tool)|"
+    r"\b(?:the (?:module|model|analysis|provided|result|evidence|confidence|tool)|"
     r"this (?:indicates|suggests|means)|the (?:audio|prediction)|"
     r"was (?:performed|trained)|is (?:based|limited)|"
-    r"cannot (?:be|confirm)|which (?:indicates|prevents))\\b",
+    r"cannot (?:be|confirm)|which (?:indicates|prevents))\b",
     re.IGNORECASE,
 )
 
