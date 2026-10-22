@@ -15,6 +15,7 @@ from typing import Any
 
 from profile_review import normalize_track_identity, profile_review_queue_snapshot
 from ai_provider import AIReviewProvider, build_ai_provider_from_env
+from profile_physical_documents import discover_release_documents
 
 
 @dataclass(frozen=True)
@@ -192,6 +193,14 @@ def _musicbrainz(http: ThrottledPublicHttp, title: str, artist: str) -> dict[str
     recording_genres = list(genres)
     recording_tags = list(tags)
     recording_credits = _recording_credits(detail.get("relations"), recording_url)
+    # An edition is not the recording: sleeve/back/booklet scans are only
+    # discovery candidates until their text and track attribution are verified.
+    edition_ids = [
+        _compact(release.get("id"))
+        for release in (detail.get("releases") or [])
+        if isinstance(release, dict) and release.get("id")
+    ]
+    physical_documents = discover_release_documents(http, edition_ids[:3])
     # A relation attribute is not automatically an instrument (e.g. "live").
     # Use only artist/performer relations on the recording itself.
     performers = [
@@ -285,6 +294,7 @@ def _musicbrainz(http: ThrottledPublicHttp, title: str, artist: str) -> dict[str
         "recording_tags": sorted(set(recording_tags)),
         "performers": performers[:30],
         "recording_credits": recording_credits,
+        "physical_documents": physical_documents,
         "instruments": sorted(set(instruments)),
         "lead_vocals": lead_vocals,
         "backing_vocals": backing_vocals,
