@@ -21,6 +21,10 @@ class DurationIdentityTests(unittest.TestCase):
         self.assertEqual(choose_candidate([candidate("a",334000),candidate("b",None)],334000)["status"],"incomplete_candidate_durations")
     def test_inconsistent_catalog_duration_abstains(self):
         self.assertIsNone(duration_from_catalog({"duration_ms":334000,"duration_seconds":344}))
+    def test_nested_lab_metrics_duration_seconds(self):
+        self.assertEqual(duration_from_catalog({"metrics":{"duration_seconds":339.847}}),339847)
+    def test_inconsistent_nested_and_top_level_abstains(self):
+        self.assertIsNone(duration_from_catalog({"metrics":{"duration_seconds":339.847},"duration_seconds":360}))
     def test_catalog_duration_seconds(self):
         self.assertEqual(duration_from_catalog({"duration_seconds":334.2}),334200)
 
