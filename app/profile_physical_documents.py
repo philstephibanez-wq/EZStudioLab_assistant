@@ -94,7 +94,7 @@ def extract_printed_credit_candidates(text, track_title):
     for raw in lines[start:start + 12]:
         if not raw:
             break
-        match = re.fullmatch(r"([A-Za-zÀ-ÿ.' -]{3,70})\\s*[-:–]\\s*([A-Za-zÀ-ÿ, /() -]{3,90})", raw)
+        match = re.fullmatch(r"([A-Za-zÀ-ÿ.' -]{3,70})\s*[-:–]\s*([A-Za-zÀ-ÿ, /() -]{3,90})", raw)
         if match is None:
             break
         role = match.group(2).strip()
