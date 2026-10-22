@@ -128,7 +128,7 @@ _NON_CREDIT_ATTRIBUTES = {
 def _musicbrainz(http: ThrottledPublicHttp, title: str, artist: str) -> dict[str, Any]:
     # A trailing YEAR is catalogue metadata, not part of the recording title.
     # Preserve actual version qualifiers (live, demo, remix) to avoid wrong takes.
-    lookup_title = re.sub(r"\\s*\\((?:18|19|20)\\d{2}\\)\\s*$", "", title).strip()
+    lookup_title = re.sub(r"\s*\((?:18|19|20)\d{2}\)\s*$", "", title).strip()
     lookup_title = lookup_title or title
     query = f'recording:"{lookup_title}" AND artist:"{artist}"'
     search_url = "https://musicbrainz.org/ws/2/recording/?" + _query(
