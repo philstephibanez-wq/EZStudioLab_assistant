@@ -33,6 +33,15 @@ class FinalVerificationV16a(unittest.TestCase):
         self.assertNotIn("SECRET_MERT",output)
         self.assertNotIn("semantic.clap",output)
         self.assertNotIn("support",output)
+    def test_evidence_diagnostic_exposes_rejection_without_engine_data(self):
+        result=verify_final_values(sample(),self.ident,evidence())
+        diagnostic=result["evidence_diagnostic"]
+        self.assertEqual(diagnostic["sources"][0]["recording_credit_count"],2)
+        self.assertEqual(diagnostic["sources"][0]["reason"],"eligible")
+        from json import dumps
+        self.assertNotIn("SECRET_ENGINE_PRESET",dumps(diagnostic))
+        self.assertNotIn("SECRET_MERT",dumps(diagnostic))
+
     def test_each_final_value_has_own_verdict(self):
         out=verify_final_values(sample(),self.ident,evidence())
         vals={a["key"]:a for a in out["assertions"]}
