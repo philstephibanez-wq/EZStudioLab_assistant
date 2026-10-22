@@ -407,7 +407,6 @@ def _wikipedia(http: ThrottledPublicHttp, title: str, artist: str, preferred_tit
                 "gsrsearch": query,
                 "gsrlimit": 3,
                 "prop": "extracts|info",
-                "exintro": 1,
                 "explaintext": 1,
                 "inprop": "url",
                 "format": "json",
@@ -436,8 +435,20 @@ def _wikipedia(http: ThrottledPublicHttp, title: str, artist: str, preferred_tit
         return {"source": "Wikipedia", "available": False}
     page = max(ranked, key=lambda item: item[0])[1]
     extract = _compact(page.get("extract"))
+    # Only a song-specific page, never an artist/album overview, can provide
+    # recording-scoped documentary instrument claims.
+    song_page = _normalize_identity_text(page.get("title")) == title_norm
+    facts = {}
+    if song_page:
+        # Restrict to positive performance phrases; a loose instrument mention
+        # elsewhere in a story or list is not recording evidence.
+        if re.search(r"(?i)\\b(?:played|plays|performed|performs|using|with|on|strums?|strummed)\\s+(?:an?\\s+)?acoustic guitar\\b", extract):
+            facts["instrument:acoustic"] = {"explicit": True, "value": "acoustic guitar",
+                "url": _compact(page.get("fullurl"))}
     return {
         "source": "Wikipedia",
+        "fact_scope": "recording" if song_page else "unverified",
+        "musical_facts": facts,
         "available": bool(extract),
         "url": _compact(page.get("fullurl")) or None,
         "title": _compact(page.get("title")),
