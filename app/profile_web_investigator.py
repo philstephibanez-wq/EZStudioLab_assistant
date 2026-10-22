@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from profile_final_verifier import final_assertions
 from profile_public_web import search, fetch_document
+from profile_live_evidence import evaluate_live_documents
 
 TERMS={"tempo":"BPM tempo","meter":"time signature meter","key":"musical key tonality","genre":"genre style","lead_vocal":"lead vocals singer","backing_vocals":"backing vocals","choir":"choir choral vocals","vocal_harmonies":"vocal harmonies"}
 
@@ -45,6 +46,7 @@ def research_each_assertion(row, identity, **unused):
         except Exception as exc:
             item["status"]="error"
             item["reason"]=type(exc).__name__+":"+str(exc)[:180]
+        item["evidence_review"]=evaluate_live_documents(assertion,identity,item["documents"])
         items.append(item)
     return {"status":"completed" if items else "no_assertions",
             "searched":len(items),"items":items,
