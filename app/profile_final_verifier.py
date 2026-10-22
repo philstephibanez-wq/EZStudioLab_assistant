@@ -61,7 +61,10 @@ def _matched_recording_sources(identity, research):
     """A source must be bound to the same artist/title; external research owns matching."""
     title = _clean(identity.get("title"))
     artist = _clean(identity.get("artist"))
-    if not title or not artist or identity.get("requires_verification"):
+    # A heuristic catalog identity may be confirmed by independent source matching.
+    # Do not discard a genuine identity-matched recording solely because the
+    # original title/artist split was heuristic.
+    if not title or not artist:
         return []
     return [s for s in research.get("sources", []) if isinstance(s, dict)
             and s.get("available") is True and s.get("identity_relevant") is True
