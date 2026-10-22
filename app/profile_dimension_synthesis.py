@@ -5,7 +5,7 @@ No audio, no science engine, no web access, and no external-validation scoring.
 from __future__ import annotations
 import json
 import urllib.request
-from profile_auto_review import _local_profile_evidence
+from ai_provider import _local_profile_evidence
 from declarative_review import load_review_preset
 from profile_trace import snap
 
