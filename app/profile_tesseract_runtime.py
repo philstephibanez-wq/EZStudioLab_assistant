@@ -30,3 +30,19 @@ def resolve_tesseract():
     if result.returncode != 0 or not {"eng", "fra"}.issubset(set(result.stdout.splitlines())):
         return {"status": "models_unreadable", "tessdata_dir": data_path}
     return {"status": "ready", "executable": str(exe), "tessdata_dir": str(data)}
+
+
+def booklet_ocr_enabled():
+    """Read persistent Windows User setting even when Guardian inherited stale env.
+
+    A Process-level value takes precedence. Missing or malformed values fail closed.
+    """
+    value = os.environ.get("EZS_PROFILE_BOOKLET_OCR")
+    if value is None and os.name == "nt":
+        try:
+            import winreg
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment") as key:
+                value, _kind = winreg.QueryValueEx(key, "EZS_PROFILE_BOOKLET_OCR")
+        except (OSError, ImportError):
+            value = None
+    return str(value or "").strip() == "1"
