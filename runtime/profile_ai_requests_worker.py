@@ -27,6 +27,7 @@ from profile_lab_observations import attach_lab_observations
 from profile_identity import resolve_missing_artist
 from profile_sequential_review import examine_modules
 from profile_module_qwen import infer_module
+from profile_dimension_synthesis import synthesize_dimensions
 
 BASE = os.environ.get('EZSTUDIOLAB_ASSISTANT_BASE_URL', 'http://EZSTUDIO-MAIN:8702').rstrip('/')
 TOKEN = os.environ.get('EZSTUDIOLAB_ASSISTANT_TOKEN', '')
@@ -111,6 +112,8 @@ def process(run_id, client):
         on_record=lambda request, record: snap('module.review.completed', record),
     )
     snap('module.review.summary', sequential)
+    # Separate musical interpretation from documentary validation.
+    dimension_advisories = synthesize_dimensions(provider, row, sequential)
     ai = _run_ai_profile_review(provider, row, research)
     emit('ai.review.duration', start_ns=started)
     snap('ai.review.normalized', ai)
@@ -132,6 +135,7 @@ def process(run_id, client):
     payload = enrich_review_payload_with_ai(payload, ai)
     # Preserve module-level consultative observations separately from documentary validation.
     payload.setdefault('comparison', {})['module_consultations'] = sequential
+    payload['comparison']['dimension_advisories'] = dimension_advisories
     payload.setdefault('consensus', {})['module_review_coverage'] = {
         'examined': sequential['examined'], 'total': sequential['item_total'],
         'complete': sequential['complete'], 'advisory_only': True}
