@@ -6,10 +6,16 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "app"))
-from profile_tesseract_runtime import resolve_tesseract
+from profile_tesseract_runtime import resolve_tesseract, booklet_ocr_enabled
 
 
 class SharedTessdata(unittest.TestCase):
+    def test_explicit_ocr_opt_in_and_opt_out(self):
+        with patch.dict(os.environ, {"EZS_PROFILE_BOOKLET_OCR": "1"}):
+            self.assertTrue(booklet_ocr_enabled())
+        with patch.dict(os.environ, {"EZS_PROFILE_BOOKLET_OCR": "0"}):
+            self.assertFalse(booklet_ocr_enabled())
+
     def test_missing_executable_abstains(self):
         with patch.dict(os.environ, {"EZS_TESSERACT_EXE": "/definitely/not/installed/tesseract"}):
             self.assertEqual(resolve_tesseract()["status"], "executable_missing")
