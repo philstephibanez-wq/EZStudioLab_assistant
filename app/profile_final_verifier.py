@@ -143,6 +143,11 @@ def verify_final_values(row, identity, research):
              "identity_relevant": x.get("identity_relevant") is True,
              "recording_credit_count": len(x.get("recording_credits") or []),
              "recording_genre_count": len(x.get("recording_genres") or []),
+             "physical_document_count": len(x.get("physical_documents") or []),
+             "physical_ocr_status": (x.get("physical_credit_review") or {}).get("status"),
+             "physical_candidate_count": sum(len(z.get("credit_candidates") or [])
+                 for z in (x.get("physical_credit_review") or {}).get("scans", [])
+                 if isinstance(z, dict)),
              "reason": ("not_available" if x.get("available") is not True else
                         "identity_not_matched" if x.get("identity_relevant") is not True else
                         "eligible")}
