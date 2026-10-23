@@ -112,7 +112,7 @@ def process(run_id, client):
     snap('profile.final_verification', verification)
     # Research is an integral part of PROFILE, never a hidden opt-in.
     # Missing provider credentials are reported to LAB, never silently skipped.
-    investigation = research_each_assertion(row, ident)
+    investigation = research_each_assertion(row, ident, source_research=research)
     snap('profile.web_investigation', investigation)
     emit('web.investigation.summary', {
         'status': investigation.get('status'),
