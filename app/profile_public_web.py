@@ -1,12 +1,15 @@
-"""Keyless public web discovery for PROFILE; real HTTP only, no generated sources.
-DuckDuckGo HTML is a public website, not a guaranteed or licensed search API.
+"""Public-web research through a self-hosted SearXNG JSON endpoint.
+
+No commercial search API, mock responses, public HTML scraping or RSS fallback.
 """
 from __future__ import annotations
 import html
+import ipaddress
+import json
+import os
 import re
 import urllib.parse
 import urllib.request
-import xml.etree.ElementTree as ET
 from html.parser import HTMLParser
 
 class _VisibleText(HTMLParser):
@@ -15,119 +18,95 @@ class _VisibleText(HTMLParser):
         self.parts=[]
         self.hidden=0
     def handle_starttag(self,tag,attrs):
-        if tag in ("script","style","noscript"):self.hidden+=1
+        if tag in ("script","style","noscript"):
+            self.hidden+=1
     def handle_endtag(self,tag):
-        if tag in ("script","style","noscript") and self.hidden:self.hidden-=1
+        if tag in ("script","style","noscript") and self.hidden:
+            self.hidden-=1
     def handle_data(self,data):
-        if not self.hidden and data.strip():self.parts.append(data.strip())
+        if not self.hidden and data.strip():
+            self.parts.append(data.strip())
 
-def _url(url):
+def _url(value):
     try:
-        p=urllib.parse.urlsplit(str(url))
-        return p.geturl() if p.scheme=="https" and p.hostname and not p.username and not p.password else None
-    except (ValueError,TypeError):
+        p=urllib.parse.urlsplit(str(value))
+        if p.scheme!="https" or not p.hostname or p.username or p.password:
+            return None
+        if p.hostname.lower() in ("localhost",) or p.hostname.lower().endswith(".local"):
+            return None
+        try:
+            if not ipaddress.ip_address(p.hostname).is_global:
+                return None
+        except ValueError:
+            pass
+        return p.geturl()
+    except (TypeError,ValueError):
         return None
 
-def _fetch(url,*,timeout=14,max_bytes=600000):
-    req=urllib.request.Request(url,headers={"User-Agent":"EZStudioLabAssistant/1.6 (music citation research)","Accept":"application/rss+xml, text/html;q=0.9,*/*;q=0.5"})
-    with urllib.request.urlopen(req,timeout=timeout) as response:
-        if response.status!=200:raise ValueError("unexpected_http_status")
-        content_type=response.headers.get("Content-Type","")
-        return response.read(max_bytes+1)[:max_bytes],content_type
-
-class _SearchResults(HTMLParser):
-    def __init__(self):
-        super().__init__()
-        self.results=[]
-        self._target=None
-        self._title=[]
-    def handle_starttag(self, tag, attrs):
-        attrs=dict(attrs)
-        if tag=="a" and "result__a" in attrs.get("class","").split():
-            self._target=attrs.get("href")
-            self._title=[]
-    def handle_data(self, data):
-        if self._target is not None:
-            self._title.append(data)
-    def handle_endtag(self,tag):
-        if tag=="a" and self._target is not None:
-            target=self._target
-            parsed=urllib.parse.urlsplit(urllib.parse.urljoin("https://html.duckduckgo.com/",target))
-            if parsed.hostname and parsed.hostname.endswith("duckduckgo.com"):
-                target=urllib.parse.parse_qs(parsed.query).get("uddg",[None])[0]
-            link=_url(target)
-            if link and urllib.parse.urlsplit(link).hostname not in ("duckduckgo.com","html.duckduckgo.com"):
-                self.results.append({"url":link,"title":html.unescape(" ".join(self._title)).strip()[:250],"snippet":""})
-            self._target=None
-            self._title=[]
-
-class _BingSearchResults(HTMLParser):
-    def __init__(self):
-        super().__init__()
-        self.results=[]
-        self.block=0
-        self.anchor=None
-        self.title=[]
-    def handle_starttag(self,tag,attrs):
-        attrs=dict(attrs)
-        if tag=="li" and "b_algo" in attrs.get("class","").split():
-            self.block+=1
-        if self.block and tag=="a" and self.anchor is None:
-            link=_url(attrs.get("href"))
-            if link and "bing.com" not in urllib.parse.urlsplit(link).hostname:
-                self.anchor=link
-                self.title=[]
-    def handle_data(self,data):
-        if self.anchor is not None:self.title.append(data)
-    def handle_endtag(self,tag):
-        if tag=="a" and self.anchor is not None:
-            self.results.append({"url":self.anchor,
-                "title":html.unescape(" ".join(self.title)).strip()[:250],"snippet":""})
-            self.anchor=None
-            self.title=[]
-        if tag=="li" and self.block:self.block-=1
+def _endpoint():
+    raw=os.environ.get("EZS_SEARXNG_URL","").strip()
+    if not raw:
+        raise RuntimeError("SEARXNG_NOT_CONFIGURED")
+    p=urllib.parse.urlsplit(raw)
+    if p.scheme not in ("http","https") or not p.hostname or p.username or p.password:
+        raise RuntimeError("SEARXNG_ENDPOINT_INVALID")
+    if p.path not in ("","/") or p.query or p.fragment:
+        raise RuntimeError("SEARXNG_ENDPOINT_MUST_BE_BASE_URL")
+    return raw.rstrip("/")
 
 def search(query,max_results=10):
-    """Two public browser search frontends, strictly validated as HTML.
-
-    Never use the broken Bing RSS feed. Return genuine result links only;
-    propagate transport and parser errors if neither provider is reachable.
-    """
-    endpoints=[
-        ("duckduckgo_html","https://html.duckduckgo.com/html/?"+
-            urllib.parse.urlencode({"q":query,"kl":"us-en"}),_SearchResults),
-        ("bing_html","https://www.bing.com/search?"+
-            urllib.parse.urlencode({"q":query,"setlang":"en"}),_BingSearchResults),
-    ]
-    failures=[]
-    for name,endpoint,parser_type in endpoints:
-        try:
-            raw,kind=_fetch(endpoint)
-            if "html" not in kind.lower():
-                raise ValueError("unexpected_content_type")
-            parser=parser_type()
-            parser.feed(raw.decode("utf-8","replace"))
-            if not parser.results:
-                raise ValueError("no_parsable_results")
-            seen=set()
-            results=[]
-            for hit in parser.results:
-                if hit["url"] in seen:continue
-                seen.add(hit["url"])
-                results.append({**hit,"search_provider":name})
-                if len(results)>=max_results:break
-            return results
-        except Exception as exc:
-            failures.append(name+":"+type(exc).__name__+":"+str(exc)[:80])
-    raise RuntimeError("SEARCH_PROVIDERS_UNAVAILABLE:"+";".join(failures))
+    endpoint=_endpoint()+"/search?"+urllib.parse.urlencode({
+        "q":query,"format":"json","categories":"general","language":"en-US"})
+    request=urllib.request.Request(endpoint,headers={
+        "Accept":"application/json","User-Agent":"EZStudioLabAssistant/1.7"})
+    try:
+        with urllib.request.urlopen(request,timeout=20) as response:
+            if response.status!=200:
+                raise RuntimeError("SEARXNG_HTTP_"+str(response.status))
+            data=json.loads(response.read(1_500_000).decode("utf-8"))
+    except Exception as exc:
+        raise RuntimeError("SEARXNG_SEARCH_FAILED:"+type(exc).__name__) from exc
+    if not isinstance(data,dict) or not isinstance(data.get("results"),list):
+        raise RuntimeError("SEARXNG_INVALID_RESPONSE")
+    results=[]
+    seen=set()
+    for item in data["results"]:
+        if not isinstance(item,dict):
+            continue
+        link=_url(item.get("url"))
+        if not link or link in seen:
+            continue
+        seen.add(link)
+        results.append({"url":link,
+            "title":html.unescape(str(item.get("title") or ""))[:250],
+            "snippet":html.unescape(re.sub(r"<[^>]+>"," ",
+                       str(item.get("content") or "")))[:600],
+            "search_provider":"searxng"})
+        if len(results)>=max_results:
+            break
+    return results
 
 def fetch_document(url):
     safe=_url(url)
-    if not safe:return {"status":"unsafe_url"}
-    raw,kind=_fetch(safe)
-    if "text/html" not in kind.lower() and "text/plain" not in kind.lower():
-        return {"status":"unsupported_content_type"}
-    parser=_VisibleText()
-    parser.feed(raw.decode("utf-8","replace"))
-    body=re.sub(r"\s+"," "," ".join(parser.parts)).strip()
-    return {"status":"read","url":safe,"text":body[:18000],"char_count":len(body)}
+    if not safe:
+        return {"status":"unsafe_url"}
+    request=urllib.request.Request(safe,headers={"Accept":"text/html,text/plain",
+        "User-Agent":"EZStudioLabAssistant/1.7"})
+    try:
+        with urllib.request.urlopen(request,timeout=14) as response:
+            final=_url(response.geturl())
+            kind=str(response.headers.get("Content-Type") or "").lower()
+            if not final:
+                return {"status":"unsafe_redirect"}
+            if not ("text/html" in kind or "text/plain" in kind):
+                return {"status":"unsupported_content_type"}
+            raw=response.read(600_001)
+            if len(raw)>600_000:
+                return {"status":"document_too_large"}
+        parser=_VisibleText()
+        parser.feed(raw.decode("utf-8","replace"))
+        body=re.sub(r"\s+"," "," ".join(parser.parts)).strip()
+        return {"status":"read","url":final,"text":body[:18000],
+                "char_count":len(body)}
+    except Exception as exc:
+        return {"status":"read_error","reason":type(exc).__name__}
