@@ -11,7 +11,7 @@ sys.path.insert(0, str(ROOT / "app"))
 from profile_assertions_contract import ITEMS, build_assertions, validate_verdicts
 from profile_web_investigator import research_assertions
 from profile_document_consultation import consult
-from profile_tesseract_runtime import resolve_tesseract, booklet_ocr_enabled
+from profile_tesseract_runtime import booklet_ocr_enabled
 from web_status import DEFAULT_TOKEN_FILE, _read_dpapi_token
 
 WEB_KEYS = dict(zip(ITEMS, (
@@ -75,6 +75,9 @@ def verify(payload):
     # Evidence and verdicts are finalized before advisory AI is consulted.
     result["ai_consultation"] = consult(
         {"title":request["title"],"artist":request["artist"]}, reviews)
+    if result["ai_consultation"]["status"] == "error":
+        result["technical_status"] = "partial"
+        result["technical_errors"] += 1
     result["tool_audit"] = {
         "qwen":result["ai_consultation"]["status"],
         "ocr":"not_executed_no_scan_supplied",
