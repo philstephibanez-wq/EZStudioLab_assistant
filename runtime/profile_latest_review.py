@@ -2,6 +2,7 @@
 import json
 import os
 import urllib.request
+import urllib.parse
 
 BASE=os.environ.get("EZSTUDIOLAB_ASSISTANT_BASE_URL","http://EZSTUDIO-MAIN:8702").rstrip("/")
 TOKEN=os.environ.get("EZSTUDIOLAB_ASSISTANT_TOKEN","")
@@ -9,6 +10,11 @@ def main():
     if not TOKEN:
         print(json.dumps({"ok":False,"error":"token_missing"}));return
     url=BASE+"/internal/analysis/desktop/profile/reviews/latest"
+    selected_run=os.environ.get("EZSTUDIOLAB_PROFILE_RUN_ID", "").strip()
+    if selected_run:
+        if not selected_run.isdecimal() or int(selected_run) < 1:
+            print(json.dumps({"ok":False,"error":"run_id_invalid"}));return
+        url += "?"+urllib.parse.urlencode({"run_id":int(selected_run)})
     request=urllib.request.Request(url,headers={"X-EZScore-Analysis-Token":TOKEN,
                                                 "Accept":"application/json"})
     try:
