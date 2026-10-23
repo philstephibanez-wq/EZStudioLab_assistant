@@ -38,7 +38,7 @@ def main():
           "identity_declared":item.get("identity_declared"),
           "items":item.get("items") or [],
           "recording_identity_confirmed":bool(item.get("identity_confirmed"))},
-          ensure_ascii=False))
+          ensure_ascii=True, allow_nan=False))
     except Exception as exc:
         print(json.dumps({"ok":False,"error":type(exc).__name__}))
 if __name__=="__main__":main()
