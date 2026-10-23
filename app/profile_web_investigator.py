@@ -4,6 +4,7 @@ Search and read original webpages. A search result is not a musical verdict.
 from __future__ import annotations
 import re
 import unicodedata
+from difflib import SequenceMatcher
 from profile_final_verifier import final_assertions
 from profile_public_web import search, fetch_document
 from profile_live_evidence import evaluate_live_documents
@@ -14,9 +15,18 @@ def _tokens(value):
     return re.findall(r"[a-z0-9]+",value)
 
 def _is_song_related(hit, title, artist):
-    haystack=_tokens((hit.get("title") or "")+" "+(hit.get("snippet") or "")+" "+(hit.get("url") or ""))
-    needed=_tokens(title)+_tokens(artist)
-    return bool(needed) and all(token in haystack for token in needed)
+    # Discovery tolerance only; NEVER recording-identity proof.
+    haystack=_tokens((hit.get('title') or '')+' '+(hit.get('snippet') or '')+' '+(hit.get('url') or ''))
+    artist_tokens=_tokens(artist)
+    if not artist_tokens or not all(t in haystack for t in artist_tokens):
+        return False
+    wanted=_tokens(title)
+    if not wanted: return False
+    for token in wanted:
+        if token in haystack: continue
+        if len(token)<5 or not any(SequenceMatcher(None,token,word).ratio()>=0.80 for word in haystack if len(word)>=5):
+            return False
+    return True
 
 TERMS={"tempo":"BPM tempo","meter":"time signature meter","key":"musical key tonality","genre":"genre style","lead_vocal":"lead vocals singer","backing_vocals":"backing vocals","choir":"choir choral vocals","vocal_harmonies":"vocal harmonies"}
 
@@ -61,10 +71,11 @@ def research_assertions(assertions, identity, *, source_research=None):
             items.append(item)
             continue
         topic=TERMS.get(key,"instrument "+assertion["value"] if key.startswith("instrument:") else key)
-        query='"'+artist+'" "'+title+'" song music '+topic if artist else '"'+title+'" song music '+topic
+        query=artist+' '+title+' song music '+topic if artist else title+' song music '+topic
         item["query"]=query
         try:
-            hits=search(query,max_results=8)
+            hits=search(query,max_results=12)
+            item['search_hits']=len(hits)
             for hit in hits:
                 if not _is_song_related(hit,title,artist):
                     continue
