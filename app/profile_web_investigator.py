@@ -18,7 +18,7 @@ def _is_song_related(hit, title, artist):
     # Discovery tolerance only; NEVER recording-identity proof.
     haystack=_tokens((hit.get('title') or '')+' '+(hit.get('snippet') or '')+' '+(hit.get('url') or ''))
     artist_tokens=_tokens(artist)
-    if not artist_tokens or not all(t in haystack for t in artist_tokens):
+    if artist_tokens and not all(t in haystack for t in artist_tokens):
         return False
     wanted=_tokens(title)
     if not wanted: return False
