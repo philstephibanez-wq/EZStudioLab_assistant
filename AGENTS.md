@@ -46,6 +46,19 @@ Règles :
 4. les interfaces et logs doivent distinguer `Version` et `Révision` ;
 5. pour EZS_orchestrator, la version DEV est canonique ; la PROD reprend cette version lors du déploiement.
 
+
+### Cycle de release avec compteur de correctifs — décision du mainteneur (23 octobre 2026)
+
+Cette précision prime sur les exemples anciens de suffixes successifs et sur la clause contradictoire qui interdisait de mettre à jour VERSION pour un correctif intermédiaire.
+
+- Ouverture d'une release : `vN.Na(0)` (exemple `v1.7a(0)`).
+- Chaque correctif publié : même identifiant de release, compteur incrémenté `vN.Na(1)`, `vN.Na(2)`, etc. Aucun push fonctionnel ne conserve le même numéro.
+- Après validation effective de stabilité : suppression du compteur, `vN.Na` (exemple `v1.7a`). Ne pas annoncer la stabilité sans tests et acceptation.
+- Release suivante : nouvelle composante mineure et compteur remis à zéro, `vN.N(0)` (exemple `v1.8(0)`), puis `vN.N(1)`, etc. Stabilisation : `vN.N`.
+- Le fichier `VERSION` est la source de vérité ; les interfaces affichent « Version » et « Révision Git » séparément. Le préfixe d'affichage `v` ne doit pas imposer un préfixe `[v]` dans les messages de commit.
+- Historique : conserver les anciens commits et leurs SHA, ne jamais réécrire rétroactivement des versions qui n'existaient pas.
+- En cas de conflit avec les anciennes clauses, appliquer ce cycle explicite tout en conservant les exigences de tests, de messages descriptifs et de handoff.
+
 ## CONTRAT TRANSVERSAL — UTF-8 ET LISIBILITÉ DES SOURCES
 
 **Obligatoire dans tous les correctifs, scripts d'installation et livraisons.**
