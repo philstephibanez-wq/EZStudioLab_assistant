@@ -17,6 +17,30 @@ final class DashboardController extends AbstractController {
     public function health(): JsonResponse {
         return $this->json(['ok'=>true,'service'=>'EZStudioLab Assistant','tier'=>'web','database'=>false,'persistence_owner'=>'LAB','version'=>trim((string) @file_get_contents(dirname(__DIR__, 2).'/VERSION'))]);
     }
+    #[Route('/api/inference/status', name: 'assistant_inference_status', methods: ['GET'])]
+    public function inferenceStatus(): JsonResponse {
+        $request = static function (string $route): ?array {
+            $context = stream_context_create(['http'=>['method'=>'GET','timeout'=>3,
+                'ignore_errors'=>true,'header'=>"Accept: application/json\r\n"]]);
+            $body = @file_get_contents('http://127.0.0.1:8720'.$route, false, $context);
+            if ($body === false) return null;
+            $data = json_decode($body, true);
+            return is_array($data) ? $data : null;
+        };
+        $health = $request('/health');
+        $ready = ($health['status'] ?? null) === 'ok';
+        $props = $ready ? $request('/props') : null;
+        $models = $ready ? $request('/v1/models') : null;
+        $model = $models['data'][0]['id'] ?? $props['default_generation_settings']['model'] ?? null;
+        $build = $props['build_info'] ?? $props['version'] ?? null;
+        return $this->json([
+            'ok'=>$ready, 'state'=>$ready?'READY':'UNAVAILABLE',
+            'engine'=>'llama.cpp', 'engine_version'=>is_string($build)?$build:null,
+            'model'=>is_string($model)?$model:null, 'endpoint'=>'127.0.0.1:8720',
+            'health'=>$health, 'generation_verified'=>false,
+        ], $ready?200:503);
+    }
+
     #[Route('/api/status', name: 'assistant_status', methods: ['GET'])]
     public function status(): JsonResponse {
         $root = dirname(__DIR__, 2);
