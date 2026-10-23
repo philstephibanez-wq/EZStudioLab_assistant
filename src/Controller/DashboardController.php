@@ -34,6 +34,24 @@ final class DashboardController extends AbstractController {
             return $this->json(['ok'=>false,'state'=>'ERROR','error'=>$e->getMessage()], 503);
         }
     }
+    #[Route('/api/profile/latest-review', name: 'assistant_profile_latest_review', methods: ['GET'])]
+    public function latestProfileReview(): JsonResponse {
+        $root = dirname(__DIR__, 2);
+        $python = $_ENV['EZSTUDIOLAB_ASSISTANT_PYTHON'] ?? $_SERVER['EZSTUDIOLAB_ASSISTANT_PYTHON'] ?? 'python';
+        $process = new Process([$python, $root.'/runtime/profile_latest_review.py'], $root);
+        $process->setTimeout(16.0);
+        try {
+            $process->run();
+            $result = json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR);
+            if (!$process->isSuccessful() || !is_array($result)) {
+                return $this->json(['ok'=>false,'error'=>'latest_review_unavailable'],503);
+            }
+            return $this->json($result);
+        } catch (\Throwable $e) {
+            return $this->json(['ok'=>false,'error'=>'latest_review_transport_error'],503);
+        }
+    }
+
     #[Route('/api/profile/direct-research', name: 'assistant_profile_direct_research', methods: ['POST'])]
     public function directResearch(\Symfony\Component\HttpFoundation\Request $request): JsonResponse {
         $data = json_decode($request->getContent(), true);
