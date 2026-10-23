@@ -88,7 +88,16 @@
         var ai=item.ai||{};
         if(ai.status)line(card,'p','IA : '+ai.status+(ai.proposed_verdict?' · avis : '+ai.proposed_verdict:'')+
           (ai.reason?' · '+ai.reason:''));
-        if(ai.reference_value)line(card,'p','Valeur externe : '+ai.reference_value);
+        if(ai.reference_value)line(card,'p','Valeur externe proposée par IA : '+ai.reference_value);
+        if((item.candidates||[]).length){
+          line(card,'p','Valeurs mentionnées dans les pages (candidats NON VALIDÉS) :');
+          (item.candidates||[]).forEach(function(c){
+            var paragraph=line(card,'p',(c.value||'—')+' · '+(c.context||''));
+            if(c.url&&c.url.startsWith('https://')){
+              var link=node('a',' Source');link.href=c.url;link.target='_blank';link.rel='noopener noreferrer';paragraph.appendChild(link);
+            }
+          });
+        }
         if(ai.explanation)line(card,'p','Explication : '+ai.explanation);
         if((item.sources||[]).length){
           var list=node('ul');card.appendChild(list);
