@@ -3,6 +3,7 @@ No audio access, no scientific validation, no rights to promote evidence.
 """
 from __future__ import annotations
 import json
+import re
 import os
 import urllib.request
 
@@ -44,11 +45,29 @@ def consult(identity, reviews, *, transport=None):
         choice=output["choices"][0]
         if choice.get("finish_reason")=="length":
             raise ValueError("generation_truncated")
-        message=json.loads(choice["message"]["content"])
-        if not isinstance(message,dict) or message.get("status") not in ("completed","abstain"):
-            raise ValueError("invalid_advisory")
+        content=str(choice["message"].get("content") or "").strip()
+        if not content:
+            raise ValueError("empty_advisory")
+        try:
+            message=json.loads(content)
+        except json.JSONDecodeError:
+            fenced=re.fullmatch(r"```(?:json)?\\s*(\\{.*\\})\\s*```",content,re.I|re.S)
+            if not fenced:
+                raise ValueError("invalid_json_advisory")
+            message=json.loads(fenced.group(1))
+        if not isinstance(message,dict):
+            raise ValueError("invalid_advisory_object")
+        status=message.get("status")
+        if status is None and (isinstance(message.get("summary"),str)
+                               or isinstance(message.get("uncertainty"),str)):
+            status="abstain"
+        if status not in ("completed","abstain"):
+            raise ValueError("invalid_advisory_status")
+        if not (str(message.get("summary") or "").strip()
+                or str(message.get("uncertainty") or "").strip()):
+            raise ValueError("empty_advisory_fields")
         notes=message.get("translation_notes")
-        return {"status":message["status"],"model":str(output.get("model") or "local"),
+        return {"status":status,"model":str(output.get("model") or "local"),
                 "summary":str(message.get("summary") or "")[:2000],
                 "uncertainty":str(message.get("uncertainty") or "")[:1000],
                 "translation_notes":[str(x)[:400] for x in notes[:8]] if isinstance(notes,list) else [],
