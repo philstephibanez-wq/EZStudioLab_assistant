@@ -40,3 +40,6 @@ SearXNG architecture above is superseded: no Docker, no WSL, no Linux, no servic
 - Commit 2fd739c : formulaire Assistant titre + interprète seulement. Les neuf items canonique PROFILE sont toujours interrogés ; UI corrigée pour afficher DDGS au lieu de SearXNG.
 - Attention : endpoint HTTP synchrone 180 s ; neuf recherches suivies d'inférences locales risquent le timeout. Pas encore de mécanisme asynchrone ni de test XPS final. Ne pas présenter le dashboard comme validé.
 - Application installée sur C:\EZStudioLab_assistant (XPS), modèles IA inchangés sur H: (MAIN). Aucun Docker, WSL ou sudo.
+
+## 23 octobre — correction timeout PHP confirmée
+Sur XPS, POST recherche directe répondait HTML et HTTP 200 ; diagnostic direct PHP 8713 : `Maximum execution time of 30 seconds exceeded` dans `vendor/symfony/process/Pipes/WindowsPipes.php:142`. Ne pas augmenter arbitrairement timeout global PHP. Commits ca7d898/fa78872/74c93a8 : démarrage job Python détaché avec JSON dans `runtime/state/profile-direct`, API POST donne `job_id`, GET poll l'état; UI poll toutes les 2 s. Code publié, tests XPS non encore faits. Aucun changement de l'emplacement H: des modèles. Limite : jobs locaux de consultation non persistés dans LAB et nettoyage des états expirés non automatisé ; finaliser avant qualification production.
