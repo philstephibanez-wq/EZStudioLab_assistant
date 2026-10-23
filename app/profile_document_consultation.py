@@ -57,21 +57,34 @@ def consult(identity, reviews, *, transport=None):
             message=json.loads(fenced.group(1))
         if not isinstance(message,dict):
             raise ValueError("invalid_advisory_object")
-        status=message.get("status")
-        if status is None and (isinstance(message.get("summary"),str)
-                               or isinstance(message.get("uncertainty"),str)):
+        raw_status=message.get("status")
+        # LLM "confirmed" never means recording identity is confirmed.
+        if raw_status in ("completed","abstain"):
+            status=raw_status
+        elif isinstance(raw_status,str):
             status="abstain"
-        if status not in ("completed","abstain"):
+        elif isinstance(message.get("summary"),str) or isinstance(message.get("uncertainty"),str):
+            status="abstain"
+        else:
             raise ValueError("invalid_advisory_status")
-        if not (str(message.get("summary") or "").strip()
-                or str(message.get("uncertainty") or "").strip()):
+        summary=str(message.get("summary") or "").strip()
+        uncertainty=str(message.get("uncertainty") or "").strip()
+        if not summary and not uncertainty:
             raise ValueError("empty_advisory_fields")
+        # An ordinal label (low/medium/high) is not a documented uncertainty.
+        if uncertainty.casefold() in ("low","medium","high","faible","moyen","eleve","élevé"):
+            uncertainty="Niveau qualitatif genere sans justification documentaire : "+uncertainty
+            status="abstain"
         notes=message.get("translation_notes")
+        if isinstance(notes,str):
+            notes=[notes] if notes.strip() else []
+        elif not isinstance(notes,list):
+            notes=[]
         return {"status":status,"model":str(output.get("model") or "local"),
-                "summary":str(message.get("summary") or "")[:2000],
-                "uncertainty":str(message.get("uncertainty") or "")[:1000],
-                "translation_notes":[str(x)[:400] for x in notes[:8]] if isinstance(notes,list) else [],
-                "advisory_only":True,"promotes_verdict":False}
+                "summary":summary[:2000],
+                "uncertainty":uncertainty[:1000],
+                "translation_notes":[str(x)[:400] for x in notes[:8]],
+                "advisory_only":True,"promotes_verdict":False,"raw_status":raw_status}
     except Exception as exc:
         return {"status":"error","reason":type(exc).__name__,"advisory_only":True,
                 "promotes_verdict":False}
