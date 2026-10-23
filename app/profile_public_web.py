@@ -14,6 +14,7 @@ class _VisibleText(HTMLParser):
         super().__init__()
         self.parts=[]
         self.hidden=0
+        self.metadata=[]
     def handle_starttag(self,tag,attrs):
         if tag in ("script","style","noscript"):
             self.hidden+=1
@@ -93,7 +94,7 @@ def fetch_document(url):
             raw=response.read(600_000)
         parser=_VisibleText()
         parser.feed(raw.decode("utf-8","replace"))
-        body=re.sub(r"\s+"," "," ".join(parser.parts)).strip()
+        body=re.sub(r"\s+"," "," ".join(parser.metadata+parser.parts)).strip()
         return {"status":"read","url":final,"text":body[:18000],
                 "char_count":len(body)}
     except Exception as exc:
