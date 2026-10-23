@@ -8,6 +8,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "app"))
 from profile_web_investigator import research_assertions
 from profile_web_local_review import review_web_items
+from profile_document_candidates import extract_candidates
 from profile_auto_review import research_public_sources, NetworkBudget
 from profile_tesseract_runtime import resolve_tesseract
 
@@ -75,6 +76,7 @@ def main():
                                   "status": doc.get("status"),
                                   "reason": doc.get("reason") or doc.get("error_type")}
                                  for doc in item.get("documents", [])],
+                     "candidates": extract_candidates(item),
                      "ai": by_key.get(item.get("key"))})
     read_count=sum(sum(doc.get("status")=="read" for doc in item.get("documents",[])) for item in investigation.get("items",[]))
     verified_count=sum(bool((by_key.get(item.get("key")) or {}).get("citations")) for item in investigation.get("items",[]))
