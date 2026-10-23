@@ -66,10 +66,15 @@ def review_web_items(investigation, identity, *, provider=None):
             if verdict not in ("bon","faux","non_trouve"):verdict="non_trouve"
             if discovery or not verified_urls or not parsed.get("recording_identity_confirmed"):
                 verdict="non_trouve"
+            reference_value=str(parsed.get("reference_value") or "").strip()[:160]
+            if reference_value.casefold() in ("", "unknown", "non déterminé", "non trouve", "non trouvé", "n/a", "none"):
+                reference_value=""
+            if not reference_value:
+                verified_urls=[]
             reviews.append({"key":item.get("key"),"status":"reviewed",
-                "proposed_verdict":verdict,"reference_value":str(parsed.get("reference_value") or "")[:160],
+                "proposed_verdict":verdict,"reference_value":reference_value,
                 "explanation":str(parsed.get("explanation") or "")[:1500],
-                "citations":verified_urls if parsed.get("reference_value") and str(parsed.get("reference_value")).strip() else [],"model":str(provider.model_path),
+                "citations":verified_urls,"model":str(provider.model_path),
                 "official_verdict":None,"evidence_eligible":False})
         except Exception as exc:
             reviews.append({"key":item.get("key"),"status":"error",
