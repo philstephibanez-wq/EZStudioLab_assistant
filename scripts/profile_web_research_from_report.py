@@ -42,7 +42,8 @@ def main():
         investigation=research_assertions(assertions,{"title":title,"artist":artist})
         results.append({"title":title,"artist":artist,"source":"previous_real_lab_report",
             "items":[{"key":item["key"],"value":item["value"],
-                "status":item["status"],"references":item["citation_urls"],
+                "status":item["status"],"query":item.get("query"),
+                "reason":item.get("reason"),"references":item["citation_urls"],
                 "evidence":item.get("evidence_review"),
                 "rejected_irrelevant":item.get("rejected_irrelevant",0)}
                 for item in investigation["items"]]})
@@ -52,7 +53,17 @@ def main():
         "results":results},ensure_ascii=False,indent=2),encoding="utf-8")
     print("REPORT="+str(destination.resolve()),flush=True)
     print("SONGS="+str(len(results)),flush=True)
+    counts={}
+    for song in results:
+        for item in song["items"]:
+            status=item["status"]
+            counts[status]=counts.get(status,0)+1
+    print("SEARCH_STATUS="+json.dumps(counts,ensure_ascii=False),flush=True)
+    for song in results:
+        for item in song["items"]:
+            if item["status"]=="error":
+                print("SEARCH_ERROR="+song["artist"]+"/"+item["key"]+": "+str(item.get("reason")),flush=True)
     if not any(item["references"] for song in results for item in song["items"]):
-        raise SystemExit("NO_RELEVANT_WEB_REFERENCES_FOUND")
+        raise SystemExit("SEARCH_PROVIDER_OR_RELEVANCE_FAILED: inspect report item statuses and reasons")
 
 if __name__=="__main__":main()
