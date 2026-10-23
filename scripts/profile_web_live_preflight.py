@@ -17,7 +17,9 @@ def main():
     result=research_each_assertion(data,{"title":options.title,"artist":options.artist})
     print(json.dumps({"status":result["status"],"searched":result["searched"],
         "items":[{"key":x.get("key"),"status":x.get("status"),"documents_read":sum(d.get("status")=="read" for d in (x.get("documents") or [])),
-        "references":len(x.get("citation_urls") or []),"document_verdict":(x.get("evidence_review") or {}).get("verdict")}
+        "references":len(x.get("citation_urls") or []),"document_verdict":(x.get("evidence_review") or {}).get("verdict"),
+        "proposed_verdict":(x.get("evidence_review") or {}).get("proposed_verdict"),
+        "source_values":[{"url":z.get("url"),"value":z.get("reference_value")} for z in (x.get("evidence_review") or {}).get("references",[])][:5]}
         for x in result["items"]]},ensure_ascii=False,indent=2))
     if result.get("status")!="completed" or not result.get("searched"):
         raise SystemExit("LIVE_WEB_NOT_OPERATIONAL")
