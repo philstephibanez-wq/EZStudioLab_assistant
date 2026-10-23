@@ -62,6 +62,15 @@ def research_assertions(assertions, identity, *, source_research=None):
     items=[]
     document_cache={}
     ocr_audit={"status":"not_available" if not source_research else "recorded", "scans":ocr_sources}
+    # Search broadly once, then reuse relevant sources for every item.
+    base_hits=[]
+    base_error=None
+    if title and artist:
+        try:
+            base_hits=[h for h in search(artist+" "+title+" song BPM key credits instruments",max_results=12)
+                       if _is_song_related(h,title,artist)]
+        except Exception as exc:
+            base_error=type(exc).__name__+":"+str(exc)[:120]
     for assertion in assertions:
         key=assertion["key"]
         item={"key":key,"value":assertion["value"],"status":"not_searched","citation_urls":[],
@@ -70,17 +79,25 @@ def research_assertions(assertions, identity, *, source_research=None):
             item["status"]="identity_unavailable"
             items.append(item)
             continue
-        topic=TERMS.get(key,"instrument "+assertion["value"] if key.startswith("instrument:") else key)
+        topic=TERMS.get(key,"instruments credits personnel" if key.startswith("instrument:") else key)
         query=artist+' '+title+' song music '+topic if artist else title+' song music '+topic
         item["query"]=query
         try:
-            hits=search(query,max_results=12)
-            item['search_hits']=len(hits)
+            try:
+                specific_hits=search(query,max_results=8)
+            except Exception as exc:
+                specific_hits=[]
+                item["specific_search_error"]=type(exc).__name__+":"+str(exc)[:120]
+            hits=base_hits+specific_hits
+            item["search_hits"]=len(hits)
+            if base_error:item["base_search_error"]=base_error
+            seen_urls=set()
             for hit in hits:
                 if not _is_song_related(hit,title,artist):
                     continue
                 url=hit.get("url")
-                if not url:continue
+                if not url or url in seen_urls:continue
+                seen_urls.add(url)
                 doc={"url":url,"title":hit.get("title"),"snippet":hit.get("snippet"),
                      "status":"unread"}
                 try:
