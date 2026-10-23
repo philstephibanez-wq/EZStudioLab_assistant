@@ -66,9 +66,33 @@ final class DashboardController extends AbstractController {
         $process->setTimeout(35.0);
         try {
             $process->run();
-            $result = json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR);
-            if (!$process->isSuccessful() || !is_array($result)) {
-                return $this->json(['ok'=>false,'error'=>'latest_review_unavailable'],503);
+            $output = trim($process->getOutput());
+            if (!$process->isSuccessful()) {
+                $this->logger->error('LAB review Python exited unsuccessfully', [
+                    'exit_code'=>$process->getExitCode(),
+                    'stderr'=>substr($process->getErrorOutput(), 0, 1200),
+                ]);
+                return $this->json(['ok'=>false,'error'=>'latest_review_python_failed',
+                    'exit_code'=>$process->getExitCode()],503);
+            }
+            if ($output === '') {
+                $this->logger->error('LAB review Python returned empty output', [
+                    'stderr'=>substr($process->getErrorOutput(), 0, 1200),
+                ]);
+                return $this->json(['ok'=>false,'error'=>'latest_review_empty_output'],503);
+            }
+            try {
+                $result = json_decode($output, true, flags: JSON_THROW_ON_ERROR);
+            } catch (\JsonException $jsonError) {
+                $this->logger->error('LAB review Python returned invalid JSON', [
+                    'exception'=>$jsonError,
+                    'stdout_bytes'=>strlen($output),
+                    'stderr'=>substr($process->getErrorOutput(), 0, 1200),
+                ]);
+                return $this->json(['ok'=>false,'error'=>'latest_review_invalid_json'],503);
+            }
+            if (!is_array($result)) {
+                return $this->json(['ok'=>false,'error'=>'latest_review_invalid_payload'],503);
             }
             return $this->json($result);
         } catch (\Throwable $e) {
