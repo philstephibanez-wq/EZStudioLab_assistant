@@ -4,7 +4,7 @@ Manifest JSON array: [{"row_json":"C:\\\\path\\\\real.row.json","title":"...","a
 Every row must be exported from a genuine LAB run.
 """
 from __future__ import annotations
-import argparse,json,sys,os,tempfile
+import argparse,json,sys,os,tempfile,urllib.request
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/"app"))
 from profile_auto_review import research_public_sources,NetworkBudget
@@ -16,10 +16,32 @@ def main():
     source=parser.add_mutually_exclusive_group(required=True)
     source.add_argument("--manifest",help="JSON array of real LAB runs and actual artist/title pairs")
     source.add_argument("--trace-root",help="Recursively discover authentic LAB row snapshots")
+    source.add_argument("--run-ids",help="Comma-separated genuine LAB run ids, fetched read-only from LAB API")
     parser.add_argument("--max-songs",type=int,default=3)
     parser.add_argument("--output",required=True,help="Diagnostic JSON output, never a product verdict")
     args=parser.parse_args()
-    if args.manifest:
+    if args.run_ids:
+        base=os.environ.get("EZSTUDIOLAB_ASSISTANT_BASE_URL","http://EZSTUDIO-MAIN:8702").rstrip("/")
+        token=os.environ.get("EZSTUDIOLAB_ASSISTANT_TOKEN","")
+        if not token:raise SystemExit("LAB_AUTH_TOKEN_MISSING: run on configured XPS worker session")
+        entries=[]
+        for part in args.run_ids.split(","):
+            run_id=part.strip()
+            if not run_id.isdecimal():raise SystemExit("INVALID_LAB_RUN_ID: "+run_id)
+            url=base+"/internal/analysis/desktop/profile/reviews/run/"+run_id
+            request=urllib.request.Request(url,headers={"X-EZScore-Analysis-Token":token,"Accept":"application/json"})
+            try:
+                with urllib.request.urlopen(request,timeout=25) as response:
+                    row=json.load(response).get("item")
+            except Exception as exc:
+                raise SystemExit("LAB_RUN_FETCH_FAILED: "+run_id+" "+type(exc).__name__)
+            if not isinstance(row,dict):raise SystemExit("INVALID_LAB_RUN_RESPONSE: "+run_id)
+            ident=row.get("normalized_identity") or normalize_track_identity(row)
+            title=str(ident.get("title") or "").strip()
+            artist=str(ident.get("artist") or "").strip()
+            if not title or not artist:raise SystemExit("LAB_RUN_IDENTITY_INCOMPLETE: "+run_id)
+            entries.append({"row_data":row,"title":title,"artist":artist,"run_id":run_id})
+    elif args.manifest:
         manifest_path=Path(args.manifest)
         if not manifest_path.is_file():
             raise SystemExit("MANIFEST_NOT_FOUND: "+str(manifest_path))
@@ -66,15 +88,19 @@ def main():
         rowpath=Path(entry.get("row_json") or "")
         title=str(entry.get("title") or "").strip()
         artist=str(entry.get("artist") or "").strip()
-        if not rowpath.is_file() or not title or not artist:raise SystemExit("INVALID_REAL_ROW_OR_IDENTITY")
-        row=json.loads(rowpath.read_text(encoding="utf-8-sig"))
+        if not title or not artist:raise SystemExit("INVALID_REAL_IDENTITY")
+        if "row_data" in entry:
+            row=entry["row_data"]
+        else:
+            if not rowpath.is_file():raise SystemExit("INVALID_REAL_ROW_FILE")
+            row=json.loads(rowpath.read_text(encoding="utf-8-sig"))
         if not isinstance(row,dict):raise SystemExit("INVALID_LAB_ROW")
         identity={"title":title,"artist":artist}
         print(f"[{index}/{len(entries)}] {artist} — {title}",flush=True)
         try:
             source_research=research_public_sources(identity,NetworkBudget())
             investigation=research_each_assertion(row,identity,source_research=source_research)
-            results.append({"title":title,"artist":artist,"row_json":str(rowpath),
+            results.append({"title":title,"artist":artist,"row_json":str(rowpath) if "row_data" not in entry else None,"run_id":entry.get("run_id"),
                 "search_status":investigation["status"],
                 "ocr":investigation["ocr_audit"],
                 "items":[{"key":item.get("key"),"value":item.get("value"),
