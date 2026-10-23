@@ -3,9 +3,20 @@ Search and read original webpages. A search result is not a musical verdict.
 """
 from __future__ import annotations
 import re
+import unicodedata
 from profile_final_verifier import final_assertions
 from profile_public_web import search, fetch_document
 from profile_live_evidence import evaluate_live_documents
+
+def _tokens(value):
+    value=unicodedata.normalize("NFKD",str(value).casefold())
+    value="".join(c for c in value if not unicodedata.combining(c))
+    return re.findall(r"[a-z0-9]+",value)
+
+def _is_song_related(hit, title, artist):
+    haystack=_tokens((hit.get("title") or "")+" "+(hit.get("snippet") or "")+" "+(hit.get("url") or ""))
+    needed=_tokens(title)+_tokens(artist)
+    return bool(needed) and all(token in haystack for token in needed)
 
 TERMS={"tempo":"BPM tempo","meter":"time signature meter","key":"musical key tonality","genre":"genre style","lead_vocal":"lead vocals singer","backing_vocals":"backing vocals","choir":"choir choral vocals","vocal_harmonies":"vocal harmonies"}
 
@@ -38,11 +49,13 @@ def research_each_assertion(row, identity, *, source_research=None, **unused):
             items.append(item)
             continue
         topic=TERMS.get(key,"instrument "+assertion["value"] if key.startswith("instrument:") else key)
-        query='"'+title+'" "'+artist+'" '+topic if artist else '"'+title+'" '+topic
+        query='"'+artist+'" "'+title+'" song music '+topic if artist else '"'+title+'" song music '+topic
         item["query"]=query
         try:
             hits=search(query,max_results=8)
             for hit in hits:
+                if not _is_song_related(hit,title,artist):
+                    continue
                 url=hit.get("url")
                 if not url:continue
                 doc={"url":url,"title":hit.get("title"),"snippet":hit.get("snippet"),
@@ -59,8 +72,9 @@ def research_each_assertion(row, identity, *, source_research=None, **unused):
                     doc["error_type"]=type(exc).__name__
                 item["documents"].append(doc)
                 item["citation_urls"].append(url)
+            item["rejected_irrelevant"]=len(hits)-len(item["documents"])
             item["status"]="documents_read" if any(d.get("status")=="read" for d in item["documents"]) else (
-                "no_results" if not hits else "sources_unreadable")
+                "no_results" if not hits else "no_relevant_results" if not item["documents"] else "sources_unreadable")
         except Exception as exc:
             item["status"]="error"
             item["reason"]=type(exc).__name__+":"+str(exc)[:180]
