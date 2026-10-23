@@ -14,7 +14,7 @@ from profile_auto_review import research_public_sources, NetworkBudget
 from profile_tesseract_runtime import resolve_tesseract
 
 LABELS = {
-    "tempo": "Tempo", "meter": "Mesure", "key": "Tonalité",
+    "duration": "Durée", "tempo": "Tempo", "meter": "Mesure", "key": "Tonalité",
     "genre": "Genre", "instrument:0": "Instruments",
     "lead_vocal": "Voix principale", "backing_vocals": "Voix d’accompagnement",
     "vocal_harmonies": "Harmonies vocales", "choir": "Chœurs",
