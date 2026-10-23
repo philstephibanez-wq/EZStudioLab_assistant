@@ -39,6 +39,10 @@ def final_assertions(row):
     def put(key, label, value):
         if _valid(value):
             out.append({"key":key,"label":label,"value":_clean(value)})
+    duration = metrics.get("duration_seconds")
+    if isinstance(duration, (int, float)) and not isinstance(duration, bool) and 0 < duration < 86400:
+        total = round(duration)
+        put("duration", "Durée", f"{total // 60}:{total % 60:02d}")
     bpm = (metrics.get("tempo") or {}).get("bpm")
     if isinstance(bpm, (int, float)) and not isinstance(bpm, bool) and 20 <= bpm <= 350:
         put("tempo", "Tempo", f"{bpm:.1f} BPM")
