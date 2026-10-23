@@ -30,6 +30,7 @@ from profile_module_qwen import infer_module
 from profile_final_verifier import verify_final_values
 from profile_recording_disambiguation import duration_from_catalog
 from profile_web_investigator import research_each_assertion
+from profile_web_local_review import review_web_items
 
 BASE = os.environ.get('EZSTUDIOLAB_ASSISTANT_BASE_URL', 'http://EZSTUDIO-MAIN:8702').rstrip('/')
 TOKEN = os.environ.get('EZSTUDIOLAB_ASSISTANT_TOKEN', '')
@@ -121,6 +122,10 @@ def process(run_id, client):
         'web_citations': sum(len(i.get('citation_urls') or []) for i in investigation.get('items') or [])
     })
     verification['web_investigation'] = investigation
+    local_web_review = review_web_items(investigation, ident)
+    verification['local_web_review'] = local_web_review
+    snap('profile.local_web_review', local_web_review)
+    emit('web.local_review.summary', {'status': local_web_review.get('status'), 'items': len(local_web_review.get('items') or [])})
 
     # Retain existing LAB draft transport schema, without claiming AI-generated proof.
     ai = {
