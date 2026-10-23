@@ -33,3 +33,10 @@ La page dashboard possède un formulaire titre + interprète/compositeur. Les ne
 
 ## Superseded 23 October 2026: Windows-native search
 SearXNG architecture above is superseded: no Docker, no WSL, no Linux, no service installation. `app/profile_public_web.py` now imports `ddgs` directly and runs a real Python metasearch from the existing Windows XPS interpreter. Install in the exact Python interpreter configured by Assistant (not a different global Python): `python -m pip install ddgs`; verify import `python -c "from ddgs import DDGS; print('DDGS_OK')"`. Models remain on H: unchanged. Existing Qwen/GPU1 and OCR integration remain incomplete and require live validation. Do not configure EZS_SEARXNG_URL. This is not a validated release, version unchanged.
+
+## Reprise recherche directe Windows (23/10/2026)
+- DDGS 9.16.0 installé et importé sur XPS ; vraie recherche Pink Floyd / Wish You Were Here avec cinq résultats musicaux pertinents fournis dans le journal utilisateur. Ceci valide recherche initiale, PAS chargement pages, OCR, inférence ni UI.
+- Commit a1ab277 : pour recherche directe sans valeur LAB, l'IA ne rend jamais BON/FAUX ; elle peut rapporter une valeur externe documentée et reste en abstention de comparaison.
+- Commit 2fd739c : formulaire Assistant titre + interprète seulement. Les neuf items canonique PROFILE sont toujours interrogés ; UI corrigée pour afficher DDGS au lieu de SearXNG.
+- Attention : endpoint HTTP synchrone 180 s ; neuf recherches suivies d'inférences locales risquent le timeout. Pas encore de mécanisme asynchrone ni de test XPS final. Ne pas présenter le dashboard comme validé.
+- Application installée sur C:\EZStudioLab_assistant (XPS), modèles IA inchangés sur H: (MAIN). Aucun Docker, WSL ou sudo.
