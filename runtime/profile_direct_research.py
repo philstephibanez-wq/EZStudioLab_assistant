@@ -50,7 +50,11 @@ def main():
                                   "reason": doc.get("reason") or doc.get("error_type")}
                                  for doc in item.get("documents", [])],
                      "ai": by_key.get(item.get("key"))})
+    read_count=sum(sum(doc.get("status")=="read" for doc in item.get("documents",[])) for item in investigation.get("items",[]))
+    verified_count=sum(bool((by_key.get(item.get("key")) or {}).get("citations")) for item in investigation.get("items",[]))
+    outcome="sources_analyzed" if verified_count else "documents_without_confirmed_values" if read_count else "no_readable_sources"
     print(json.dumps({"ok": True, "schema": "ezs.profile.direct-research.v1",
+        "outcome":outcome,"documents_read":read_count,"items_with_citations":verified_count,
         "title": title, "artist": artist,
         "status": investigation.get("status"), "reason": investigation.get("reason"),
         "provider": investigation.get("search_provider"), "items": safe,
