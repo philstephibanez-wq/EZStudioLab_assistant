@@ -100,4 +100,4 @@ def research_assertions(assertions, identity, *, source_research=None):
             "unique_documents_fetched":len(document_cache),
             "ocr_audit":ocr_audit,
             "searched":len(items),"items":items,
-            "search_provider":"searxng_self_hosted","automatic_verdicts":False}
+            "search_provider":"ddgs_native","automatic_verdicts":False}
