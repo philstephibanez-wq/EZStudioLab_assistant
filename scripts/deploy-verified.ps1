@@ -63,6 +63,18 @@ try {
     })
     if ($listeners.Count -ne 2) { throw 'DEPLOY_LISTENERS_MISSING' }
     $checks.listeners = @($listeners | ForEach-Object { [string]$_.OwningProcess })
+    # Engine readiness is independent of Web availability.
+    $engine = Invoke-RestMethod -Uri 'http://127.0.0.1:8712/api/inference/status' -TimeoutSec 10 -ErrorAction Stop
+    if ($engine.ok -ne $true -or $engine.state -ne 'READY' -or [string]::IsNullOrWhiteSpace([string]$engine.model)) {
+        throw 'DEPLOY_INFERENCE_NOT_READY_OR_MODEL_UNIDENTIFIED'
+    }
+    $checks.inference = "engine=$($engine.engine);version=$($engine.engine_version);model=$($engine.model)"
+    # Actual generation proof, never infer model availability from an HTTP /health alone.
+    $probe = @{model=[string]$engine.model;messages=@(@{role='user';content='Reply with OK.'});max_tokens=8;temperature=0} | ConvertTo-Json -Depth 5 -Compress
+    $generated = Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:8720/v1/chat/completions' -ContentType 'application/json' -Body $probe -TimeoutSec 45 -ErrorAction Stop
+    $reply = [string]$generated.choices[0].message.content
+    if ([string]::IsNullOrWhiteSpace($reply)) { throw 'DEPLOY_INFERENCE_EMPTY_GENERATION' }
+    $checks.generation = 'response_nonempty'
     $state = 'DEPLOYED_OK'
 } catch {
     $reason = $_.Exception.Message
@@ -78,7 +90,7 @@ try {
         version = $version
         checks = $checks
         failure = $reason
-        scope = 'assistant-web-only; PROFILE job execution not certified'
+        scope = 'assistant-web-and-inference; PROFILE job execution not certified'
     }
     $report | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $reportPath -Encoding UTF8
     Write-Output $state
