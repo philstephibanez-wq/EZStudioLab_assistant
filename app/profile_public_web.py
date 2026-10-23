@@ -43,45 +43,35 @@ def _url(value):
     except (TypeError,ValueError):
         return None
 
-def _endpoint():
-    raw=os.environ.get("EZS_SEARXNG_URL","").strip()
-    if not raw:
-        raise RuntimeError("SEARXNG_NOT_CONFIGURED")
-    p=urllib.parse.urlsplit(raw)
-    if p.scheme not in ("http","https") or not p.hostname or p.username or p.password:
-        raise RuntimeError("SEARXNG_ENDPOINT_INVALID")
-    if p.path not in ("","/") or p.query or p.fragment:
-        raise RuntimeError("SEARXNG_ENDPOINT_MUST_BE_BASE_URL")
-    return raw.rstrip("/")
-
 def search(query,max_results=10):
-    endpoint=_endpoint()+"/search?"+urllib.parse.urlencode({
-        "q":query,"format":"json","categories":"general","language":"en-US"})
-    request=urllib.request.Request(endpoint,headers={
-        "Accept":"application/json","User-Agent":"EZStudioLabAssistant/1.7"})
+    """Native Python DDGS metasearch on Windows. No SearXNG daemon or API key.
+
+    Fail closed with a technical error when all upstream engines are unavailable.
+    """
     try:
-        with urllib.request.urlopen(request,timeout=20) as response:
-            if response.status!=200:
-                raise RuntimeError("SEARXNG_HTTP_"+str(response.status))
-            data=json.loads(response.read(1_500_000).decode("utf-8"))
+        from ddgs import DDGS
+    except ImportError as exc:
+        raise RuntimeError("DDGS_NOT_INSTALLED: python -m pip install ddgs") from exc
+    try:
+        with DDGS(timeout=18) as engine:
+            hits=list(engine.text(query,max_results=max_results+8))
     except Exception as exc:
-        raise RuntimeError("SEARXNG_SEARCH_FAILED:"+type(exc).__name__) from exc
-    if not isinstance(data,dict) or not isinstance(data.get("results"),list):
-        raise RuntimeError("SEARXNG_INVALID_RESPONSE")
+        raise RuntimeError("DDGS_SEARCH_FAILED:"+type(exc).__name__+":"+str(exc)[:150]) from exc
     results=[]
     seen=set()
-    for item in data["results"]:
+    for item in hits:
         if not isinstance(item,dict):
             continue
-        link=_url(item.get("url"))
+        link=_url(item.get("href") or item.get("url"))
         if not link or link in seen:
             continue
         seen.add(link)
-        results.append({"url":link,
+        results.append({
+            "url":link,
             "title":html.unescape(str(item.get("title") or ""))[:250],
             "snippet":html.unescape(re.sub(r"<[^>]+>"," ",
-                       str(item.get("content") or "")))[:600],
-            "search_provider":"searxng"})
+                 str(item.get("body") or item.get("content") or "")))[:600],
+            "search_provider":"ddgs_native"})
         if len(results)>=max_results:
             break
     return results
