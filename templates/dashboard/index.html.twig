@@ -24,33 +24,6 @@
   <div id="lab-review-results"></div>
   <button type="button" id="lab-review-refresh">Actualiser les résultats LAB</button>
 </section>
-<section class="card" style="margin-top:14px" aria-labelledby="profile-direct-title">
-  <h2 id="profile-direct-title">Recherche musicale directe · PROFILE</h2>
-  <p class="label" style="text-transform:none">Investigation indépendante via DDGS et IA locale. Aucune modification de LAB.</p>
-  <form id="profile-direct-form">
-    <div class="grid">
-      <label>Titre du morceau<br><input required name="title" maxlength="180" placeholder="Wish You Were Here" style="width:100%;box-sizing:border-box"></label>
-      <label>Interprète ou compositeur<br><input required name="artist" maxlength="180" placeholder="Pink Floyd" style="width:100%;box-sizing:border-box"></label>
-    </div>
-    <p>Les dix caractéristiques PROFILE sont recherchées automatiquement :</p>
-    <div id="profile-direct-items" class="grid">
-      {% for key, label in {
-        'duration':'Durée','tempo':'Tempo (BPM)','meter':'Mesure','key':'Tonalité','genre':'Genre',
-        'instrument:0':'Instruments','lead_vocal':'Voix principale',
-        'backing_vocals':'Voix d’accompagnement','vocal_harmonies':'Harmonies vocales','choir':'Chœurs'
-      } %}
-      <label style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-        <input type="hidden" data-item="{{ key }}" value="{{ key }}">
-        <span>{{ label }}</span>
-
-      </label>
-      {% endfor %}
-    </div>
-    <p><button type="submit" id="profile-direct-submit">Rechercher tous les items PROFILE</button>
-      <span id="profile-direct-state" role="status" aria-live="polite">Aucune recherche directe lancée.</span></p>
-  </form>
-  <div id="profile-direct-results" aria-live="polite"></div>
-</section>
 {% endblock %}
 {% block javascripts %}
 <script>
@@ -101,86 +74,7 @@
     refresh();
 })();
 </script>
-<script>
-(function(){
-  var form=document.getElementById('profile-direct-form'), output=document.getElementById('profile-direct-results');
-  var state=document.getElementById('profile-direct-state'), button=document.getElementById('profile-direct-submit');
-  function node(tag,text){var el=document.createElement(tag);if(text!==undefined)el.textContent=String(text);return el;}
-  function line(parent,tag,text){var el=node(tag,text);parent.appendChild(el);return el;}
-  form.addEventListener('submit',function(event){
-    event.preventDefault();
-    var selected=Array.from(form.querySelectorAll('[data-item]')).map(function(x){return x.dataset.item;});
 
-    button.disabled=true;state.textContent='Recherche et analyse en cours…';output.replaceChildren();
-    function parseResponse(r){return r.text().then(function(body){try{return JSON.parse(body);}catch(e){throw new Error('Réponse serveur non JSON (HTTP '+r.status+')');}});}
-    function follow(job, attempts){
-      if(attempts>180)throw new Error('Recherche toujours en cours : job '+job);
-      return new Promise(function(resolve){setTimeout(resolve,2000);}).then(function(){
-        return fetch('/api/profile/direct-research/'+encodeURIComponent(job)).then(parseResponse);
-      }).then(function(result){
-        if(result.state==='queued'||result.state==='running'){
-          state.textContent='Recherche en cours · job '+job+' · état '+result.state;
-          return follow(job,attempts+1);
-        }
-        return result;
-      });
-    }
-    fetch('/api/profile/direct-research',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({title:form.elements.title.value,artist:form.elements.artist.value,
-        items:selected})})
-    .then(parseResponse)
-    .then(function(job){if(!job.ok||!job.job_id)throw new Error(job.reason||job.error||'Démarrage impossible');return follow(job.job_id,0);})
-    .then(function(data){
-      if(!data.ok){state.textContent='ERREUR TECHNIQUE — '+(data.reason||data.error||'Service indisponible');return;}
-      state.textContent='Traitement terminé · résultat : '+(data.outcome||'non établi')+' · '+(data.documents_read||0)+' pages lues · '+(data.items_with_citations||0)+' items sourcés · fournisseur '+(data.provider||'inconnu')+
-        ' · IA locale : '+(data.ai_status||'indisponible')+' · sauvegarde LAB : non (recherche directe)';
-      if(data.reason)line(output,'p','Diagnostic : '+data.reason);
-      (data.items||[]).forEach(function(item){
-        var card=node('div');card.className='card';card.style.marginTop='10px';output.appendChild(card);
-        line(card,'h3',(item.label||item.key)+' — '+(item.value||'sans valeur LAB'));
-        line(card,'p','Recherche : '+(item.status||'non exécutée')+(item.reason?' · '+item.reason:''));
-        if(item.query)line(card,'p','Requête : '+item.query);
-        var ai=item.ai||{};
-        if(ai.status)line(card,'p','IA : '+ai.status+(ai.proposed_verdict?' · avis : '+ai.proposed_verdict:'')+
-          (ai.reason?' · '+ai.reason:''));
-        if(ai.reference_value)line(card,'p','Valeur externe proposée par IA : '+ai.reference_value);
-        if((item.candidates||[]).length){
-          line(card,'p','Valeurs mentionnées dans les pages (candidats NON VALIDÉS) :');
-          (item.candidates||[]).forEach(function(c){
-            var paragraph=line(card,'p',(c.value||'—')+' · '+(c.context||''));
-            if(c.url&&c.url.startsWith('https://')){
-              var link=node('a',' Source');link.href=c.url;link.target='_blank';link.rel='noopener noreferrer';paragraph.appendChild(link);
-            }
-          });
-        }
-        if(ai.explanation)line(card,'p','Explication : '+ai.explanation);
-        if((item.sources||[]).length){
-          var list=node('ul');card.appendChild(list);
-          item.sources.forEach(function(source){
-            var li=node('li'),a=node('a',source.title||source.url||'Source');
-            if(typeof source.url==='string'&&source.url.startsWith('https://')){
-              a.href=source.url;a.target='_blank';a.rel='noopener noreferrer';li.appendChild(a);
-            }else{li.textContent='URL non vérifiée';}
-            li.appendChild(node('span',' · '+source.status+(source.reason?' ('+source.reason+')':'')));
-            if(source.identity)li.appendChild(node('span',' · Portée : '+source.identity.scope+(source.identity.recording_verified?' · enregistrement vérifié':' · enregistrement non confirmé')));
-            list.appendChild(li);
-          });
-        }else line(card,'p','Aucune source exploitable.');
-      });
-      var ocr=data.ocr||{};
-      line(output,'p','OCR : '+(ocr.status||'non exécuté')+' · '+(ocr.scans||[]).length+' scan(s)'+(ocr.reason?' · '+ocr.reason:'')+'. Avis non validés scientifiquement.');
-      (ocr.scans||[]).forEach(function(scan){
-        var section=node('details');output.appendChild(section);
-        var summary=node('summary','Livret / pochette OCR : '+(scan.status||'inconnu'));section.appendChild(summary);
-        if(scan.url){var a=node('a',scan.url);a.href=scan.url;a.target='_blank';a.rel='noopener noreferrer';section.appendChild(a);}
-        (scan.credit_candidates||[]).forEach(function(c){line(section,'p',(c.raw_line||'Crédit candidat')+' · NON VALIDÉ');});
-      });
-    })
-    .catch(function(e){state.textContent='ERREUR TECHNIQUE — '+e.message;})
-    .finally(function(){button.disabled=false;});
-  });
-})();
-</script>
 
 <script>
 (function poll(){
