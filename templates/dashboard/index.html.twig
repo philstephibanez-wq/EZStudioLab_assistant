@@ -17,6 +17,13 @@
   <progress id="consultation-progress" max="4" value="0" style="width:100%"></progress>
   <div class="label">Progression du traitement, pas taux de justesse · aucune validation scientifique implicite</div>
 </div>
+<section class="card" style="margin-top:14px" aria-labelledby="lab-review-title">
+  <h2 id="lab-review-title">Contre-expertise des items PROFILE · résultats LAB</h2>
+  <p>Dernière révision documentaire réellement enregistrée dans LAB. Le titre et l'interprète déclarés peuvent être erronés ; l'enregistrement exact reste à confirmer.</p>
+  <div id="lab-review-state" role="status">Chargement…</div>
+  <div id="lab-review-results"></div>
+  <button type="button" id="lab-review-refresh">Actualiser les résultats LAB</button>
+</section>
 <section class="card" style="margin-top:14px" aria-labelledby="profile-direct-title">
   <h2 id="profile-direct-title">Recherche musicale directe · PROFILE</h2>
   <p class="label" style="text-transform:none">Investigation indépendante via DDGS et IA locale. Aucune modification de LAB.</p>
@@ -25,10 +32,10 @@
       <label>Titre du morceau<br><input required name="title" maxlength="180" placeholder="Wish You Were Here" style="width:100%;box-sizing:border-box"></label>
       <label>Interprète ou compositeur<br><input required name="artist" maxlength="180" placeholder="Pink Floyd" style="width:100%;box-sizing:border-box"></label>
     </div>
-    <p>Les neuf caractéristiques PROFILE sont recherchées automatiquement :</p>
+    <p>Les dix caractéristiques PROFILE sont recherchées automatiquement :</p>
     <div id="profile-direct-items" class="grid">
       {% for key, label in {
-        'tempo':'Tempo (BPM)','meter':'Mesure','key':'Tonalité','genre':'Genre',
+        'duration':'Durée','tempo':'Tempo (BPM)','meter':'Mesure','key':'Tonalité','genre':'Genre',
         'instrument:0':'Instruments','lead_vocal':'Voix principale',
         'backing_vocals':'Voix d’accompagnement','vocal_harmonies':'Harmonies vocales','choir':'Chœurs'
       } %}
@@ -46,6 +53,54 @@
 </section>
 {% endblock %}
 {% block javascripts %}
+<script>
+(function(){
+    var state=document.getElementById('lab-review-state');
+    var output=document.getElementById('lab-review-results');
+    var button=document.getElementById('lab-review-refresh');
+    function element(tag,value){
+        var node=document.createElement(tag);
+        if(value!==undefined)node.textContent=String(value);
+        return node;
+    }
+    function refresh(){
+        state.textContent='Lecture de la dernière révision LAB…';
+        fetch('/api/profile/latest-review',{cache:'no-store'})
+            .then(function(response){return response.json();})
+            .then(function(data){
+                output.replaceChildren();
+                if(!data.ok){state.textContent='Erreur technique : '+(data.error||'LAB inaccessible');return;}
+                if(data.state!=='available'){state.textContent='Aucune contre-expertise persistée dans LAB.';return;}
+                var declared=data.identity_declared||{};
+                state.textContent='Run #'+data.run_id+' · Révision #'+data.revision_id+' · '+data.status+
+                    ' · Identité déclarée : '+(declared.title||'?')+' — '+(declared.artist||'?')+
+                    ' · Correspondance de l’enregistrement non confirmée';
+                var labels={'duration':'Durée','tempo':'Tempo','meter':'Mesure','key':'Tonalité',
+                    'genre':'Genre','instrument:0':'Instruments','lead_vocal':'Voix principale',
+                    'backing_vocals':'Voix d’accompagnement','vocal_harmonies':'Harmonies vocales','choir':'Chœurs'};
+                (data.items||[]).forEach(function(item){
+                    var card=element('div');card.className='card';card.style.marginTop='8px';
+                    output.appendChild(card);
+                    card.appendChild(element('h3',labels[item.key]||item.key));
+                    card.appendChild(element('p','LAB : '+(item.value_lab||'non renseigné')));
+                    card.appendChild(element('p','Référence : '+(item.reference_value||'non trouvée')));
+                    card.appendChild(element('p','Avis : '+(item.verdict||'non_trouve')+' · '+(item.explanation||'Aucune justification disponible')));
+                    var urls=Array.from(new Set(item.sources||[]));
+                    if(!urls.length)card.appendChild(element('p','Aucune source lue.'));
+                    urls.forEach(function(url){
+                        if(typeof url!=='string'||!url.startsWith('https://'))return;
+                        var link=element('a','Source consultée');
+                        link.href=url;link.target='_blank';link.rel='noopener noreferrer';
+                        card.appendChild(link);
+                    });
+                });
+            })
+            .catch(function(){state.textContent='Erreur technique : lecture LAB indisponible';});
+    }
+    button.addEventListener('click',refresh);
+    refresh();
+})();
+</script>
 <script>
 (function(){
   var form=document.getElementById('profile-direct-form'), output=document.getElementById('profile-direct-results');
