@@ -69,7 +69,7 @@ def review_web_items(investigation, identity, *, provider=None):
             reviews.append({"key":item.get("key"),"status":"reviewed",
                 "proposed_verdict":verdict,"reference_value":str(parsed.get("reference_value") or "")[:160],
                 "explanation":str(parsed.get("explanation") or "")[:1500],
-                "citations":verified_urls,"model":str(provider.model_path),
+                "citations":verified_urls if parsed.get("reference_value") and str(parsed.get("reference_value")).strip() else [],"model":str(provider.model_path),
                 "official_verdict":None,"evidence_eligible":False})
         except Exception as exc:
             reviews.append({"key":item.get("key"),"status":"error",
