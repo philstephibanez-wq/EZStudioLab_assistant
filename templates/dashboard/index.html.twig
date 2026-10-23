@@ -107,6 +107,7 @@
               a.href=source.url;a.target='_blank';a.rel='noopener noreferrer';li.appendChild(a);
             }else{li.textContent='URL non vérifiée';}
             li.appendChild(node('span',' · '+source.status+(source.reason?' ('+source.reason+')':'')));
+            if(source.identity)li.appendChild(node('span',' · Portée : '+source.identity.scope+(source.identity.recording_verified?' · enregistrement vérifié':' · enregistrement non confirmé')));
             list.appendChild(li);
           });
         }else line(card,'p','Aucune source exploitable.');
