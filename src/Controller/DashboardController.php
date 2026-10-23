@@ -34,4 +34,36 @@ final class DashboardController extends AbstractController {
             return $this->json(['ok'=>false,'state'=>'ERROR','error'=>$e->getMessage()], 503);
         }
     }
+    #[Route('/api/profile/direct-research', name: 'assistant_profile_direct_research', methods: ['POST'])]
+    public function directResearch(\\Symfony\\Component\\HttpFoundation\\Request $request): JsonResponse {
+        $data = json_decode($request->getContent(), true);
+        if (!is_array($data)) return $this->json(['ok'=>false,'error'=>'invalid_json'],400);
+        $title = trim((string) ($data['title'] ?? ''));
+        $artist = trim((string) ($data['artist'] ?? ''));
+        $items = $data['items'] ?? [];
+        if ($title === '' || $artist === '' || mb_strlen($title)>180 || mb_strlen($artist)>180
+            || !is_array($items) || count($items)<1 || count($items)>9) {
+            return $this->json(['ok'=>false,'error'=>'invalid_research_request'],400);
+        }
+        $root = dirname(__DIR__, 2);
+        $python = $_ENV['EZSTUDIOLAB_ASSISTANT_PYTHON'] ?? $_SERVER['EZSTUDIOLAB_ASSISTANT_PYTHON'] ?? 'python';
+        $process = new Process([$python, $root.'/runtime/profile_direct_research.py'], $root,
+            null, json_encode($data, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR));
+        $process->setTimeout(180.0);
+        try {
+            $process->run();
+            $result = json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR);
+            if (!is_array($result)) throw new \\RuntimeException('invalid_python_response');
+            if (!$process->isSuccessful()) {
+                return $this->json(['ok'=>false,'error'=>$result['error'] ?? 'research_failed',
+                    'reason'=>$result['reason'] ?? 'Recherche indisponible'],503);
+            }
+            return $this->json($result);
+        } catch (\\Throwable $e) {
+            $this->logger->error('PROFILE direct research failed', ['exception'=>$e]);
+            return $this->json(['ok'=>false,'error'=>'research_execution_failed',
+                'reason'=>get_class($e)],503);
+        }
+    }
+
 }
