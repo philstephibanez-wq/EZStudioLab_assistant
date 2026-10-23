@@ -61,10 +61,24 @@
     var selected=Array.from(form.querySelectorAll('[data-item]')).map(function(x){return x.dataset.item;});
 
     button.disabled=true;state.textContent='Recherche et analyse en cours…';output.replaceChildren();
+    function parseResponse(r){return r.text().then(function(body){try{return JSON.parse(body);}catch(e){throw new Error('Réponse serveur non JSON (HTTP '+r.status+')');}});}
+    function follow(job, attempts){
+      if(attempts>180)throw new Error('Recherche toujours en cours : job '+job);
+      return new Promise(function(resolve){setTimeout(resolve,2000);}).then(function(){
+        return fetch('/api/profile/direct-research/'+encodeURIComponent(job)).then(parseResponse);
+      }).then(function(result){
+        if(result.state==='queued'||result.state==='running'){
+          state.textContent='Recherche en cours · job '+job+' · état '+result.state;
+          return follow(job,attempts+1);
+        }
+        return result;
+      });
+    }
     fetch('/api/profile/direct-research',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({title:form.elements.title.value,artist:form.elements.artist.value,
         items:selected})})
-    .then(function(r){return r.text().then(function(body){var data;try{data=JSON.parse(body);}catch(e){throw new Error('Réponse serveur non JSON (HTTP '+r.status+'). Vérifier les logs Symfony.');}return data;});})
+    .then(parseResponse)
+    .then(function(job){if(!job.ok||!job.job_id)throw new Error(job.reason||job.error||'Démarrage impossible');return follow(job.job_id,0);})
     .then(function(data){
       if(!data.ok){state.textContent='ERREUR TECHNIQUE — '+(data.reason||data.error||'Service indisponible');return;}
       state.textContent='Recherche terminée · fournisseur '+(data.provider||'inconnu')+
