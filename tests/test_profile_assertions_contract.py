@@ -6,7 +6,7 @@ from app.profile_assertions_contract import ITEMS, build_assertions, validate_ve
 class ProfileAssertionsContractTest(unittest.TestCase):
     def setUp(self):
         self.source = {
-            "analysis_id": 153, "preset_id": 12, "title": "Titre",
+            "analysis_id": 153, "preset_id": 12, "expertise_type": "profile", "title": "Titre",
             "artist": "Interprète", "engine": "CLAP",
             "config": {"token": "SECRET"}, "metrics": {"score": .9},
             "items": {item: "valeur" for item in ITEMS},
@@ -15,6 +15,7 @@ class ProfileAssertionsContractTest(unittest.TestCase):
     def review(self, request):
         return {
             "analysis_id": request["analysis_id"],
+            "expertise_type": request["expertise_type"],
             "preset_id": request["preset_id"],
             "reviews": {item: {"verdict": "non_trouve", "evidence": [],
                                "confidence_pct": None} for item in ITEMS},
@@ -64,6 +65,23 @@ class ProfileAssertionsContractTest(unittest.TestCase):
         request = build_assertions(self.source)
         self.assertIsNone(request["preset_id"])
         self.assertTrue(validate_verdicts(request, self.review(request)))
+
+    def test_type_required(self):
+        self.source.pop("expertise_type")
+        with self.assertRaisesRegex(ValueError, "expertise_type_invalid"):
+            build_assertions(self.source)
+
+    def test_type_not_implemented(self):
+        self.source["expertise_type"] = "stems"
+        with self.assertRaisesRegex(ValueError, "expertise_type_not_implemented"):
+            build_assertions(self.source)
+
+    def test_type_mismatch_rejected(self):
+        request = build_assertions(self.source)
+        result = self.review(request)
+        result["expertise_type"] = "lyrics"
+        with self.assertRaisesRegex(ValueError, "review_identity_mismatch"):
+            validate_verdicts(request, result)
 
     def test_mismatched_preset(self):
         request = build_assertions(self.source)
