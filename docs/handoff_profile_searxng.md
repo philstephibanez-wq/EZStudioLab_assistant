@@ -52,3 +52,6 @@ Résultat réel : 14 pages lues, 4 items avec références citables mais aucune 
 
 ## Capture John Denver (23/10)
 45 pages lues, 5 items déclarés sourcés dans l'UI mais aucune valeur extérieure probante visible ; un `ValueError` IA. Ce nombre était trompeur (URL citée sans preuve musicale). Correctifs 6fa1add/55f3dd5/ff2e735 : compter uniquement citations avec référence extraite ; collecter méta description HTML ; contexte snippet DDGS explicitement non vérifié. Aucune exécution XPS de ces commits ; OCR toujours non disponible et pas de preuve de verdict musical. Le problème d'extraction fiable n'est PAS clos.
+
+## UI cleanup — 23/10
+Suppression de la carte `Runtime Python` (PID/job_id/phase/progress) du dashboard Assistant, commit fcddd6b. Télémétrie GPU et consultation PROFILE conservées. OCR direct déjà branché dans les commits 26df3689 et 0a9ba076, mais tests XPS non faits. Ne pas conclure à une installation validée.
