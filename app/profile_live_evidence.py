@@ -30,8 +30,35 @@ def _reference_value(key,text):
     distinct={v.casefold():v for v in values}
     return next(iter(distinct.values())) if len(distinct)==1 else None
 
+def _focused_reference(key, text, proposed):
+    """Extract explicit facts from nearby label/value text, not site-wide stray numbers."""
+    if key in ("tempo","meter","key"):
+        return _reference_value(key,text)
+    # Explicit statements of presence only. No genre taxonomy guessed from biography.
+    labels={
+        "genre": [r"\\b(?:genre|style)\\s*[:=]\\s*([^.;|\\n]{3,65})"],
+        "lead_vocal":[r"\\b(?:lead vocals?|lead singer|vocalist)\\s*[:=]\\s*([^.;|\\n]{2,60})"],
+        "backing_vocals":[r"\\b(?:backing vocals?|background vocals?)\\s*[:=]\\s*([^.;|\\n]{2,60})"],
+        "choir":[r"\\b(?:choir|chorus vocals?)\\s*[:=]\\s*([^.;|\\n]{2,60})"],
+        "vocal_harmonies":[r"\\b(?:vocal harmonies)\\s*[:=]\\s*([^.;|\\n]{2,60})"]
+    }
+    if key.startswith("instrument:"):
+        # Instrument mentioned in an explicit credits/instruments line, not generic prose.
+        token=re.escape(str(proposed).strip())
+        if re.search(r"\\b(?:instruments?|personnel|credits?|performed by)\\s*[:=]\\s*[^.;\\n]{0,160}\\b"+token+r"\\b",text,re.I):
+            return str(proposed)
+        return None
+    for pattern in labels.get(key,[]):
+        for match in re.finditer(pattern,text,re.I):
+            value=match.group(1).strip()
+            if key=="genre" and _norm(value)==_norm(proposed):
+                return str(proposed)
+            if key!="genre" and _norm(value) not in ("none","no","absent","unknown","not available"):
+                return "présent"
+    return None
+
 def evaluate_live_documents(assertion, identity, documents):
-    """One credible explicit reference suffices; multiple disagreeing references abstain."""
+    """Keep citation-linked findings. Reject ambiguous/conflicting external references."""
     key=assertion["key"]
     title=_norm(identity.get("title"))
     artist=_norm(identity.get("artist"))
@@ -39,23 +66,30 @@ def evaluate_live_documents(assertion, identity, documents):
     for doc in documents:
         if doc.get("status")!="read":continue
         text=str(doc.get("text") or "")
-        compact=_norm(text[:18000])
+        # Context only, do not treat arbitrary global mentions as proof of a song.
+        compact=_norm((doc.get("title") or "")+" "+(doc.get("snippet") or "")+" "+text[:2500])
         if not title or not artist or title not in compact or artist not in compact:
             continue
-        reference=_reference_value(key,text)
+        reference=_focused_reference(key,text,assertion["value"])
         if not reference:continue
-        candidate={"source":"PublicWeb","url":doc["url"],"fact_scope":"recording",
-                   "musical_facts":{key:{"explicit":True,"value":reference,"url":doc["url"]}}}
-        finding=evaluate_reference(assertion,candidate)
-        if finding:
-            accepted.append({"url":doc["url"],"reference_value":reference,"verdict":finding["verdict"]})
+        if key in ("tempo","meter","key"):
+            candidate={"source":"PublicWeb","url":doc["url"],"fact_scope":"recording",
+                      "musical_facts":{key:{"explicit":True,"value":reference,"url":doc["url"]}}}
+            finding=evaluate_reference(assertion,candidate)
+            if not finding:continue
+            verdict=finding["verdict"]
+        else:
+            verdict="bon"
+        accepted.append({"url":doc["url"],"reference_value":reference,"verdict":verdict,
+                         "attribution":"title_artist_page; specific_recording_not_yet_confirmed"})
     if not accepted:
-        return {"verdict":"non_trouve","references":[],"reason":"Aucune mesure explicite et attribuable au titre et à l'artiste dans les pages lues"}
+        return {"verdict":"non_trouve","references":[],"reason":"Aucune référence explicite suffisamment attribuable dans les pages consultées"}
     conclusions={entry["verdict"] for entry in accepted}
     values={entry["reference_value"].casefold() for entry in accepted}
     if len(conclusions)!=1 or len(values)!=1:
         return {"verdict":"non_trouve","references":accepted,
                 "reason":"Références contradictoires ou insuffisantes pour trancher"}
-    return {"verdict":accepted[0]["verdict"],"references":accepted,
-            "reference_value":accepted[0]["reference_value"],
-            "reason":"Valeur explicite relevée dans "+str(len(accepted))+" page(s) attribuée(s) au titre et artiste ; attribution à la version exacte à confirmer"}
+    # Document claims are candidates until their recording/version is independently confirmed.
+    return {"verdict":"non_trouve","proposed_verdict":accepted[0]["verdict"],
+            "references":accepted,"reference_value":accepted[0]["reference_value"],
+            "reason":"Valeur citée par des pages publiques ; correspondance exacte à l'enregistrement non démontrée"}
