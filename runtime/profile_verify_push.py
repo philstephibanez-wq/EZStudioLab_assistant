@@ -48,6 +48,16 @@ def verify(payload):
                 and isinstance(d.get("url"), str)
             ],
             "technical_status": row.get("status", "not_searched"),
+            # Evidence candidates are NOT recording-level confirmations.
+            "proposed_verdict": candidate.get("proposed_verdict")
+                if candidate.get("proposed_verdict") in ("bon", "faux") else None,
+            "references": [
+                {"url": ref["url"], "reference_value": ref.get("reference_value"),
+                 "verdict": ref.get("verdict"), "attribution": ref.get("attribution")}
+                for ref in (candidate.get("references") or [])
+                if isinstance(ref, dict) and isinstance(ref.get("url"), str)
+                and ref["url"].startswith("https://")
+            ],
         }
     result = {
         "schema": "ezstudio.profile.review.v1",
