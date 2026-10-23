@@ -26,10 +26,12 @@ def build_assertions(source):
     """Projection par liste blanche, sans transmettre engine/config/diagnostics."""
     if not isinstance(source, dict):
         raise ValueError("profile_source_object_required")
-    for key in ("analysis_id", "preset_id"):
-        value = source.get(key)
-        if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
-            raise ValueError(key + "_required")
+    value = source.get("analysis_id")
+    if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+        raise ValueError("analysis_id_required")
+    preset = source.get("preset_id")
+    if preset is not None and (not isinstance(preset, (int, str)) or isinstance(preset, bool) or not str(preset).strip()):
+        raise ValueError("preset_id_invalid")
     for key in ("title", "artist"):
         if not isinstance(source.get(key), str) or not source[key].strip():
             raise ValueError(key + "_required")

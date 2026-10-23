@@ -59,6 +59,12 @@ class ProfileAssertionsContractTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_verdicts(request, result)
 
+    def test_preset_absent_is_explicit(self):
+        self.source["preset_id"] = None
+        request = build_assertions(self.source)
+        self.assertIsNone(request["preset_id"])
+        self.assertTrue(validate_verdicts(request, self.review(request)))
+
     def test_mismatched_preset(self):
         request = build_assertions(self.source)
         result = self.review(request)
