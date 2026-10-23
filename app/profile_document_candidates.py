@@ -7,10 +7,10 @@ from __future__ import annotations
 import re
 
 PATTERNS={
- "tempo":[r"(?i)\\b(?:tempo|bpm)\\s*[:=–-]?\\s*(\\d{2,3}(?:[.,]\\d)?)\\s*(?:bpm)?\\b",
-          r"(?i)\\b(\\d{2,3}(?:[.,]\\d)?)\\s*bpm\\b"],
- "meter":[r"(?i)\\b(?:time signature|meter|metre|mesure)\\s*[:=–-]?\\s*([2-9]\\s*/\\s*(?:2|4|8|16))\\b"],
- "key":[r"(?i)\\b(?:key|tonality|tonalité|tonalite)\\s*[:=–-]?\\s*([A-G](?:#|♯|b|♭)?\\s*(?:major|minor|maj|min|majeur|mineur))\\b"],
+ "tempo":[r"(?i)\b(?:tempo|bpm)\s*[:=–-]?\s*(\d{2,3}(?:[.,]\d)?)\s*(?:bpm)?\b",
+          r"(?i)\b(\d{2,3}(?:[.,]\d)?)\s*bpm\b"],
+ "meter":[r"(?i)\b(?:time signature|meter|metre|mesure)\s*[:=–-]?\s*([2-9]\s*/\s*(?:2|4|8|16))\b"],
+ "key":[r"(?i)\b(?:key|tonality|tonalité|tonalite)\s*[:=–-]?\s*([A-G](?:#|♯|b|♭)?\s*(?:major|minor|maj|min|majeur|mineur))\b"],
 }
 def extract_candidates(item):
     key=str(item.get("key") or "")
