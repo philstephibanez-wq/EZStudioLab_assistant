@@ -7,6 +7,7 @@ from __future__ import annotations
 import re
 
 PATTERNS={
+ "duration":[r"(?i)\\b(?:duration|length|durée|duree|runtime)\\s*[:=–-]?\\s*(\\d{1,2}:\\d{2})\\b"],
  "tempo":[r"(?i)\b(?:tempo|bpm)\s*[:=–-]?\s*(\d{2,3}(?:[.,]\d)?)\s*(?:bpm)?\b",
           r"(?i)\b(\d{2,3}(?:[.,]\d)?)\s*bpm\b"],
  "meter":[r"(?i)\b(?:time signature|meter|metre|mesure)\s*[:=–-]?\s*([2-9]\s*/\s*(?:2|4|8|16))\b"],
