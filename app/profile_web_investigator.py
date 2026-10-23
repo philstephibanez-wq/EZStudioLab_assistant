@@ -115,7 +115,7 @@ def research_assertions(assertions, identity, *, source_research=None):
                     if source.get("reason"): doc["reason"]=source["reason"]
                     if source.get("status")=="read":
                         doc["url"]=source.get("url") or url
-                        doc["text"]=("Résultat du moteur (non vérifié) : "+str(hit.get("snippet") or "")[:500]+"\nPage réellement téléchargée : "+source.get("text",""))[:8000]
+                        doc["text"]=str(source.get("text") or "")[:8000]  # Source text only: search snippets cannot become evidence.
                 except Exception as exc:
                     doc["status"]="read_error"
                     doc["error_type"]=type(exc).__name__
