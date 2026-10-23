@@ -1,7 +1,4 @@
-"""Public-web research through a self-hosted SearXNG JSON endpoint.
-
-No commercial search API, mock responses, public HTML scraping or RSS fallback.
-"""
+"""Native DDGS discovery and conservative public document retrieval on Windows."""
 from __future__ import annotations
 import html
 import ipaddress
@@ -56,6 +53,8 @@ def search(query,max_results=10):
         with DDGS(timeout=18) as engine:
             hits=list(engine.text(query,max_results=max_results+8))
     except Exception as exc:
+        if "no results found" in str(exc).casefold():
+            return []
         raise RuntimeError("DDGS_SEARCH_FAILED:"+type(exc).__name__+":"+str(exc)[:150]) from exc
     results=[]
     seen=set()
@@ -90,9 +89,8 @@ def fetch_document(url):
                 return {"status":"unsafe_redirect"}
             if not ("text/html" in kind or "text/plain" in kind):
                 return {"status":"unsupported_content_type"}
-            raw=response.read(600_001)
-            if len(raw)>600_000:
-                return {"status":"document_too_large"}
+            # Read a bounded prefix of large public pages; do not discard all useful text.
+            raw=response.read(600_000)
         parser=_VisibleText()
         parser.feed(raw.decode("utf-8","replace"))
         body=re.sub(r"\s+"," "," ".join(parser.parts)).strip()
