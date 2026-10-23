@@ -35,7 +35,7 @@ final class DashboardController extends AbstractController {
         }
     }
     #[Route('/api/profile/direct-research', name: 'assistant_profile_direct_research', methods: ['POST'])]
-    public function directResearch(\\Symfony\\Component\\HttpFoundation\\Request $request): JsonResponse {
+    public function directResearch(\Symfony\Component\HttpFoundation\Request $request): JsonResponse {
         $data = json_decode($request->getContent(), true);
         if (!is_array($data)) return $this->json(['ok'=>false,'error'=>'invalid_json'],400);
         $title = trim((string) ($data['title'] ?? ''));
@@ -53,13 +53,13 @@ final class DashboardController extends AbstractController {
         try {
             $process->run();
             $result = json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR);
-            if (!is_array($result)) throw new \\RuntimeException('invalid_python_response');
+            if (!is_array($result)) throw new \RuntimeException('invalid_python_response');
             if (!$process->isSuccessful()) {
                 return $this->json(['ok'=>false,'error'=>$result['error'] ?? 'research_failed',
                     'reason'=>$result['reason'] ?? 'Recherche indisponible'],503);
             }
             return $this->json($result);
-        } catch (\\Throwable $e) {
+        } catch (\Throwable $e) {
             $this->logger->error('PROFILE direct research failed', ['exception'=>$e]);
             return $this->json(['ok'=>false,'error'=>'research_execution_failed',
                 'reason'=>get_class($e)],503);
