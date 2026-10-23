@@ -21,9 +21,7 @@ def main():
     artist = str(request.get("artist") or "").strip()
     if not title or not artist or len(title) > 180 or len(artist) > 180:
         raise ValueError("titre_et_interprete_requis")
-    wanted = request.get("items") or []
-    if not isinstance(wanted, list) or not wanted or len(wanted) > 9:
-        raise ValueError("items_invalides")
+    wanted = list(LABELS)  # Contract PROFILE: never user-selected or partial.
     values = request.get("values") or {}
     if not isinstance(values, dict):
         raise ValueError("valeurs_invalides")
