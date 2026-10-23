@@ -3,9 +3,15 @@ import json
 import os
 import urllib.request
 import urllib.parse
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "app"))
+from web_status import DEFAULT_TOKEN_FILE, _read_dpapi_token
 
 BASE=os.environ.get("EZSTUDIOLAB_ASSISTANT_BASE_URL","http://EZSTUDIO-MAIN:8702").rstrip("/")
-TOKEN=os.environ.get("EZSTUDIOLAB_ASSISTANT_TOKEN","")
+TOKEN=os.environ.get("EZSTUDIOLAB_ASSISTANT_TOKEN","").strip() or _read_dpapi_token(DEFAULT_TOKEN_FILE)
 def main():
     if not TOKEN:
         print(json.dumps({"ok":False,"error":"token_missing"}));return
