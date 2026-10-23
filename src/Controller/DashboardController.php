@@ -15,7 +15,7 @@ final class DashboardController extends AbstractController {
     }
     #[Route('/api/health', name: 'assistant_health', methods: ['GET'])]
     public function health(): JsonResponse {
-        return $this->json(['ok'=>true,'service'=>'EZStudioLab Assistant','tier'=>'web','database'=>false,'persistence_owner'=>'LAB']);
+        return $this->json(['ok'=>true,'service'=>'EZStudioLab Assistant','tier'=>'web','database'=>false,'persistence_owner'=>'LAB','version'=>trim((string) @file_get_contents(dirname(__DIR__, 2).'/VERSION'))]);
     }
     #[Route('/api/status', name: 'assistant_status', methods: ['GET'])]
     public function status(): JsonResponse {
