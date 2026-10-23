@@ -43,7 +43,7 @@
             .then(function(response){return response.json();})
             .then(function(data){
                 output.replaceChildren();
-                if(!data.ok){state.textContent='Erreur technique : '+(data.error||'LAB inaccessible');return;}
+                if(!data.ok){state.textContent='Erreur technique : '+(data.error||'LAB inaccessible')+(data.reason?' · '+data.reason:'');return;}
                 if(data.state!=='available'){state.textContent='Aucune contre-expertise persistée dans LAB.';return;}
                 var declared=data.identity_declared||{};
                 state.textContent='Analyse #'+(data.analysis_reference||data.run_id)+' · Preset #'+(data.preset_reference||'non renseigné')+' · Révision #'+data.revision_id+' · '+data.status+
