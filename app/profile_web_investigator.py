@@ -106,7 +106,7 @@ def research_assertions(assertions, identity, *, source_research=None):
                     source=document_cache[url]
                     doc["status"]=source.get("status")
                     if source.get("status")=="read":
-                        doc["text"]=source.get("text","")[:8000]
+                        doc["text"]=("Résultat du moteur (non vérifié) : "+str(hit.get("snippet") or "")[:500]+"\nPage réellement téléchargée : "+source.get("text",""))[:8000]
                 except Exception as exc:
                     doc["status"]="read_error"
                     doc["error_type"]=type(exc).__name__
