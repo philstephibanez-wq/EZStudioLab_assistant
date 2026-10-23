@@ -106,8 +106,14 @@
           });
         }else line(card,'p','Aucune source exploitable.');
       });
-      line(output,'p','OCR : '+(data.ocr&&data.ocr.status||'non exécuté')+
-        ' · '+(data.ocr&&data.ocr.scans||[]).length+' scan(s). Les avis IA ne sont pas des verdicts scientifiques.');
+      var ocr=data.ocr||{};
+      line(output,'p','OCR : '+(ocr.status||'non exécuté')+' · '+(ocr.scans||[]).length+' scan(s)'+(ocr.reason?' · '+ocr.reason:'')+'. Avis non validés scientifiquement.');
+      (ocr.scans||[]).forEach(function(scan){
+        var section=node('details');output.appendChild(section);
+        var summary=node('summary','Livret / pochette OCR : '+(scan.status||'inconnu'));section.appendChild(summary);
+        if(scan.url){var a=node('a',scan.url);a.href=scan.url;a.target='_blank';a.rel='noopener noreferrer';section.appendChild(a);}
+        (scan.credit_candidates||[]).forEach(function(c){line(section,'p',(c.raw_line||'Crédit candidat')+' · NON VALIDÉ');});
+      });
     })
     .catch(function(e){state.textContent='ERREUR TECHNIQUE — '+e.message;})
     .finally(function(){button.disabled=false;});
