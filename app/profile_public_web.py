@@ -1,7 +1,5 @@
 """Keyless public web discovery for PROFILE; real HTTP only, no generated sources.
-
-Bing publishes an RSS search feed. Its availability and commercial usage
-conditions must be independently reviewed before SaaS operation.
+DuckDuckGo HTML is a public website, not a guaranteed or licensed search API.
 """
 from __future__ import annotations
 import html
@@ -37,16 +35,51 @@ def _fetch(url,*,timeout=14,max_bytes=600000):
         content_type=response.headers.get("Content-Type","")
         return response.read(max_bytes+1)[:max_bytes],content_type
 
+class _SearchResults(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.results=[]
+        self._target=None
+        self._title=[]
+    def handle_starttag(self, tag, attrs):
+        attrs=dict(attrs)
+        if tag=="a" and "result__a" in attrs.get("class","").split():
+            self._target=attrs.get("href")
+            self._title=[]
+    def handle_data(self, data):
+        if self._target is not None:
+            self._title.append(data)
+    def handle_endtag(self,tag):
+        if tag=="a" and self._target is not None:
+            target=self._target
+            parsed=urllib.parse.urlsplit(urllib.parse.urljoin("https://html.duckduckgo.com/",target))
+            if parsed.hostname and parsed.hostname.endswith("duckduckgo.com"):
+                target=urllib.parse.parse_qs(parsed.query).get("uddg",[None])[0]
+            link=_url(target)
+            if link and urllib.parse.urlsplit(link).hostname not in ("duckduckgo.com","html.duckduckgo.com"):
+                self.results.append({"url":link,"title":html.unescape(" ".join(self._title)).strip()[:250],"snippet":""})
+            self._target=None
+            self._title=[]
+
 def search(query,max_results=10):
-    endpoint="https://www.bing.com/search?"+urllib.parse.urlencode({"q":query,"format":"rss"})
-    raw,_=_fetch(endpoint)
-    root=ET.fromstring(raw)
+    """Discover real URLs from a public, keyless HTML search engine.
+
+    Fail closed when the response cannot be parsed. No unrelated RSS fallback.
+    """
+    endpoint="https://html.duckduckgo.com/html/?"+urllib.parse.urlencode({"q":query,"kl":"us-en"})
+    raw,kind=_fetch(endpoint)
+    if "html" not in kind.lower():
+        raise ValueError("search_engine_unexpected_content_type")
+    parser=_SearchResults()
+    parser.feed(raw.decode("utf-8","replace"))
+    if not parser.results:
+        raise ValueError("search_engine_no_parsable_results")
+    seen=set()
     results=[]
-    for item in root.findall(".//item"):
-        url=_url(item.findtext("link"))
-        if not url:continue
-        results.append({"url":url,"title":html.unescape(item.findtext("title") or "")[:250],
-             "snippet":html.unescape(re.sub("<[^>]+>"," ",item.findtext("description") or ""))[:600]})
+    for hit in parser.results:
+        if hit["url"] in seen:continue
+        seen.add(hit["url"])
+        results.append(hit)
         if len(results)>=max_results:break
     return results
 
