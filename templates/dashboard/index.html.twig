@@ -81,7 +81,7 @@
     .then(function(job){if(!job.ok||!job.job_id)throw new Error(job.reason||job.error||'Démarrage impossible');return follow(job.job_id,0);})
     .then(function(data){
       if(!data.ok){state.textContent='ERREUR TECHNIQUE — '+(data.reason||data.error||'Service indisponible');return;}
-      state.textContent='Recherche terminée · fournisseur '+(data.provider||'inconnu')+
+      state.textContent='Traitement terminé · résultat : '+(data.outcome||'non établi')+' · '+(data.documents_read||0)+' pages lues · '+(data.items_with_citations||0)+' items sourcés · fournisseur '+(data.provider||'inconnu')+
         ' · IA locale : '+(data.ai_status||'indisponible')+' · sauvegarde LAB : non (recherche directe)';
       if(data.reason)line(output,'p','Diagnostic : '+data.reason);
       (data.items||[]).forEach(function(item){
