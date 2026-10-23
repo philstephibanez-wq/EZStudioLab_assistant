@@ -9,13 +9,43 @@ from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/"app"))
 from profile_auto_review import research_public_sources,NetworkBudget
 from profile_web_investigator import research_each_assertion
+from profile_review import normalize_track_identity
 
 def main():
     parser=argparse.ArgumentParser()
-    parser.add_argument("--manifest",required=True,help="JSON array of real LAB runs and actual artist/title pairs")
+    source=parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--manifest",help="JSON array of real LAB runs and actual artist/title pairs")
+    source.add_argument("--trace-root",help="Recursively discover authentic LAB row snapshots")
+    parser.add_argument("--max-songs",type=int,default=3)
     parser.add_argument("--output",required=True,help="Diagnostic JSON output, never a product verdict")
     args=parser.parse_args()
-    entries=json.loads(Path(args.manifest).read_text(encoding="utf-8-sig"))
+    if args.manifest:
+        manifest_path=Path(args.manifest)
+        if not manifest_path.is_file():
+            raise SystemExit("MANIFEST_NOT_FOUND: "+str(manifest_path))
+        entries=json.loads(manifest_path.read_text(encoding="utf-8-sig"))
+    else:
+        root=Path(args.trace_root)
+        if not root.is_dir():raise SystemExit("TRACE_ROOT_NOT_FOUND: "+str(root))
+        entries=[]
+        seen=set()
+        paths=sorted(root.rglob("*lab.profile.row.json"),key=lambda p:p.stat().st_mtime,reverse=True)
+        for path in paths:
+            try:
+                row=json.loads(path.read_text(encoding="utf-8-sig"))
+                if not isinstance(row,dict):continue
+                normalized=normalize_track_identity(row)
+                title=str(normalized.get("title") or "").strip()
+                artist=str(normalized.get("artist") or "").strip()
+                if not title or not artist:continue
+                key=(title.casefold(),artist.casefold())
+                if key in seen:continue
+                seen.add(key)
+                entries.append({"row_json":str(path),"title":title,"artist":artist})
+            except (OSError,ValueError,TypeError):
+                continue
+            if len(entries)>=args.max_songs:break
+        print("DISCOVERED_REAL_SONGS="+str(len(entries)),flush=True)
     if not isinstance(entries,list) or len(entries)<2:raise SystemExit("REQUIRE_AT_LEAST_TWO_REAL_SONGS")
     results=[]
     for index,entry in enumerate(entries,1):
