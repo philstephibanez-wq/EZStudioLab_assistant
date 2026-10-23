@@ -49,3 +49,6 @@ DDGS fournit plusieurs sources, IA locale exécute des revues, mais non_trouve f
 
 ## Capture The Animals — House of the Rising Sun (23/10)
 Résultat réel : 14 pages lues, 4 items avec références citables mais aucune preuve musicale explicite extraite. Requêtes spécifiques sans hits malgré des sources musique accessibles sur les autres items ; la requête instruments contenait littéralement `non déterminé`. Correction commit c139ea4 : recherche commune artiste+titre pour réutiliser un même ensemble de sources entre tous les items, requête instrumentale `instruments credits personnel`, déduplication des URL par item ; échecs de recherche spécifique visibles dans le rapport. Sans verdict automatique sur la seule provenance, OCR toujours non disponible dans recherche directe. Aucun test XPS exécuté sur cette modification.
+
+## Capture John Denver (23/10)
+45 pages lues, 5 items déclarés sourcés dans l'UI mais aucune valeur extérieure probante visible ; un `ValueError` IA. Ce nombre était trompeur (URL citée sans preuve musicale). Correctifs 6fa1add/55f3dd5/ff2e735 : compter uniquement citations avec référence extraite ; collecter méta description HTML ; contexte snippet DDGS explicitement non vérifié. Aucune exécution XPS de ces commits ; OCR toujours non disponible et pas de preuve de verdict musical. Le problème d'extraction fiable n'est PAS clos.
