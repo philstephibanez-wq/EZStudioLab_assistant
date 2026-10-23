@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "app"))
 from profile_web_investigator import research_assertions
 from profile_web_local_review import review_web_items
 from profile_document_candidates import extract_candidates
+from profile_source_identity import classify_source
 from profile_auto_review import research_public_sources, NetworkBudget
 from profile_tesseract_runtime import resolve_tesseract
 
@@ -73,6 +74,7 @@ def main():
                      "status": item.get("status"), "reason": item.get("reason"),
                      "query": item.get("query"),
                      "sources": [{"url": doc.get("url"), "title": doc.get("title"),
+                                  "identity": classify_source(doc,identity),
                                   "status": doc.get("status"),
                                   "reason": doc.get("reason") or doc.get("error_type")}
                                  for doc in item.get("documents", [])],
