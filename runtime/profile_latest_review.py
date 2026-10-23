@@ -17,31 +17,16 @@ def main():
         item=body.get("item")
         if not isinstance(item,dict):
             print(json.dumps({"ok":True,"state":"no_review"}));return
-        revision=item.get("revision") or {}
-        comparison=revision.get("comparison") or {}
-        verification=comparison.get("final_verification") or {}
-        assertions=verification.get("assertions") or []
-        by_key={a.get("key"):a for a in assertions if isinstance(a,dict)}
-        investigation=(verification.get("web_investigation") or {}).get("items") or []
-        local_reviews=(verification.get("local_web_review") or {}).get("items") or []
-        ai_by_key={a.get("key"):a for a in local_reviews if isinstance(a,dict)}
-        results=[]
-        for entry in investigation:
-            if not isinstance(entry,dict):continue
-            key=entry.get("key")
-            a=by_key.get(key,{})
-            ai=ai_by_key.get(key,{})
-            results.append({"key":key,"value_lab":entry.get("value"),
-                "verdict":a.get("verdict") or "non_trouve",
-                "reference_value":ai.get("reference_value") or a.get("reference_value"),
-                "explanation":ai.get("explanation") or a.get("reason"),
-                "sources":[d.get("url") for d in (entry.get("documents") or [])
-                           if isinstance(d,dict) and d.get("status")=="read" and d.get("url")],
-                "ai_status":ai.get("status")})
-        print(json.dumps({"ok":True,"state":"available","run_id":item.get("run_id"),
-          "revision_id":revision.get("id"),"status":revision.get("status"),
-          "identity_declared":item.get("identity_declared"),"items":results,
-          "recording_identity_confirmed":False},ensure_ascii=False))
+        print(json.dumps({"ok":True,"state":"available",
+          "run_id":item.get("run_id"),
+          "analysis_reference":item.get("analysis_reference"),
+          "preset_reference":item.get("preset_reference"),
+          "revision_id":item.get("review_id"),
+          "status":item.get("review_status"),
+          "identity_declared":item.get("identity_declared"),
+          "items":item.get("items") or [],
+          "recording_identity_confirmed":bool(item.get("identity_confirmed"))},
+          ensure_ascii=False))
     except Exception as exc:
         print(json.dumps({"ok":False,"error":type(exc).__name__}))
 if __name__=="__main__":main()
