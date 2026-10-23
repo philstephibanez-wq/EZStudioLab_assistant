@@ -43,3 +43,6 @@ SearXNG architecture above is superseded: no Docker, no WSL, no Linux, no servic
 
 ## 23 octobre — correction timeout PHP confirmée
 Sur XPS, POST recherche directe répondait HTML et HTTP 200 ; diagnostic direct PHP 8713 : `Maximum execution time of 30 seconds exceeded` dans `vendor/symfony/process/Pipes/WindowsPipes.php:142`. Ne pas augmenter arbitrairement timeout global PHP. Commits ca7d898/fa78872/74c93a8 : démarrage job Python détaché avec JSON dans `runtime/state/profile-direct`, API POST donne `job_id`, GET poll l'état; UI poll toutes les 2 s. Code publié, tests XPS non encore faits. Aucun changement de l'emplacement H: des modèles. Limite : jobs locaux de consultation non persistés dans LAB et nettoyage des états expirés non automatisé ; finaliser avant qualification production.
+
+## Capture vraie Susanna / The Art Company — 23/10
+DDGS fournit plusieurs sources, IA locale exécute des revues, mais non_trouve faute de valeur explicitement étayée. Des réponses sans résultat sont traitées comme erreurs, des pages >600k abandonnées ; OCR direct 0 scan. Commits 72d0ab5, 24c901b, 8e15958 corrigent ces trois points techniques de lecture/statut. Pas de validation instrumentale sur XPS pour ces commits. Prochain chantier : lecture des métadonnées structurées de SongBPM/ChordU et OCR des documents réellement trouvés, puis recette globale.
