@@ -21,7 +21,15 @@ def _is_song_related(hit, title, artist):
 TERMS={"tempo":"BPM tempo","meter":"time signature meter","key":"musical key tonality","genre":"genre style","lead_vocal":"lead vocals singer","backing_vocals":"backing vocals","choir":"choir choral vocals","vocal_harmonies":"vocal harmonies"}
 
 def research_each_assertion(row, identity, *, source_research=None, **unused):
-    return research_assertions(final_assertions(row), identity, source_research=source_research)
+    assertions=final_assertions(row)
+    present={a["key"] for a in assertions}
+    for key,label in (("backing_vocals","Voix d’accompagnement"),
+                      ("vocal_harmonies","Harmonies vocales"),("choir","Chœurs"),
+                      ("lead_vocal","Voix principale")):
+        if key not in present:
+            assertions.append({"key":key,"label":label,"value":"non déterminé",
+                               "no_lab_proposition":True})
+    return research_assertions(assertions, identity, source_research=source_research)
 
 
 def research_assertions(assertions, identity, *, source_research=None):
@@ -85,7 +93,10 @@ def research_assertions(assertions, identity, *, source_research=None):
         item["evidence_review"]=evaluate_live_documents(assertion,identity,item["documents"])
         item["ocr_scans"]=ocr_sources
         items.append(item)
-    return {"status":"completed" if items else "no_assertions",
+    failed=sum(item.get("status")=="error" for item in items)
+    return {"status":"error" if failed==len(items) and items else "partial" if failed else "completed" if items else "no_assertions",
+            "reason":"web_search_failed_for_all_items" if failed==len(items) and items else None,
+            "technical_errors":failed,
             "unique_documents_fetched":len(document_cache),
             "ocr_audit":ocr_audit,
             "searched":len(items),"items":items,
