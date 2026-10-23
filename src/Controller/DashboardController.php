@@ -41,7 +41,7 @@ final class DashboardController extends AbstractController {
         $title = trim((string) ($data['title'] ?? ''));
         $artist = trim((string) ($data['artist'] ?? ''));
         $items = $data['items'] ?? [];
-        if ($title === '' || $artist === '' || mb_strlen($title)>180 || mb_strlen($artist)>180
+        if ($title === '' || $artist === '' || strlen($title)>720 || strlen($artist)>720
             || !is_array($items) || count($items)<1 || count($items)>9) {
             return $this->json(['ok'=>false,'error'=>'invalid_research_request'],400);
         }
