@@ -4,7 +4,7 @@ Manifest JSON array: [{"row_json":"C:\\\\path\\\\real.row.json","title":"...","a
 Every row must be exported from a genuine LAB run.
 """
 from __future__ import annotations
-import argparse,json,sys
+import argparse,json,sys,os,tempfile
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/"app"))
 from profile_auto_review import research_public_sources,NetworkBudget
@@ -25,11 +25,24 @@ def main():
             raise SystemExit("MANIFEST_NOT_FOUND: "+str(manifest_path))
         entries=json.loads(manifest_path.read_text(encoding="utf-8-sig"))
     else:
-        root=Path(args.trace_root)
-        if not root.is_dir():raise SystemExit("TRACE_ROOT_NOT_FOUND: "+str(root))
+        requested=Path(args.trace_root)
+        candidates=[requested,Path(tempfile.gettempdir())/"EZS_PROFILE_DEBUG",
+            Path.home()/"AppData"/"Local"/"Temp"/"EZS_PROFILE_DEBUG",
+            Path("H:/temp/EZS_PROFILE_DEBUG"),
+            Path("C:/temp/EZS_PROFILE_DEBUG")]
+        roots=[]
+        for candidate in candidates:
+            if candidate.is_dir() and candidate not in roots:
+                roots.append(candidate)
+        if not roots:
+            raise SystemExit("NO_REAL_TRACE_ROOT_FOUND: checked "+", ".join(str(p) for p in candidates))
+        print("TRACE_ROOTS="+", ".join(str(p) for p in roots),flush=True)
         entries=[]
         seen=set()
-        paths=sorted(root.rglob("*lab.profile.row.json"),key=lambda p:p.stat().st_mtime,reverse=True)
+        paths=[]
+        for root in roots:
+            paths.extend(root.rglob("*lab.profile.row.json"))
+        paths=sorted(set(paths),key=lambda p:p.stat().st_mtime,reverse=True)
         for path in paths:
             try:
                 row=json.loads(path.read_text(encoding="utf-8-sig"))
