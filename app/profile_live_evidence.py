@@ -87,8 +87,22 @@ def evaluate_live_documents(assertion, identity, documents):
     conclusions={entry["verdict"] for entry in accepted}
     values={entry["reference_value"].casefold() for entry in accepted}
     if len(conclusions)!=1 or len(values)!=1:
+        # Prefer a documented majority as a provisional reference, without
+        # upgrading it to a verified verdict or pretending popularity proves
+        # that the recording matches LAB's audio.
+        from collections import Counter
+        counts=Counter((entry["reference_value"].casefold(),entry["verdict"])
+                       for entry in accepted)
+        ranked=counts.most_common(2)
+        if ranked and ranked[0][1]>=2 and (
+                len(ranked)==1 or ranked[0][1]>ranked[1][1]):
+            chosen=next(entry for entry in accepted
+                        if (entry["reference_value"].casefold(),entry["verdict"])==ranked[0][0])
+            return {"verdict":"non_trouve","proposed_verdict":chosen["verdict"],
+                    "reference_value":chosen["reference_value"],"references":accepted,
+                    "reason":"Hypothèse majoritaire parmi les sources consultées ; enregistrement exact non confirmé"}
         return {"verdict":"non_trouve","references":accepted,
-                "reason":"Références contradictoires ou insuffisantes pour trancher"}
+                "reason":"Références contradictoires sans majorité documentaire"}
     # Document claims are candidates until their recording/version is independently confirmed.
     return {"verdict":"non_trouve","proposed_verdict":accepted[0]["verdict"],
             "references":accepted,"reference_value":accepted[0]["reference_value"],
