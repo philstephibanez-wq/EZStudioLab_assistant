@@ -75,6 +75,17 @@ try {
     $reply = [string]$generated.choices[0].message.content
     if ([string]::IsNullOrWhiteSpace($reply)) { throw 'DEPLOY_INFERENCE_EMPTY_GENERATION' }
     $checks.generation = 'response_nonempty'
+    # Exercise the actual PROFILE advisory prompt against the loaded model,
+    # with synthetic evidence only. Do not contact LAB or create a job.
+    $assistantPython = Get-Command python.exe -ErrorAction Stop
+    $profileSmoke = & $assistantPython.Source (Join-Path $root 'scripts\profile-live-smoke.py')
+    if ($LASTEXITCODE -ne 0) { throw 'DEPLOY_PROFILE_LIVE_SMOKE_FAILED' }
+    $profileResult = $profileSmoke | ConvertFrom-Json -ErrorAction Stop
+    if ($profileResult.ok -ne $true -or $profileResult.real_model -ne $true -or
+        $profileResult.advisory_only -ne $true -or $profileResult.promotes_verdict -ne $false) {
+        throw 'DEPLOY_PROFILE_LIVE_SMOKE_INVALID'
+    }
+    $checks.profile_live_smoke = $profileResult
     $state = 'DEPLOYED_OK'
 } catch {
     $reason = $_.Exception.Message
