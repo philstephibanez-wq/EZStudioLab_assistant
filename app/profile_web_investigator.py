@@ -13,6 +13,7 @@ def research_each_assertion(row, identity, **unused):
     title=str(identity.get("title") or "").strip()
     artist=str(identity.get("artist") or "").strip()
     items=[]
+    document_cache={}
     for assertion in final_assertions(row):
         key=assertion["key"]
         item={"key":key,"value":assertion["value"],"status":"not_searched","citation_urls":[],
@@ -32,7 +33,9 @@ def research_each_assertion(row, identity, **unused):
                 doc={"url":url,"title":hit.get("title"),"snippet":hit.get("snippet"),
                      "status":"unread"}
                 try:
-                    source=fetch_document(url)
+                    if url not in document_cache:
+                        document_cache[url]=fetch_document(url)
+                    source=document_cache[url]
                     doc["status"]=source.get("status")
                     if source.get("status")=="read":
                         doc["text"]=source.get("text","")[:8000]
@@ -49,5 +52,6 @@ def research_each_assertion(row, identity, **unused):
         item["evidence_review"]=evaluate_live_documents(assertion,identity,item["documents"])
         items.append(item)
     return {"status":"completed" if items else "no_assertions",
+            "unique_documents_fetched":len(document_cache),
             "searched":len(items),"items":items,
             "search_provider":"public_web_no_api_key","automatic_verdicts":False}
