@@ -38,9 +38,10 @@ def build_assertions(source):
     preset = source.get("preset_id")
     if preset is not None and (not isinstance(preset, (int, str)) or isinstance(preset, bool) or not str(preset).strip()):
         raise ValueError("preset_id_invalid")
-    for key in ("title", "artist"):
-        if not isinstance(source.get(key), str) or not source[key].strip():
-            raise ValueError(key + "_required")
+    if not isinstance(source.get("title"), str) or not source["title"].strip():
+        raise ValueError("title_required")
+    if source.get("artist") is not None and not isinstance(source["artist"], str):
+        raise ValueError("artist_invalid")
     items = source.get("items")
     if not isinstance(items, dict) or set(items) != set(ITEMS):
         raise ValueError("exactly_ten_items_required")
@@ -50,7 +51,7 @@ def build_assertions(source):
         "analysis_id": source["analysis_id"],
         "preset_id": source["preset_id"],
         "title": source["title"].strip(),
-        "artist": source["artist"].strip(),
+        "artist": (source.get("artist") or "").strip(),
         "recording_id": source.get("recording_id") if isinstance(source.get("recording_id"), str) else None,
         "version": source.get("version") if isinstance(source.get("version"), str) else None,
         "items": {item: _value(items[item]) for item in ITEMS},
