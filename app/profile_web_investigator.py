@@ -59,8 +59,15 @@ def research_assertions(assertions, identity, *, source_research=None):
 
     title=str(identity.get("title") or "").strip()
     artist=str(identity.get("artist") or "").strip()
+    # Legacy LAB imports sometimes store "Song - Artist" in the title field.
+    # This is a *search hint*, never an authenticated recording identity.
+    if not artist:
+        match=re.fullmatch(r"(.+?)\s*[-–—]\s+([^–—]+)",title)
+        if match and match.group(1).strip() and match.group(2).strip():
+            title,artist=match.group(1).strip(),match.group(2).strip()
     items=[]
     document_cache={}
+    effective_identity={"title":title,"artist":artist}
     ocr_audit={"status":"not_available" if not source_research else "recorded", "scans":ocr_sources}
     # Search broadly once, then reuse relevant sources for every item.
     base_hits=[]
@@ -121,7 +128,7 @@ def research_assertions(assertions, identity, *, source_research=None):
         except Exception as exc:
             item["status"]="error"
             item["reason"]=type(exc).__name__+":"+str(exc)[:180]
-        item["evidence_review"]=evaluate_live_documents(assertion,identity,item["documents"])
+        item["evidence_review"]=evaluate_live_documents(assertion,effective_identity,item["documents"])
         item["ocr_scans"]=ocr_sources
         items.append(item)
     failed=sum(item.get("status")=="error" for item in items)
