@@ -47,9 +47,9 @@ final class DashboardController extends AbstractController {
         }
         $root = dirname(__DIR__, 2);
         $python = $_ENV['EZSTUDIOLAB_ASSISTANT_PYTHON'] ?? $_SERVER['EZSTUDIOLAB_ASSISTANT_PYTHON'] ?? 'python';
-        $process = new Process([$python, $root.'/runtime/profile_direct_research.py'], $root,
+        $process = new Process([$python, $root.'/runtime/profile_direct_job.py'], $root,
             null, json_encode($data, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR));
-        $process->setTimeout(180.0);
+        $process->setTimeout(12.0);
         try {
             $process->run();
             $result = json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR);
@@ -63,6 +63,18 @@ final class DashboardController extends AbstractController {
             $this->logger->error('PROFILE direct research failed', ['exception'=>$e]);
             return $this->json(['ok'=>false,'error'=>'research_execution_failed',
                 'reason'=>get_class($e)],503);
+        }
+    }
+
+    #[Route('/api/profile/direct-research/{id}', name: 'assistant_profile_direct_research_status', methods: ['GET'], requirements: ['id' => '[a-f0-9]{32}'])]
+    public function directResearchStatus(string $id): JsonResponse {
+        $file = dirname(__DIR__, 2).'/runtime/state/profile-direct/'.$id.'.result.json';
+        if (!is_file($file)) return $this->json(['ok'=>false,'error'=>'job_not_found'],404);
+        try {
+            $data = json_decode((string) file_get_contents($file), true, flags: JSON_THROW_ON_ERROR);
+            return $this->json(is_array($data) ? $data : ['ok'=>false,'error'=>'invalid_job_result']);
+        } catch (\Throwable $e) {
+            return $this->json(['ok'=>false,'error'=>'job_result_unreadable'],503);
         }
     }
 
