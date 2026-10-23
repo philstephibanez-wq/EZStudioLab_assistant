@@ -105,13 +105,16 @@ def research_assertions(assertions, identity, *, source_research=None):
                         document_cache[url]=fetch_document(url)
                     source=document_cache[url]
                     doc["status"]=source.get("status")
+                    if source.get("reason"): doc["reason"]=source["reason"]
                     if source.get("status")=="read":
+                        doc["url"]=source.get("url") or url
                         doc["text"]=("Résultat du moteur (non vérifié) : "+str(hit.get("snippet") or "")[:500]+"\nPage réellement téléchargée : "+source.get("text",""))[:8000]
                 except Exception as exc:
                     doc["status"]="read_error"
                     doc["error_type"]=type(exc).__name__
                 item["documents"].append(doc)
-                item["citation_urls"].append(url)
+                if doc["status"]=="read":
+                    item["citation_urls"].append(doc["url"])
             item["rejected_irrelevant"]=len(hits)-len(item["documents"])
             item["status"]="documents_read" if any(d.get("status")=="read" for d in item["documents"]) else (
                 "no_results" if not hits else "no_relevant_results" if not item["documents"] else "sources_unreadable")
