@@ -21,6 +21,10 @@ def _is_song_related(hit, title, artist):
 TERMS={"tempo":"BPM tempo","meter":"time signature meter","key":"musical key tonality","genre":"genre style","lead_vocal":"lead vocals singer","backing_vocals":"backing vocals","choir":"choir choral vocals","vocal_harmonies":"vocal harmonies"}
 
 def research_each_assertion(row, identity, *, source_research=None, **unused):
+    return research_assertions(final_assertions(row), identity, source_research=source_research)
+
+
+def research_assertions(assertions, identity, *, source_research=None):
     # Reuse the real release scans already inspected by the existing Tesseract
     # pipeline. Never OCR a second time, never mistake album credits for song credits.
     ocr_sources=[]
@@ -40,7 +44,7 @@ def research_each_assertion(row, identity, *, source_research=None, **unused):
     items=[]
     document_cache={}
     ocr_audit={"status":"not_available" if not source_research else "recorded", "scans":ocr_sources}
-    for assertion in final_assertions(row):
+    for assertion in assertions:
         key=assertion["key"]
         item={"key":key,"value":assertion["value"],"status":"not_searched","citation_urls":[],
               "documents":[],"eligible_for_verdict":False}
