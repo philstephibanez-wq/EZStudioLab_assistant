@@ -2,11 +2,14 @@
 No LAB mutation, no fake reference, no secrets or scientific changes.
 """
 import json
+import os
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "app"))
 from profile_web_investigator import research_assertions
 from profile_web_local_review import review_web_items
+from profile_auto_review import research_public_sources, NetworkBudget
+from profile_tesseract_runtime import resolve_tesseract
 
 LABELS = {
     "tempo": "Tempo", "meter": "Mesure", "key": "Tonalité",
@@ -35,7 +38,30 @@ def main():
     if not assertions:
         raise ValueError("aucun_item_recherchable")
     identity = {"title": title, "artist": artist}
-    investigation = research_assertions(assertions, identity)
+    # OCR direct : use the existing recording/release discovery and transient
+    # Tesseract pipeline, without changing worker settings or stored models.
+    ocr_runtime=resolve_tesseract()
+    source_research={"sources":[]}
+    ocr_preflight={"status":ocr_runtime.get("status","unavailable"),"scans":[]}
+    if ocr_runtime.get("status")=="ready":
+        previous=os.environ.get("EZS_PROFILE_BOOKLET_OCR")
+        try:
+            os.environ["EZS_PROFILE_BOOKLET_OCR"]="1"
+            source_research=research_public_sources(identity,NetworkBudget())
+        except Exception as exc:
+            ocr_preflight={"status":"discovery_error","reason":type(exc).__name__,"scans":[]}
+        finally:
+            if previous is None:
+                os.environ.pop("EZS_PROFILE_BOOKLET_OCR",None)
+            else:
+                os.environ["EZS_PROFILE_BOOKLET_OCR"]=previous
+    investigation = research_assertions(assertions, identity, source_research=source_research)
+    if ocr_preflight["status"]!="ready":
+        investigation["ocr_audit"]=ocr_preflight
+    else:
+        scanned=investigation["ocr_audit"].get("scans",[])
+        statuses=[(x.get("physical_credit_review") or {}).get("status") for x in source_research.get("sources",[]) if isinstance(x,dict)]
+        investigation["ocr_audit"]["status"]="scanned" if scanned else "no_scan" if "completed" in statuses else next((v for v in statuses if v),"no_release_documents")
     ai = review_web_items(investigation, identity)
     # Never expose fetched full page bodies to the browser.
     safe = []
