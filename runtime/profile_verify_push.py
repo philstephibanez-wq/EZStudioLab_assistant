@@ -10,6 +10,8 @@ sys.path.insert(0, str(ROOT / "app"))
 
 from profile_assertions_contract import ITEMS, build_assertions, validate_verdicts
 from profile_web_investigator import research_assertions
+from profile_document_consultation import consult
+from profile_tesseract_runtime import resolve_tesseract, booklet_ocr_enabled
 from web_status import DEFAULT_TOKEN_FILE, _read_dpapi_token
 
 WEB_KEYS = dict(zip(ITEMS, (
@@ -70,6 +72,16 @@ def verify(payload):
         "technical_errors": investigation.get("technical_errors", 0),
     }
     validate_verdicts(request, result)
+    # Evidence and verdicts are finalized before advisory AI is consulted.
+    result["ai_consultation"] = consult(
+        {"title":request["title"],"artist":request["artist"]}, reviews)
+    result["tool_audit"] = {
+        "qwen":result["ai_consultation"]["status"],
+        "ocr":"not_executed_no_scan_supplied",
+        "ocr_enabled":booklet_ocr_enabled(),
+        "translation":"qwen_advisory_notes_only",
+        "document_search":investigation.get("status"),
+    }
     return result
 
 def process(envelope, token_reader=_read_dpapi_token):
