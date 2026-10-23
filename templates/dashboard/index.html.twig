@@ -25,7 +25,7 @@
       <label>Titre du morceau<br><input required name="title" maxlength="180" placeholder="Wish You Were Here" style="width:100%;box-sizing:border-box"></label>
       <label>Interprète ou compositeur<br><input required name="artist" maxlength="180" placeholder="Pink Floyd" style="width:100%;box-sizing:border-box"></label>
     </div>
-    <p>Caractéristiques à rechercher (une valeur LAB peut être indiquée pour comparaison) :</p>
+    <p>Caractéristiques PROFILE recherchées systématiquement (valeurs LAB facultatives pour comparaison) :</p>
     <div id="profile-direct-items" class="grid">
       {% for key, label in {
         'tempo':'Tempo (BPM)','meter':'Mesure','key':'Tonalité','genre':'Genre',
@@ -33,13 +33,13 @@
         'backing_vocals':'Voix d’accompagnement','vocal_harmonies':'Harmonies vocales','choir':'Chœurs'
       } %}
       <label style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-        <input type="checkbox" data-item="{{ key }}" checked>
+        <input type="hidden" data-item="{{ key }}" value="{{ key }}">
         <span>{{ label }}</span>
         <input data-value="{{ key }}" aria-label="Valeur LAB pour {{ label }}" placeholder="Valeur LAB (facultatif)" style="flex:1;min-width:95px">
       </label>
       {% endfor %}
     </div>
-    <p><button type="submit" id="profile-direct-submit">Rechercher les éléments sélectionnés</button>
+    <p><button type="submit" id="profile-direct-submit">Rechercher tous les items PROFILE</button>
       <span id="profile-direct-state" role="status" aria-live="polite">Aucune recherche directe lancée.</span></p>
   </form>
   <div id="profile-direct-results" aria-live="polite"></div>
@@ -58,8 +58,7 @@
   function line(parent,tag,text){var el=node(tag,text);parent.appendChild(el);return el;}
   form.addEventListener('submit',function(event){
     event.preventDefault();
-    var selected=Array.from(form.querySelectorAll('[data-item]:checked')).map(function(x){return x.dataset.item;});
-    if(!selected.length){state.textContent='Sélectionne au moins une caractéristique.';return;}
+    var selected=Array.from(form.querySelectorAll('[data-item]')).map(function(x){return x.dataset.item;});
     var values={};selected.forEach(function(k){values[k]=form.querySelector('[data-value="'+k+'"]').value.trim();});
     button.disabled=true;state.textContent='Recherche et analyse en cours…';output.replaceChildren();
     fetch('/api/profile/direct-research',{method:'POST',headers:{'Content-Type':'application/json'},
