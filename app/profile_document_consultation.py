@@ -51,7 +51,7 @@ def consult(identity, reviews, *, transport=None):
         try:
             message=json.loads(content)
         except json.JSONDecodeError:
-            fenced=re.fullmatch(r"```(?:json)?\\s*(\\{.*\\})\\s*```",content,re.I|re.S)
+            fenced=re.fullmatch(r"```(?:json)?\s*(\{.*\})\s*```",content,re.I|re.S)
             if not fenced:
                 raise ValueError("invalid_json_advisory")
             message=json.loads(fenced.group(1))
