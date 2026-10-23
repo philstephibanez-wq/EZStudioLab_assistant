@@ -73,7 +73,7 @@ final class DashboardController extends AbstractController {
             return $this->json($result);
         } catch (\Throwable $e) {
             $this->logger->error('Latest LAB review transport failed', ['exception'=>$e]);
-            return $this->json(['ok'=>false,'error'=>'latest_review_transport_error','reason'=>($e instanceof \\Symfony\\Component\\Process\\Exception\\ProcessTimedOutException ? 'process_timeout' : get_class($e))],503);
+            return $this->json(['ok'=>false,'error'=>'latest_review_transport_error','reason'=>($e instanceof \Symfony\Component\Process\Exception\ProcessTimedOutException ? 'process_timeout' : get_class($e))],503);
         }
     }
 
