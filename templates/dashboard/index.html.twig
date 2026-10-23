@@ -17,12 +17,91 @@
   <progress id="consultation-progress" max="4" value="0" style="width:100%"></progress>
   <div class="label">Progression du traitement, pas taux de justesse · aucune validation scientifique implicite</div>
 </div>
+<section class="card" style="margin-top:14px" aria-labelledby="profile-direct-title">
+  <h2 id="profile-direct-title">Recherche musicale directe · PROFILE</h2>
+  <p class="label" style="text-transform:none">Investigation indépendante ; aucune modification de LAB. SearXNG et IA locale doivent être opérationnels.</p>
+  <form id="profile-direct-form">
+    <div class="grid">
+      <label>Titre du morceau<br><input required name="title" maxlength="180" placeholder="Wish You Were Here" style="width:100%;box-sizing:border-box"></label>
+      <label>Interprète ou compositeur<br><input required name="artist" maxlength="180" placeholder="Pink Floyd" style="width:100%;box-sizing:border-box"></label>
+    </div>
+    <p>Caractéristiques à rechercher (une valeur LAB peut être indiquée pour comparaison) :</p>
+    <div id="profile-direct-items" class="grid">
+      {% for key, label in {
+        'tempo':'Tempo (BPM)','meter':'Mesure','key':'Tonalité','genre':'Genre',
+        'instrument:0':'Instruments','lead_vocal':'Voix principale',
+        'backing_vocals':'Voix d’accompagnement','vocal_harmonies':'Harmonies vocales','choir':'Chœurs'
+      } %}
+      <label style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <input type="checkbox" data-item="{{ key }}" checked>
+        <span>{{ label }}</span>
+        <input data-value="{{ key }}" aria-label="Valeur LAB pour {{ label }}" placeholder="Valeur LAB (facultatif)" style="flex:1;min-width:95px">
+      </label>
+      {% endfor %}
+    </div>
+    <p><button type="submit" id="profile-direct-submit">Rechercher les éléments sélectionnés</button>
+      <span id="profile-direct-state" role="status" aria-live="polite">Aucune recherche directe lancée.</span></p>
+  </form>
+  <div id="profile-direct-results" aria-live="polite"></div>
+</section>
 <div class="card" style="margin-top:14px">
   <div class="label">Runtime Python</div>
   <pre id="runtime">—</pre>
 </div>
 {% endblock %}
 {% block javascripts %}
+<script>
+(function(){
+  var form=document.getElementById('profile-direct-form'), output=document.getElementById('profile-direct-results');
+  var state=document.getElementById('profile-direct-state'), button=document.getElementById('profile-direct-submit');
+  function node(tag,text){var el=document.createElement(tag);if(text!==undefined)el.textContent=String(text);return el;}
+  function line(parent,tag,text){var el=node(tag,text);parent.appendChild(el);return el;}
+  form.addEventListener('submit',function(event){
+    event.preventDefault();
+    var selected=Array.from(form.querySelectorAll('[data-item]:checked')).map(function(x){return x.dataset.item;});
+    if(!selected.length){state.textContent='Sélectionne au moins une caractéristique.';return;}
+    var values={};selected.forEach(function(k){values[k]=form.querySelector('[data-value="'+k+'"]').value.trim();});
+    button.disabled=true;state.textContent='Recherche et analyse en cours…';output.replaceChildren();
+    fetch('/api/profile/direct-research',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({title:form.elements.title.value,artist:form.elements.artist.value,
+        items:selected,values:values})})
+    .then(function(r){return r.json();})
+    .then(function(data){
+      if(!data.ok){state.textContent='ERREUR TECHNIQUE — '+(data.reason||data.error||'Service indisponible');return;}
+      state.textContent='Recherche terminée · fournisseur '+(data.provider||'inconnu')+
+        ' · IA locale : '+(data.ai_status||'indisponible')+' · sauvegarde LAB : non (recherche directe)';
+      if(data.reason)line(output,'p','Diagnostic : '+data.reason);
+      (data.items||[]).forEach(function(item){
+        var card=node('div');card.className='card';card.style.marginTop='10px';output.appendChild(card);
+        line(card,'h3',(item.label||item.key)+' — '+(item.value||'sans valeur LAB'));
+        line(card,'p','Recherche : '+(item.status||'non exécutée')+(item.reason?' · '+item.reason:''));
+        if(item.query)line(card,'p','Requête : '+item.query);
+        var ai=item.ai||{};
+        if(ai.status)line(card,'p','IA : '+ai.status+(ai.proposed_verdict?' · avis : '+ai.proposed_verdict:'')+
+          (ai.reason?' · '+ai.reason:''));
+        if(ai.reference_value)line(card,'p','Valeur externe : '+ai.reference_value);
+        if(ai.explanation)line(card,'p','Explication : '+ai.explanation);
+        if((item.sources||[]).length){
+          var list=node('ul');card.appendChild(list);
+          item.sources.forEach(function(source){
+            var li=node('li'),a=node('a',source.title||source.url||'Source');
+            if(typeof source.url==='string'&&source.url.startsWith('https://')){
+              a.href=source.url;a.target='_blank';a.rel='noopener noreferrer';li.appendChild(a);
+            }else{li.textContent='URL non vérifiée';}
+            li.appendChild(node('span',' · '+source.status+(source.reason?' ('+source.reason+')':'')));
+            list.appendChild(li);
+          });
+        }else line(card,'p','Aucune source exploitable.');
+      });
+      line(output,'p','OCR : '+(data.ocr&&data.ocr.status||'non exécuté')+
+        ' · '+(data.ocr&&data.ocr.scans||[]).length+' scan(s). Les avis IA ne sont pas des verdicts scientifiques.');
+    })
+    .catch(function(e){state.textContent='ERREUR TECHNIQUE — '+e.message;})
+    .finally(function(){button.disabled=false;});
+  });
+})();
+</script>
+
 <script>
 (function poll(){
   $.getJSON('/api/status').done(function(s){
