@@ -45,7 +45,7 @@
                 if(!data.ok){state.textContent='Erreur technique : '+(data.error||'LAB inaccessible');return;}
                 if(data.state!=='available'){state.textContent='Aucune contre-expertise persistée dans LAB.';return;}
                 var declared=data.identity_declared||{};
-                state.textContent='Run #'+data.run_id+' · Révision #'+data.revision_id+' · '+data.status+
+                state.textContent='Analyse #'+(data.analysis_reference||data.run_id)+' · Preset #'+(data.preset_reference||'non renseigné')+' · Révision #'+data.revision_id+' · '+data.status+
                     ' · Identité déclarée : '+(declared.title||'?')+' — '+(declared.artist||'?')+
                     ' · Correspondance de l’enregistrement non confirmée';
                 var labels={'duration':'Durée','tempo':'Tempo','meter':'Mesure','key':'Tonalité',
@@ -55,9 +55,9 @@
                     var card=element('div');card.className='card';card.style.marginTop='8px';
                     output.appendChild(card);
                     card.appendChild(element('h3',labels[item.key]||item.key));
-                    card.appendChild(element('p','LAB : '+(item.value_lab||'non renseigné')));
-                    card.appendChild(element('p','Référence : '+(item.reference_value||'non trouvée')));
-                    card.appendChild(element('p','Avis : '+(item.verdict||'non_trouve')+' · '+(item.explanation||'Aucune justification disponible')));
+                    card.appendChild(element('p','LAB : '+(item.lab_value||'non renseigné')));
+                    card.appendChild(element('p','Référence : '+(item.external_value||'non trouvée')));
+                    card.appendChild(element('p','Avis : '+(item.verdict||'INCONNU')+' · '+(item.reason||'Aucune justification disponible')));
                     var urls=Array.from(new Set(item.sources||[]));
                     if(!urls.length)card.appendChild(element('p','Aucune source lue.'));
                     urls.forEach(function(url){
