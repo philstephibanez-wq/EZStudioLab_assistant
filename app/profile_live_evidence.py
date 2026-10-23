@@ -36,16 +36,16 @@ def _focused_reference(key, text, proposed):
         return _reference_value(key,text)
     # Explicit statements of presence only. No genre taxonomy guessed from biography.
     labels={
-        "genre": [r"\\b(?:genre|style)\\s*[:=]\\s*([^.;|\\n]{3,65})"],
-        "lead_vocal":[r"\\b(?:lead vocals?|lead singer|vocalist)\\s*[:=]\\s*([^.;|\\n]{2,60})"],
-        "backing_vocals":[r"\\b(?:backing vocals?|background vocals?)\\s*[:=]\\s*([^.;|\\n]{2,60})"],
-        "choir":[r"\\b(?:choir|chorus vocals?)\\s*[:=]\\s*([^.;|\\n]{2,60})"],
-        "vocal_harmonies":[r"\\b(?:vocal harmonies)\\s*[:=]\\s*([^.;|\\n]{2,60})"]
+        "genre": [r"\b(?:genre|style)\s*[:=]\s*([^.;|\n]{3,65})"],
+        "lead_vocal":[r"\b(?:lead vocals?|lead singer|vocalist)\s*[:=]\s*([^.;|\n]{2,60})"],
+        "backing_vocals":[r"\b(?:backing vocals?|background vocals?)\s*[:=]\s*([^.;|\n]{2,60})"],
+        "choir":[r"\b(?:choir|chorus vocals?)\s*[:=]\s*([^.;|\n]{2,60})"],
+        "vocal_harmonies":[r"\b(?:vocal harmonies)\s*[:=]\s*([^.;|\n]{2,60})"]
     }
     if key.startswith("instrument:"):
         # Instrument mentioned in an explicit credits/instruments line, not generic prose.
         token=re.escape(str(proposed).strip())
-        if re.search(r"\\b(?:instruments?|personnel|credits?|performed by)\\s*[:=]\\s*[^.;\\n]{0,160}\\b"+token+r"\\b",text,re.I):
+        if re.search(r"\b(?:instruments?|personnel|credits?|performed by)\s*[:=]\s*[^.;\n]{0,160}\b"+token+r"\b",text,re.I):
             return str(proposed)
         return None
     for pattern in labels.get(key,[]):
