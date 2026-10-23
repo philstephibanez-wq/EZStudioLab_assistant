@@ -61,27 +61,65 @@ class _SearchResults(HTMLParser):
             self._target=None
             self._title=[]
 
-def search(query,max_results=10):
-    """Discover real URLs from a public, keyless HTML search engine.
+class _BingSearchResults(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.results=[]
+        self.block=0
+        self.anchor=None
+        self.title=[]
+    def handle_starttag(self,tag,attrs):
+        attrs=dict(attrs)
+        if tag=="li" and "b_algo" in attrs.get("class","").split():
+            self.block+=1
+        if self.block and tag=="a" and self.anchor is None:
+            link=_url(attrs.get("href"))
+            if link and "bing.com" not in urllib.parse.urlsplit(link).hostname:
+                self.anchor=link
+                self.title=[]
+    def handle_data(self,data):
+        if self.anchor is not None:self.title.append(data)
+    def handle_endtag(self,tag):
+        if tag=="a" and self.anchor is not None:
+            self.results.append({"url":self.anchor,
+                "title":html.unescape(" ".join(self.title)).strip()[:250],"snippet":""})
+            self.anchor=None
+            self.title=[]
+        if tag=="li" and self.block:self.block-=1
 
-    Fail closed when the response cannot be parsed. No unrelated RSS fallback.
+def search(query,max_results=10):
+    """Two public browser search frontends, strictly validated as HTML.
+
+    Never use the broken Bing RSS feed. Return genuine result links only;
+    propagate transport and parser errors if neither provider is reachable.
     """
-    endpoint="https://html.duckduckgo.com/html/?"+urllib.parse.urlencode({"q":query,"kl":"us-en"})
-    raw,kind=_fetch(endpoint)
-    if "html" not in kind.lower():
-        raise ValueError("search_engine_unexpected_content_type")
-    parser=_SearchResults()
-    parser.feed(raw.decode("utf-8","replace"))
-    if not parser.results:
-        raise ValueError("search_engine_no_parsable_results")
-    seen=set()
-    results=[]
-    for hit in parser.results:
-        if hit["url"] in seen:continue
-        seen.add(hit["url"])
-        results.append(hit)
-        if len(results)>=max_results:break
-    return results
+    endpoints=[
+        ("duckduckgo_html","https://html.duckduckgo.com/html/?"+
+            urllib.parse.urlencode({"q":query,"kl":"us-en"}),_SearchResults),
+        ("bing_html","https://www.bing.com/search?"+
+            urllib.parse.urlencode({"q":query,"setlang":"en"}),_BingSearchResults),
+    ]
+    failures=[]
+    for name,endpoint,parser_type in endpoints:
+        try:
+            raw,kind=_fetch(endpoint)
+            if "html" not in kind.lower():
+                raise ValueError("unexpected_content_type")
+            parser=parser_type()
+            parser.feed(raw.decode("utf-8","replace"))
+            if not parser.results:
+                raise ValueError("no_parsable_results")
+            seen=set()
+            results=[]
+            for hit in parser.results:
+                if hit["url"] in seen:continue
+                seen.add(hit["url"])
+                results.append({**hit,"search_provider":name})
+                if len(results)>=max_results:break
+            return results
+        except Exception as exc:
+            failures.append(name+":"+type(exc).__name__+":"+str(exc)[:80])
+    raise RuntimeError("SEARCH_PROVIDERS_UNAVAILABLE:"+";".join(failures))
 
 def fetch_document(url):
     safe=_url(url)
