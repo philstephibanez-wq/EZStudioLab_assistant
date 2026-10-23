@@ -19,13 +19,13 @@
 </div>
 <section class="card" style="margin-top:14px" aria-labelledby="profile-direct-title">
   <h2 id="profile-direct-title">Recherche musicale directe · PROFILE</h2>
-  <p class="label" style="text-transform:none">Investigation indépendante ; aucune modification de LAB. SearXNG et IA locale doivent être opérationnels.</p>
+  <p class="label" style="text-transform:none">Investigation indépendante via DDGS et IA locale. Aucune modification de LAB.</p>
   <form id="profile-direct-form">
     <div class="grid">
       <label>Titre du morceau<br><input required name="title" maxlength="180" placeholder="Wish You Were Here" style="width:100%;box-sizing:border-box"></label>
       <label>Interprète ou compositeur<br><input required name="artist" maxlength="180" placeholder="Pink Floyd" style="width:100%;box-sizing:border-box"></label>
     </div>
-    <p>Caractéristiques PROFILE recherchées systématiquement (valeurs LAB facultatives pour comparaison) :</p>
+    <p>Les neuf caractéristiques PROFILE sont recherchées automatiquement :</p>
     <div id="profile-direct-items" class="grid">
       {% for key, label in {
         'tempo':'Tempo (BPM)','meter':'Mesure','key':'Tonalité','genre':'Genre',
@@ -35,7 +35,7 @@
       <label style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         <input type="hidden" data-item="{{ key }}" value="{{ key }}">
         <span>{{ label }}</span>
-        <input data-value="{{ key }}" aria-label="Valeur LAB pour {{ label }}" placeholder="Valeur LAB (facultatif)" style="flex:1;min-width:95px">
+
       </label>
       {% endfor %}
     </div>
@@ -59,11 +59,11 @@
   form.addEventListener('submit',function(event){
     event.preventDefault();
     var selected=Array.from(form.querySelectorAll('[data-item]')).map(function(x){return x.dataset.item;});
-    var values={};selected.forEach(function(k){values[k]=form.querySelector('[data-value="'+k+'"]').value.trim();});
+
     button.disabled=true;state.textContent='Recherche et analyse en cours…';output.replaceChildren();
     fetch('/api/profile/direct-research',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({title:form.elements.title.value,artist:form.elements.artist.value,
-        items:selected,values:values})})
+        items:selected})})
     .then(function(r){return r.json();})
     .then(function(data){
       if(!data.ok){state.textContent='ERREUR TECHNIQUE — '+(data.reason||data.error||'Service indisponible');return;}
