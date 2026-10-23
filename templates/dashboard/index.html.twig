@@ -7,6 +7,7 @@
   <div class="card"><div class="label">Activité</div><div id="activity" class="value">—</div></div>
   <div class="card"><div class="label">LAB</div><div id="lab" class="value">REST</div></div>
   <div class="card"><div class="label">Modèles IA</div><div id="models" class="value">SMB</div></div>
+  <div class="card"><div class="label">Moteur d’inférence</div><div id="inference-state" class="value">Vérification…</div><div id="inference-version">Version non vérifiée</div><div id="inference-model">Modèle non vérifié</div></div>
   <div class="card"><div class="label">Persistance</div><div class="value">LAB uniquement</div></div>
   <div class="card"><div class="label">Base Assistant</div><div class="value">Aucune</div></div>
 </div>
@@ -77,6 +78,17 @@
 
 
 <script>
+(function inferencePoll(){
+  $.getJSON('/api/inference/status').done(function(d){
+    $('#inference-state').text(d.state==='READY'?'PRÊT':'INDISPONIBLE').attr('class','value '+(d.ok?'ok':'bad'));
+    $('#inference-version').text('Moteur : '+(d.engine||'llama.cpp')+' · version '+(d.engine_version||'non exposée'));
+    $('#inference-model').text('Modèle : '+(d.model||'non identifié'));
+  }).fail(function(xhr){
+    $('#inference-state').text('INDISPONIBLE').attr('class','value bad');
+    $('#inference-version').text('Version non vérifiée');
+    $('#inference-model').text('Inférence inaccessible');
+  }).always(function(){setTimeout(inferencePoll,5000);});
+})();
 (function poll(){
   $.getJSON('/api/status').done(function(s){
     $('#state').text(s.state||'UNKNOWN').attr('class','value '+(s.ok?'ok':'bad'));
