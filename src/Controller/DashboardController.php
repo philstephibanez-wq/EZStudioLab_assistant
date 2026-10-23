@@ -63,7 +63,7 @@ final class DashboardController extends AbstractController {
         $root = dirname(__DIR__, 2);
         $python = $_ENV['EZSTUDIOLAB_ASSISTANT_PYTHON'] ?? $_SERVER['EZSTUDIOLAB_ASSISTANT_PYTHON'] ?? 'python';
         $process = new Process([$python, $root.'/runtime/profile_latest_review.py'], $root);
-        $process->setTimeout(16.0);
+        $process->setTimeout(35.0);
         try {
             $process->run();
             $result = json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR);
@@ -72,7 +72,8 @@ final class DashboardController extends AbstractController {
             }
             return $this->json($result);
         } catch (\Throwable $e) {
-            return $this->json(['ok'=>false,'error'=>'latest_review_transport_error'],503);
+            $this->logger->error('Latest LAB review transport failed', ['exception'=>$e]);
+            return $this->json(['ok'=>false,'error'=>'latest_review_transport_error','reason'=>($e instanceof \\Symfony\\Component\\Process\\Exception\\ProcessTimedOutException ? 'process_timeout' : get_class($e))],503);
         }
     }
 
