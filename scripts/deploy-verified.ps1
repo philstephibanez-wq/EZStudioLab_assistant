@@ -78,8 +78,11 @@ try {
     # Exercise the actual PROFILE advisory prompt against the loaded model,
     # with synthetic evidence only. Do not contact LAB or create a job.
     $assistantPython = Get-Command python.exe -ErrorAction Stop
-    $profileSmoke = & $assistantPython.Source (Join-Path $root 'scripts\profile-live-smoke.py')
-    if ($LASTEXITCODE -ne 0) { throw 'DEPLOY_PROFILE_LIVE_SMOKE_FAILED' }
+    $profileSmoke = & $assistantPython.Source (Join-Path $root 'scripts\profile-live-smoke.py') 2>&1
+    $profileExit = $LASTEXITCODE
+    $checks.profile_live_smoke_raw = (@($profileSmoke) | ForEach-Object { [string]$_ }) -join "\n"
+    $checks.profile_live_smoke_exit = $profileExit
+    if ($profileExit -ne 0) { throw "DEPLOY_PROFILE_LIVE_SMOKE_FAILED:exit=$profileExit" }
     $profileResult = $profileSmoke | ConvertFrom-Json -ErrorAction Stop
     if ($profileResult.ok -ne $true -or $profileResult.real_model -ne $true -or
         $profileResult.advisory_only -ne $true -or $profileResult.promotes_verdict -ne $false) {
