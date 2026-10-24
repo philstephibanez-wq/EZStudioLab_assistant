@@ -131,6 +131,7 @@ def discover_by_title(title,*,transport=None):
         return {"status":"unavailable","error_type":type(exc).__name__,"candidates":[]}
 
 def execute(*,rows=None,discover=discover_by_title,web_discover=matching_hits):
+    rows_from_lab=rows is None
     if rows is None:
         try:
             rows=fetch_rows()
@@ -150,7 +151,7 @@ def execute(*,rows=None,discover=discover_by_title,web_discover=matching_hits):
         # Search normalized title without treating the filename artist as authoritative.
         catalogue=discover(parsed["search_title"])
         comparison=compare_durations(catalogue,item["duration"])
-        web=web_discover(parsed["search_title"],parsed["artist_hint"]) if not catalogue.get("candidates") else {"status":"not_needed","queries":[],"candidates":[],"technical_errors":[]}
+        web=(web_discover(parsed["search_title"],parsed["artist_hint"]) if rows_from_lab and not catalogue.get("candidates") else {"status":"not_run","queries":[],"candidates":[],"technical_errors":[]})
         candidates=[]
         for source,c in zip(catalogue.get("candidates",[]),comparison["candidates"]):
             candidates.append({"url":c["url"],"artist_candidates":source.get("artist_credit",[]),
