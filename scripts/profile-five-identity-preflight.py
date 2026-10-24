@@ -101,7 +101,7 @@ def parse_filename_identity(raw):
         artist=re.sub(r"\s*\([A-Z]\)\s*$","",artist).strip()
     if not artist:
         # Accept a trailing year plus an artist in an undelimited file label.
-        embedded=re.fullmatch(r"(.+?)\\s+\\((19\\d{2}|20\\d{2})\\)\\s+(.+)",first)
+        embedded=re.fullmatch(r"(.+?)\s+\((19\d{2}|20\d{2})\)\s+(.+)",first)
         if embedded:
             first=embedded.group(1).strip()
             artist=embedded.group(3).strip()
