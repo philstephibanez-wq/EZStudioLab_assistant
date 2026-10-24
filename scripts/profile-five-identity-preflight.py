@@ -20,6 +20,7 @@ from profile_adaptive_keywords import matching_hits
 BASE=os.getenv("EZSTUDIOLAB_ASSISTANT_BASE_URL","http://EZSTUDIO-MAIN:8702").rstrip("/")
 MAX_BYTES=32_000_000
 SEED=20261024
+SAMPLE_BATCH=int(os.getenv("EZS_PROFILE_SAMPLE_BATCH","1"))
 
 def fetch_rows():
     token=(os.getenv("EZSTUDIOLAB_ASSISTANT_TOKEN") or "").strip() or _read_dpapi_token(DEFAULT_TOKEN_FILE)
@@ -39,7 +40,7 @@ def fetch_rows():
     return [{k:item.get(k) for k in ("run_id","song_id","title","artist","state","metrics")}
             for item in data["reviews"] if isinstance(item,dict)]
 
-def select_five(rows,number=5,seed=SEED):
+def select_five(rows,number=5,seed=SEED,batch=0):
     by_song={}
     for item in rows:
         if item.get("state")!="done" or type(item.get("run_id")) is not int or type(item.get("song_id")) is not int:
@@ -60,7 +61,12 @@ def select_five(rows,number=5,seed=SEED):
             by_song[song]={"run_id":run,"song_id":song,"title":str(item["title"])[:150],
                            "catalogue_artist":str(item.get("artist") or "")[:120],"duration":duration}
     eligible=sorted(by_song.values(),key=lambda item:item["song_id"])
-    return eligible,random.Random(seed).sample(eligible,number) if len(eligible)>=number else []
+    if len(eligible)<number:
+        return eligible,[]
+    shuffled=eligible[:]
+    random.Random(seed).shuffle(shuffled)
+    offset=(batch*number)%len(shuffled)
+    return eligible,[shuffled[(offset+i)%len(shuffled)] for i in range(number)]
 
 def parse_filename_identity(raw):
     """Conservative interpretation of filename labels; never identity evidence."""
@@ -139,11 +145,11 @@ def execute(*,rows=None,discover=discover_by_title,web_discover=matching_hits):
             return {"schema":"ezstudio.profile.identity-five-preflight.v1",
                     "status":"lab_read_failed","error_type":type(exc).__name__,
                     "lab_writes":0,"lab_jobs_created":0}
-    eligible,picked=select_five(rows)
+    eligible,picked=select_five(rows,batch=SAMPLE_BATCH)
     report={"schema":"ezstudio.profile.identity-five-preflight.v1",
             "status":"selected" if picked else "insufficient_eligible_profiles",
             "sampling_scope":"current_lab_review_queue_only",
-            "seed":SEED,"queue_count":len(rows),"eligible_count":len(eligible),
+            "seed":SEED,"sample_batch":SAMPLE_BATCH,"queue_count":len(rows),"eligible_count":len(eligible),
             "requested":5,"lab_writes":0,"lab_jobs_created":0,"identity_verified":False,
             "scientific_validation":False,"songs":[]}
     for item in picked:
@@ -151,7 +157,7 @@ def execute(*,rows=None,discover=discover_by_title,web_discover=matching_hits):
         # Search normalized title without treating the filename artist as authoritative.
         catalogue=discover(parsed["search_title"])
         comparison=compare_durations(catalogue,item["duration"])
-        web=(web_discover(parsed["search_title"],parsed["artist_hint"]) if rows_from_lab and not catalogue.get("candidates") else {"status":"not_run","queries":[],"candidates":[],"technical_errors":[]})
+        web=(web_discover(parsed["search_title"],parsed["artist_hint"]) if rows_from_lab else {"status":"not_run_fixture","queries":[],"candidates":[],"technical_errors":[]})
         candidates=[]
         for source,c in zip(catalogue.get("candidates",[]),comparison["candidates"]):
             candidates.append({"url":c["url"],"artist_candidates":source.get("artist_credit",[]),
