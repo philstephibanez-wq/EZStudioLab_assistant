@@ -14,13 +14,17 @@ class R38c(unittest.TestCase):
     def test_entire_catalogue_with_missing_analysis(self):
         with tempfile.TemporaryDirectory() as td:
             db=Path(td)/"catalog.sqlite"
-            with sqlite3.connect(db) as cx:
+            cx = sqlite3.connect(db)
+            try:
                 cx.execute("CREATE TABLE songs(id INTEGER PRIMARY KEY,title TEXT,artist TEXT)")
                 cx.execute("CREATE TABLE scientific_runs(id INTEGER PRIMARY KEY,song_id INTEGER,item TEXT,state TEXT)")
                 cx.executemany("INSERT INTO songs(id,title,artist) VALUES(?,?,?)",
                                [(i,"Song "+str(i),"") for i in range(1,24)])
                 cx.execute("INSERT INTO scientific_runs VALUES(15,1,'profile','done')")
                 cx.execute("INSERT INTO scientific_runs VALUES(16,1,'profile','done')")
+                cx.commit()
+            finally:
+                cx.close()
             before=db.read_bytes()
             data=module.inventory(db)
             self.assertEqual(data["total_songs"],23)
