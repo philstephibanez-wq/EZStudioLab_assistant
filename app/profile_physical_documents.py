@@ -107,6 +107,33 @@ def extract_printed_credit_candidates(text, track_title):
     return candidates[:12]
 
 
+
+def diagnose_ocr_text(text, track_title, candidates):
+    """Metadata-only review; never persist raw OCR content or infer personnel."""
+    import unicodedata
+    def normalize(value):
+        value=unicodedata.normalize("NFKD",str(value or "").casefold())
+        return re.sub(r"[^a-z0-9]+"," ","".join(c for c in value if not unicodedata.combining(c))).strip()
+    lines=[line.strip() for line in str(text or "").splitlines() if line.strip()]
+    title=normalize(track_title)
+    exact=sum(normalize(line)==title for line in lines) if title else 0
+    partial=sum(title in normalize(line) and normalize(line)!=title for line in lines) if len(title)>=5 else 0
+    if not lines:
+        reason="ocr_empty_text"
+    elif exact==0:
+        reason="exact_track_heading_absent"
+    elif exact>1:
+        reason="ambiguous_track_heading"
+    elif candidates:
+        reason="track_scoped_candidates_unverified"
+    else:
+        reason="no_supported_credit_lines_after_heading"
+    return {"characters":len(str(text or "")), "nonempty_lines":len(lines),
+            "exact_track_headings":exact, "partial_track_mentions":partial,
+            "candidate_count":len(candidates), "rejection_reason":reason,
+            "raw_text_persisted":False, "evidence_eligible":False}
+
+
 def inspect_scans_with_local_ocr(documents, track_title, *, max_scans=2):
     """Optional bounded OCR. Never caches scans; never asserts musical facts.
 
@@ -157,6 +184,7 @@ def inspect_scans_with_local_ocr(documents, track_title, *, max_scans=2):
                 text = completed.stdout.decode("utf-8", "replace")
             record["credit_candidates"] = extract_printed_credit_candidates(text, track_title)
             record["status"] = "candidates_unverified" if record["credit_candidates"] else "no_track_scoped_credits"
+            record["ocr_diagnostic"] = diagnose_ocr_text(text, track_title, record["credit_candidates"])
         except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
             record["status"] = type(exc).__name__
         scanned.append(record)
