@@ -72,5 +72,20 @@ class DocumentaryReturnContract(unittest.TestCase):
                          and isinstance(n.func,ast.Attribute) and n.func.attr=="submit_profile_review")
         self.assertLess(line_doc,line_submit)
 
+    def test_work_authorship_not_invented_and_source_linked(self):
+        reference="https://musicbrainz.org/recording/12345678-1234-1234-1234-123456789abc"
+        work_ref="https://musicbrainz.org/work/12345678-1234-1234-1234-123456789abd"
+        row={"normalized_identity":{"title":"Aline","artist":"Christophe"}}
+        source={"source":"MusicBrainz","available":True,"score":99,
+                "url":reference,"canonical_title":"Aline","canonical_artist":"Christophe",
+                "work_credits":[{"name":"Auteur identifié","field":"lyricists","scope":"work","source_url":work_ref},
+                                {"name":"Compositeur identifié","field":"composers","scope":"work","source_url":work_ref},
+                                {"name":"Arrangeur identifié","field":"arrangers","scope":"work","source_url":work_ref}]}
+        doc=enrich_review_payload_with_documentary({"comparison":{}},row,{"sources":[source]})["comparison"]["documentary_catalogue_suggestions"]
+        self.assertEqual(doc["work"]["lyricists"][0]["sources"],[work_ref])
+        self.assertEqual(doc["work"]["composers"][0]["value"],"Compositeur identifié")
+        self.assertEqual(doc["recording"]["arrangers"][0]["value"],"Arrangeur identifié")
+        self.assertFalse(doc["identity_verified"])
+
 if __name__=="__main__":
     unittest.main()
