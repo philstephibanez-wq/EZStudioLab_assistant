@@ -8,6 +8,7 @@ from difflib import SequenceMatcher
 from profile_final_verifier import final_assertions
 from profile_public_web import search, fetch_document
 from profile_live_evidence import evaluate_live_documents
+from profile_musicbrainz_structured import discover_recordings
 
 def _tokens(value):
     value=unicodedata.normalize("NFKD",str(value).casefold())
@@ -82,6 +83,7 @@ def research_assertions(assertions, identity, *, source_research=None):
         match=re.fullmatch(r"(.+?)\s*[-–—]\s+([^–—]+)",title)
         if match and match.group(1).strip() and match.group(2).strip():
             title,artist=match.group(1).strip(),match.group(2).strip()
+    structured=discover_recordings(title,artist)
     items=[]
     document_cache={}
     effective_identity={"title":title,"artist":artist}
@@ -160,6 +162,7 @@ def research_assertions(assertions, identity, *, source_research=None):
             "reason":"web_search_failed_for_all_items" if failed==len(items) and items else None,
             "technical_errors":failed,
             "unique_documents_fetched":len(document_cache),
+            "structured_recording_candidates":structured,
             "ocr_audit":ocr_audit,
             "searched":len(items),"items":items,
             "search_provider":"ddgs_native","automatic_verdicts":False}
