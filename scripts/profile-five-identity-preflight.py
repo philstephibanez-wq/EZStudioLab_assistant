@@ -63,8 +63,10 @@ def select_five(rows,number=5,seed=SEED,batch=0):
     eligible=sorted(by_song.values(),key=lambda item:item["song_id"])
     if len(eligible)<number:
         return eligible,[]
-    shuffled=eligible[:]
-    random.Random(seed).shuffle(shuffled)
+    original=random.Random(seed).sample(eligible,number)
+    remaining=[item for item in eligible if item["song_id"] not in {row["song_id"] for row in original}]
+    random.Random(seed+1).shuffle(remaining)
+    shuffled=original+remaining
     offset=(batch*number)%len(shuffled)
     return eligible,[shuffled[(offset+i)%len(shuffled)] for i in range(number)]
 
