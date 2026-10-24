@@ -103,6 +103,7 @@ def verify(payload):
             "scientific_verdict": reviews[key]["verdict"],
             "recording_identity_verified": False,
         }
+    result["structured_musicbrainz"] = investigation.get("structured_recording_candidates") or {"status":"not_available","candidates":[]}
     result["documentary_provenance"] = {
         "schema": "ezstudio.profile.documentary-provenance.v1",
         "distinct_source_count": len(source_registry),
