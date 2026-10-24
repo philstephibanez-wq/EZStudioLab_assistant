@@ -7,6 +7,7 @@ candidats MusicBrainz et relation de duree; jamais token/diagnostics/audio.
 """
 from __future__ import annotations
 import json
+import urllib.error
 import os
 import random
 import sys
@@ -65,7 +66,26 @@ def execute(*, fetch_queue=None, discover=discover_recordings):
             "X-EZScore-Analysis-Token":token,"Accept":"application/json"},method="GET")
         try:
             with urllib.request.urlopen(request,timeout=20) as response:
-                body=json.loads(response.read(5_000_000))
+                content_type=str(response.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+                raw=response.read(5_000_001)
+                http_status=response.status
+            if len(raw)>5_000_000:
+                return {"status":"lab_response_too_large","http_status":http_status,
+                        "lab_writes":0}
+            if content_type!="application/json" and not content_type.endswith("+json"):
+                return {"status":"lab_non_json_response","http_status":http_status,
+                        "content_type":content_type[:80],"response_bytes":len(raw),
+                        "lab_writes":0}
+            try:
+                body=json.loads(raw)
+            except (json.JSONDecodeError,UnicodeDecodeError):
+                return {"status":"lab_invalid_json","http_status":http_status,
+                        "content_type":content_type[:80],"response_bytes":len(raw),
+                        "lab_writes":0}
+        except urllib.error.HTTPError as exc:
+            return {"status":"lab_http_error","http_status":exc.code,
+                    "content_type":str(exc.headers.get("Content-Type") or "").split(";")[0][:80],
+                    "lab_writes":0}
         except Exception as exc:
             return {"status":"lab_read_failed","error_type":type(exc).__name__,"lab_writes":0}
     else:
