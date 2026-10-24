@@ -31,6 +31,41 @@ def _lab_duration(metrics):
             return value
     return None
 
+def exclusion_diagnostic(rows):
+    """Aggregate eligibility reasons without exposing values or private metrics."""
+    reasons={"not_completed":0,"invalid_identifiers":0,"missing_title_or_artist":0,
+             "missing_duration":0,"unrecognized_duration":0,"eligible_rows":0}
+    duration_keys={}
+    for row in rows:
+        if not isinstance(row,dict):
+            reasons["invalid_identifiers"]+=1
+            continue
+        if row.get("state")!="done":
+            reasons["not_completed"]+=1
+            continue
+        if type(row.get("run_id")) is not int or type(row.get("song_id")) is not int or row["run_id"]<=0 or row["song_id"]<=0:
+            reasons["invalid_identifiers"]+=1
+            continue
+        if not str(row.get("title") or "").strip() or not str(row.get("artist") or "").strip():
+            reasons["missing_title_or_artist"]+=1
+            continue
+        metrics=row.get("metrics")
+        if isinstance(metrics,dict):
+            for key in DURATION_KEYS:
+                if key in metrics:
+                    duration_keys[key]=duration_keys.get(key,0)+1
+        duration=_lab_duration(metrics)
+        if duration is None:
+            reasons["missing_duration"]+=1
+        elif not compare_durations({"candidates":[]},duration)["lab_duration_available"]:
+            reasons["unrecognized_duration"]+=1
+        else:
+            reasons["eligible_rows"]+=1
+    return {"exclusion_counts":reasons,"known_duration_fields_present":duration_keys,
+            "duration_metrics_type_counts":{
+                "object":sum(isinstance(r.get("metrics"),dict) for r in rows if isinstance(r,dict)),
+                "non_object":sum(not isinstance(r.get("metrics"),dict) for r in rows if isinstance(r,dict))}}
+
 def sample(rows, *, seed=20261024, number=5):
     # Highest run per song, fully completed, with identity and usable duration.
     by_song={}
@@ -101,12 +136,14 @@ def execute(*, fetch_queue=None, discover=discover_recordings):
     rows=[{k:row.get(k) for k in ("run_id","song_id","state","title","artist","metrics")}
           for row in body["reviews"] if isinstance(row,dict)]
     del body
+    diagnostic=exclusion_diagnostic(rows)
     picked=sample(rows)
     report={"schema":"ezstudio.profile.five-song-readonly.v1",
             "status":picked["status"],"sampling_scope":"completed_profiles_in_review_queue",
             "seed":20261024,"queue_count":len(rows),
             "queue_limit":20 if fetch_queue is None else None,
             "eligible_count":picked["eligible_count"],"requested":5,
+            "eligibility_diagnostic":diagnostic,
             "lab_writes":0,"lab_jobs_created":0,"identity_verified":False,
             "scientific_validation":False,"songs":[]}
     if picked["status"]!="selected":return report
