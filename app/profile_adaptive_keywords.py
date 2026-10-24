@@ -18,13 +18,12 @@ def queries(title,artist_hint=None):
         q=" ".join(words)
         if q and q not in proposals:
             proposals.append(q)
-    # Broad combinations are intentionally non-exact, never quoted.
-    if len(title_words)>1:
+    # Preserve distinctive title terms; combine with individual artist tokens.
+    if artist_words:
         for name in artist_words:
-            add(title_words[-2:]+[name])
+            add(title_words+[name])
     add(title_words)
     if artist_words:
-        add(title_words+artist_words[:1])
         add(title_words+artist_words)
     return proposals[:7]
 
@@ -33,7 +32,8 @@ def matching_hits(title,artist_hint=None,*,searcher=search,maximum=4):
     found=[]
     errors=[]
     seen=set()
-    for q in queries(title,artist_hint)[:maximum]:
+    query_plan=queries(title,artist_hint)[:maximum]
+    for q in query_plan:
         tried.append(q)
         try:
             hits=searcher(q,max_results=5)
@@ -55,8 +55,9 @@ def matching_hits(title,artist_hint=None,*,searcher=search,maximum=4):
                 "title_keyword_overlap":overlap,"artist_hint_matched":bool(
                     set(terms(artist_hint)).intersection(corpus)),
                 "identity_verified":False,"evidence_eligible":False})
-        if len(found)>=3:
-            break
+        # Do not stop on lexical matches: execute bounded complementary queries.
+    relevant=sum(1 for hit in found if hit["artist_hint_matched"])
     return {"status":"candidates_found" if found else "search_unavailable" if errors else "no_candidates",
+            "artist_hint_corrob_hits":relevant,"searches_attempted":len(tried),
             "queries":tried,"candidates":found[:8],"technical_errors":errors,
             "identity_verified":False,"advisory_only":True}
