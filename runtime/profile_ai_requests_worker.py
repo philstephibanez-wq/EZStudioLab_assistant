@@ -19,6 +19,7 @@ from profile_review import normalize_track_identity
 from profile_auto_review import (
     NetworkBudget, research_public_sources, build_review_payload,
     _run_ai_profile_review, enrich_review_payload_with_ai,
+    enrich_review_payload_with_documentary,
 )
 from ai_provider import build_ai_provider_from_env
 from profile_trace import Trace, activate, enabled, emit, snap, purge
@@ -142,6 +143,7 @@ def process(run_id, client):
         },
         'coverage': {'independent_verification': True}
     }
+    payload = enrich_review_payload_with_documentary(payload, row, research)
     payload = enrich_review_payload_with_ai(payload, ai)
     payload.setdefault('comparison', {})['final_verification'] = verification
     payload.setdefault('consensus', {})['final_verification_summary'] = {
@@ -154,7 +156,9 @@ def process(run_id, client):
     payload['status'] = 'draft'
     payload['reviewer'] = 'assistant-lab-ui-qwen'
     digest = hashlib.sha256(json.dumps(
-        {'ai': ai, 'verification': verification, 'run_id': run_id}, sort_keys=True, ensure_ascii=True
+        {'ai': ai, 'verification': verification,
+         'documentary': payload.get('comparison', {}).get('documentary_catalogue_suggestions'),
+         'run_id': run_id}, sort_keys=True, ensure_ascii=True
     ).encode('utf-8')).hexdigest()[:20]
     payload['revision_key'] = 'profile-ui-qwen-' + str(run_id) + '-' + digest
     snap('lab.submit.request', payload)
