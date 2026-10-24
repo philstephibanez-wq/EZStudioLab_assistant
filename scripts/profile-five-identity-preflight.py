@@ -17,6 +17,7 @@ from profile_recording_reconciliation import compare_durations
 from profile_musicbrainz_structured import discover_recordings
 from profile_adaptive_keywords import matching_hits
 from profile_documentary_reconcile import reconcile
+from profile_catalogue_suggestions import build_catalogue_suggestions
 
 BASE=os.getenv("EZSTUDIOLAB_ASSISTANT_BASE_URL","http://EZSTUDIO-MAIN:8702").rstrip("/")
 MAX_BYTES=32_000_000
@@ -174,6 +175,7 @@ def execute(*,rows=None,discover=discover_by_title,web_discover=matching_hits):
                                "duration_relation":c["duration_relation"],
                                "duration_difference_seconds":c["difference_seconds"],
                                "identity_verified":False})
+        reconciled=reconcile(parsed["search_title"],parsed["artist_hint"],web,candidates)
         report["songs"].append({"run_id":item["run_id"],"song_id":item["song_id"],
                                 "title":item["title"],"catalogue_artist":item["catalogue_artist"] or None,
                                 "search_title":parsed["search_title"],
@@ -182,7 +184,8 @@ def execute(*,rows=None,discover=discover_by_title,web_discover=matching_hits):
                                 "documentary_status":catalogue.get("status"),
                                 "recording_candidates":candidates,
                                 "web_keyword_research":web,
-                                "documentary_reconciliation":reconcile(parsed["search_title"],parsed["artist_hint"],web,candidates),
+                                "documentary_reconciliation":reconciled,
+                                "catalogue_suggestions":build_catalogue_suggestions(parsed["search_title"],parsed["artist_hint"],reconciled),
                                 "identity_verified":False,"lab_duration_available":True})
     if picked:
         report["status"]="documentary_candidates_only"
