@@ -10,6 +10,7 @@ sys.path.insert(0, str(ROOT / "app"))
 
 from profile_assertions_contract import ITEMS, build_assertions, validate_verdicts
 from profile_web_investigator import research_assertions
+from profile_recording_reconciliation import compare_durations
 from profile_document_consultation import consult
 from profile_tesseract_runtime import booklet_ocr_enabled
 from profile_physical_documents import inspect_scans_with_local_ocr, _safe_url
@@ -104,6 +105,7 @@ def verify(payload):
             "recording_identity_verified": False,
         }
     result["structured_musicbrainz"] = investigation.get("structured_recording_candidates") or {"status":"not_available","candidates":[]}
+    result["recording_reconciliation"] = compare_durations(result["structured_musicbrainz"], request["items"]["duree"])
     result["documentary_provenance"] = {
         "schema": "ezstudio.profile.documentary-provenance.v1",
         "distinct_source_count": len(source_registry),
