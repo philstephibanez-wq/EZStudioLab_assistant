@@ -17,6 +17,8 @@ RELEASE="076b6a39-4dcf-4a51-9daa-a0cc6d048c53"
 TRACK="Breakfast in America"
 class PublicHTTP:
     request_count=0
+    last_error=None
+    last_http_status=None
     class budget:
         max_requests_per_item=2
     def get_json(self,url,retries=0):
@@ -24,8 +26,14 @@ class PublicHTTP:
             raise ValueError("unexpected_url")
         self.request_count+=1
         req=urllib.request.Request(url,headers={"User-Agent":"EZStudioLab_assistant/1.6 (public research)"})
-        with urllib.request.urlopen(req,timeout=12) as response:
-            return json.loads(response.read(1_000_000))
+        try:
+            with urllib.request.urlopen(req,timeout=12) as response:
+                self.last_http_status=response.status
+                return json.loads(response.read(1_000_000))
+        except Exception as exc:
+            self.last_error=type(exc).__name__
+            self.last_http_status=getattr(exc,"code",None)
+            raise
 
 def run(*, start=0, max_pages=2):
     start_time=time.monotonic()
@@ -41,13 +49,16 @@ def run(*, start=0, max_pages=2):
               {"source":"Cover Art Archive","purpose":"printed booklet credits","verification":"ocr_candidates_only"}],
             "page_offset":start,"max_pages":max_pages}
     try:
-        docs=discover_release_documents(PublicHTTP(),[RELEASE])
+        http=PublicHTTP()
+        docs=discover_release_documents(http,[RELEASE])
+        report["discovery"]={"requests":http.request_count,
+            "http_status":http.last_http_status,"error_type":http.last_error}
         booklets=[d for d in docs if "booklet" in d.get("types",[])]
         report["scans_discovered"]=len(booklets)
         if not booklet_ocr_enabled():
             report["ocr_status"]="disabled"
         elif not booklets:
-            report["ocr_status"]="no_booklet_found"
+            report["ocr_status"]="source_fetch_failed" if http.last_error else "no_booklet_found"
         else:
             scans=[]
             selected=booklets[max(0,start):max(0,start)+max(0,min(max_pages,12))]
