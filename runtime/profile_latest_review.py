@@ -37,6 +37,7 @@ def main():
           "status":item.get("review_status"),
           "identity_declared":item.get("identity_declared"),
           "items":item.get("items") or [],
+          "documentary_catalogue_suggestions": (item.get("comparison") or {}).get("documentary_catalogue_suggestions") if isinstance(item.get("comparison"),dict) else item.get("documentary_catalogue_suggestions"),
           "recording_identity_confirmed":bool(item.get("identity_confirmed"))},
           ensure_ascii=True, allow_nan=False))
     except Exception as exc:
