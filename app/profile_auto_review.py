@@ -911,6 +911,43 @@ def build_review_payload(row: dict[str, Any], research: dict[str, Any], *, min_c
     }
 
 
+def enrich_review_payload_with_documentary(payload: dict[str, Any], row: dict[str, Any], research: dict[str, Any]) -> dict[str, Any]:
+    """Add advisory work/recording metadata to the existing LAB comparison JSON.
+
+    Uses only already consulted identity-relevant sources. Unknown credits remain unknown.
+    """
+    from profile_catalogue_suggestions import build_catalogue_suggestions
+    from profile_documentary_reconcile import reconcile
+
+    identity = row.get("normalized_identity") or normalize_track_identity(row)
+    title = _compact(identity.get("title"))
+    artist = _compact(identity.get("artist"))
+    candidates = []
+    for source in research.get("sources") or []:
+        if not isinstance(source, dict) or not source.get("available"):
+            continue
+        if not _source_matches_identity(source, title, artist):
+            continue
+        if source.get("source") == "MusicBrainz":
+            credited = _compact(source.get("canonical_artist"))
+            if credited:
+                candidates.append({"artist_candidates": [credited]})
+    # No snippet-based assertion if the normal workflow did not perform such search.
+    documentary = reconcile(title, artist, {"candidates": []}, candidates)
+    suggestions = build_catalogue_suggestions(title, artist, documentary)
+    urls = sorted({x.get("url") for x in (research.get("sources") or [])
+                   if isinstance(x, dict) and x.get("available") and
+                   _source_matches_identity(x, title, artist) and
+                   isinstance(x.get("url"), str) and x["url"].startswith("https://")})
+    suggestions["consulted_identity_sources"] = urls
+    suggestions["workflow"] = "profile_auto_review"
+    result = dict(payload)
+    comparison = dict(result.get("comparison") or {})
+    comparison["documentary_catalogue_suggestions"] = suggestions
+    result["comparison"] = comparison
+    return result
+
+
 def enrich_review_payload_with_ai(
     payload: dict[str, Any],
     ai_review: dict[str, Any],
@@ -1075,6 +1112,7 @@ def auto_review_once(
     identity = selected.get("normalized_identity") or normalize_track_identity(selected)
     research = research_public_sources(identity, budget or NetworkBudget())
     payload = build_review_payload(selected, research, min_confidence=min_confidence)
+    payload = enrich_review_payload_with_documentary(payload, selected, research)
     resolved_ai = ai_provider or build_ai_provider_from_env()
     ai_review = _run_ai_profile_review(resolved_ai, selected, research)
     payload = enrich_review_payload_with_ai(payload, ai_review)
@@ -1159,6 +1197,7 @@ def auto_review_sweep(
         budget = budget_factory() if callable(budget_factory) else NetworkBudget()
         research = research_public_sources(identity, budget)
         payload = build_review_payload(row, research, min_confidence=min_confidence)
+        payload = enrich_review_payload_with_documentary(payload, row, research)
         ai_review = _run_ai_profile_review(resolved_ai, row, research)
         payload = enrich_review_payload_with_ai(payload, ai_review)
 
