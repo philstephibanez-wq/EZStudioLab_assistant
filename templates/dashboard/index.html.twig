@@ -12,7 +12,7 @@
   <div class="card"><div class="label">Base Assistant</div><div class="value">Aucune</div></div>
 </div>
 <div class="card" style="margin-top:14px">
-  <div class="label">Vérification PROFILE · sources indépendantes</div>
+  <div class="label">Dernière trace locale PROFILE · historique, non liée au job sélectionné</div>
   <div id="consultation-state" class="value">Aucun traitement observé</div>
   <div id="consultation-detail">—</div>
   <progress id="consultation-progress" max="4" value="0" style="width:100%"></progress>
@@ -114,8 +114,8 @@
 
     var c=s.profile_consultation||{};
     var name={not_started:'Non démarré',in_progress:'En cours',completed:'Terminé',error:'Échec',unavailable:'Indisponible'};
-    $('#consultation-state').text(name[c.state]||'État inconnu');
-    $('#consultation-detail').text(c.run_id ? ('Run #'+c.run_id+' · '+(c.stage||'—')+' · '+(c.completed||0)+' / '+(c.total||4)+' étapes'+(c.verified_count===null||c.verified_count===undefined?'':' · '+c.verified_count+' valeurs examinées · '+(c.evidence_count||0)+' justifiées')+(c.revision?' · révision #'+c.revision:'')) : 'Aucune vérification indépendante locale');
+    $('#consultation-state').text('Historique local : '+(name[c.state]||'État inconnu'));
+    $('#consultation-detail').text(c.run_id ? ('ANCIENNE TRACE — PAS LE JOB COURANT · Run #'+c.run_id+' · '+(c.stage||'—')+' · '+(c.completed||0)+' / '+(c.total||4)+' étapes'+(c.verified_count===null||c.verified_count===undefined?'':' · '+c.verified_count+' valeurs examinées · '+(c.evidence_count||0)+' justifiées')+(c.revision?' · révision #'+c.revision:'')) : 'Aucune trace de vérification indépendante locale');
     $('#consultation-progress').attr('max',c.total||4).val(c.completed||0);
 
   }).fail(function(xhr){
