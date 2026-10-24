@@ -29,24 +29,31 @@ def _similar(a, b):
         remaining.remove(max(choices, key=lambda s: SequenceMatcher(None, token, s).ratio()))
     return not remaining
 
+_PLATFORMS = re.compile(r'(?:YouTube|Wikipedia|Genius|Vimeo|Paroles\\.net|AZLyrics|Lyrics at|Archive INA|YouTube Music)', re.I)
+_NOISE = re.compile(r'^(?:genius lyrics|youtube|wikipedia|lyrics|paroles|audio|video|official|music video|clip officiel|french lyrics|english translation|the lyrics|archive ina|les paroles de la chanson|paroles\\.net|lyrics at)\\b', re.I)
+
 def _artist_from_hit(title, hit_title):
-    """Extract possible performer names from bounded search headlines, never verified evidence."""
+    """Extract bounded headline artist suggestions; malformed aggregates are not evidence."""
     headline = str(hit_title or '')[:180]
-    title_tokens = set(terms(title))
-    chunks = [headline]
-    chunks += re.split(r'\s+(?:-|–|—|~|\|)\s+', headline)
-    chunks += re.split(r'\s*[:|]\s*', headline)
+    # Aggregated search headlines frequently concatenate multiple unrelated results.
+    # Keep the first source segment and never create artists from platform labels.
+    headline = _PLATFORMS.split(headline, maxsplit=1)[0].strip()
+    title_terms = set(terms(title))
+    chunks = re.split(r'\\s+(?:-|–|—|~|\\|)\\s+', headline)
     candidates = []
     for chunk in chunks:
-        chunk = re.sub(r'\s*\([^)]*(?:official|video|audio|lyrics|clip|live)[^)]*\).*$', '', chunk, flags=re.I).strip()
-        chunk = re.sub(r'\s*\[[^]]*\]\s*$', '', chunk).strip()
+        chunk = re.sub(r'\\s*\\([^)]*(?:official|video|audio|lyrics|clip|live)[^)]*\\).*$', '', chunk, flags=re.I).strip()
+        chunk = re.sub(r'\\s*\\[[^]]*\\]\\s*$', '', chunk).strip(' -–—:|')
+        if not chunk or _NOISE.search(chunk):
+            continue
         words = terms(chunk)
-        if not words or len(words) > 6 or set(words).intersection(title_tokens):
+        if not (1 <= len(words) <= 4) or set(words).intersection(title_terms):
             continue
-        if chunk.casefold() in ('wikipedia', 'youtube', 'genius', 'lyrics', 'official video', 'audio', 'music video'):
+        if re.search(r'\\b(?:lyrics|video|audio|official|meaning|history|song|translation|paroles)\\b', chunk, re.I):
             continue
-        candidates.append(chunk)
-    return list(dict.fromkeys(candidates))[:5]
+        if chunk not in candidates:
+            candidates.append(chunk)
+    return candidates[:5]
 
 def reconcile(title, artist_hint, web, recordings):
     evidence = []
