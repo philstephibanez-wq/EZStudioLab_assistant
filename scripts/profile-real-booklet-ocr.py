@@ -50,6 +50,7 @@ def run():
             report["scan_results"]=[{"status":s.get("status"),
                 "document_url":s.get("document_url"),
                 "credit_candidates":s.get("credit_candidates",[]),
+                "ocr_diagnostic":s.get("ocr_diagnostic"),
                 "evidence_eligible":False} for s in result["scans"]]
     except Exception as exc:
         report["ocr_status"]="error"
