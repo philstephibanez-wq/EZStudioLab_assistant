@@ -84,7 +84,11 @@ def parse_filename_identity(raw):
         else:
             annotations.append(part)
     if artist:
-        artist=re.sub(r"\s*\([A-Z]\)\s*$","",artist).strip()
+        artist_year=re.search(r"\\s*\\((?:19|20)\\d{2}\\)\\s*$",artist)
+        if artist_year:
+            annotations.append(artist_year.group().strip())
+            artist=artist[:artist_year.start()].strip()
+        artist=re.sub(r"\\s*\\([A-Z]\\)\\s*$","",artist).strip()
     return {"search_title":first,"artist_hint":artist or None,"annotations":annotations}
 
 def discover_by_title(title,*,transport=None):
