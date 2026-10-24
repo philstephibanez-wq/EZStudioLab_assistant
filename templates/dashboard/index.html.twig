@@ -19,8 +19,8 @@
   <div class="label">Progression du traitement, pas taux de justesse · aucune validation scientifique implicite</div>
 </div>
 <section class="card" style="margin-top:14px" aria-labelledby="lab-review-title">
-  <h2 id="lab-review-title">Contre-expertise des items PROFILE · résultats LAB</h2>
-  <p>Dernière révision documentaire réellement enregistrée dans LAB. Le titre et l'interprète déclarés peuvent être erronés ; l'enregistrement exact reste à confirmer.</p>
+  <h2 id="lab-review-title">Historique des contre-expertises PROFILE · résultats LAB</h2>
+  <p id="lab-review-explanation">Historique LAB : cette révision peut concerner une autre chanson. Elle n'est jamais présentée comme le résultat du job en cours. Pour demander une révision déterminée, utiliser ?run_id=NUMERO dans l'URL.</p>
   <div id="lab-review-state" role="status">Chargement…</div>
   <div id="lab-review-results"></div>
   <button type="button" id="lab-review-refresh">Actualiser les résultats LAB</button>
@@ -38,15 +38,22 @@
         return node;
     }
     function refresh(){
-        state.textContent='Lecture de la dernière révision LAB…';
-        fetch('/api/profile/latest-review',{cache:'no-store'})
+        var selection=new URLSearchParams(window.location.search);
+        var run=selection.get('run_id');
+        var scoped=run!==null && /^[1-9][0-9]*$/.test(run);
+        state.textContent=scoped?'Lecture de la révision LAB du run #'+run+'…':'Lecture de la dernière révision historique LAB (non liée au job actuel)…';
+        fetch('/api/profile/latest-review'+(scoped?'?run_id='+encodeURIComponent(run):''),{cache:'no-store'})
             .then(function(response){return response.json();})
             .then(function(data){
                 output.replaceChildren();
                 if(!data.ok){state.textContent='Erreur technique : '+(data.error||'LAB inaccessible')+(data.reason?' · '+data.reason:'');return;}
-                if(data.state!=='available'){state.textContent='Aucune contre-expertise persistée dans LAB.';return;}
+                if(data.state!=='available'){state.textContent=scoped?'Aucune révision pour le run #'+run+'.':'Aucune contre-expertise persistée dans LAB.';return;}
+                if(scoped && String(data.run_id)!==String(run)) {
+                    state.textContent='Réponse LAB non conforme : révision d’un autre run. Affichage bloqué.';
+                    return;
+                }
                 var declared=data.identity_declared||{};
-                state.textContent='Analyse #'+(data.analysis_reference||data.run_id)+' · Preset #'+(data.preset_reference||'non renseigné')+' · Révision #'+data.revision_id+' · '+data.status+
+                state.textContent=(scoped?'Révision du run demandé #'+run+' · ':'HISTORIQUE LAB — PAS LE JOB COURANT · ')+'Analyse #'+(data.analysis_reference||data.run_id)+' · Preset #'+(data.preset_reference||'non renseigné')+' · Révision #'+data.revision_id+' · '+data.status+
                     ' · Identité déclarée : '+(declared.title||'?')+' — '+(declared.artist||'?')+
                     ' · Correspondance de l’enregistrement non confirmée';
                 var labels={'duration':'Durée','tempo':'Tempo','meter':'Mesure','key':'Tonalité',
