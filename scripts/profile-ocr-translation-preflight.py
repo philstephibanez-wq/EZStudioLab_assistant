@@ -48,10 +48,14 @@ def check_ocr():
                     "--tessdata-dir",state["tessdata_dir"],"--psm","7"],
                     capture_output=True,timeout=20,check=False)
         recognized=done.stdout.decode("utf-8","replace").strip()
-        stderr=done.stderr.decode("utf-8","replace").strip()\n        status=("execution_failed" if done.returncode != 0 else\n                "recognized" if "TEST" in recognized.upper() else "recognition_mismatch")\n        return {"status":status,
+        stderr=done.stderr.decode("utf-8","replace").strip()
+        status=("execution_failed" if done.returncode != 0 else
+                "recognized" if "TEST" in recognized.upper() else "recognition_mismatch")
+        return {"status":status,
                 "executed":True,"exit_code":done.returncode,
                 "expected":"TEST","recognized":recognized[:80],
-                "model":"eng","fixture":"synthetic_bitmap",\n                "stderr_excerpt":stderr[:360] if done.returncode else ""}
+                "model":"eng","fixture":"synthetic_bitmap",
+                "stderr_excerpt":stderr[:360] if done.returncode else ""}
     except (OSError,subprocess.TimeoutExpired) as exc:
         return {"status":"execution_error","reason":type(exc).__name__,"executed":False}
 
