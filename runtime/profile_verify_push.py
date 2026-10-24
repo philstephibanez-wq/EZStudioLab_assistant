@@ -12,6 +12,7 @@ from profile_assertions_contract import ITEMS, build_assertions, validate_verdic
 from profile_web_investigator import research_assertions
 from profile_document_consultation import consult
 from profile_tesseract_runtime import booklet_ocr_enabled
+from profile_physical_documents import inspect_scans_with_local_ocr, _safe_url
 from web_status import DEFAULT_TOKEN_FILE, _read_dpapi_token
 
 WEB_KEYS = dict(zip(ITEMS, (
@@ -72,6 +73,36 @@ def verify(payload):
         "technical_errors": investigation.get("technical_errors", 0),
     }
     validate_verdicts(request, result)
+    # Only opt-in release scans supplied by the trusted caller are eligible.
+    # Never infer release/recording identity from a cover or an OCR line.
+    candidate_documents = payload.get("release_documents")
+    approved_documents = []
+    if isinstance(candidate_documents, list):
+        for document in candidate_documents[:2]:
+            if not isinstance(document, dict):
+                continue
+            url = _safe_url(document.get("document_url"))
+            if url:
+                approved_documents.append({
+                    "document_url": url,
+                    "release_id": str(document.get("release_id") or "")[:80],
+                })
+    if approved_documents:
+        ocr = inspect_scans_with_local_ocr(approved_documents, request["title"], max_scans=2)
+    else:
+        ocr = {"status": "not_executed_no_scan_supplied", "scans": []}
+    result["ocr_consultation"] = {
+        "status": ocr.get("status"),
+        "scans": [
+            {"document_url": scan.get("document_url"),
+             "status": scan.get("status"),
+             "release_id": scan.get("release_id"),
+             "credit_candidates": scan.get("credit_candidates", []),
+             "evidence_eligible": False}
+            for scan in ocr.get("scans", []) if isinstance(scan, dict)
+        ],
+        "advisory_only": True,
+    }
     # Evidence and verdicts are finalized before advisory AI is consulted.
     result["ai_consultation"] = consult(
         {"title":request["title"],"artist":request["artist"]}, reviews)
@@ -80,7 +111,7 @@ def verify(payload):
         result["technical_errors"] += 1
     result["tool_audit"] = {
         "qwen":result["ai_consultation"]["status"],
-        "ocr":"not_executed_no_scan_supplied",
+        "ocr":result["ocr_consultation"]["status"],
         "ocr_enabled":booklet_ocr_enabled(),
         "translation":"qwen_advisory_notes_only",
         "document_search":investigation.get("status"),
