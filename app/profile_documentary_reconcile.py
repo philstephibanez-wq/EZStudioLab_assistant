@@ -29,8 +29,8 @@ def _similar(a, b):
         remaining.remove(max(choices, key=lambda s: SequenceMatcher(None, token, s).ratio()))
     return not remaining
 
-_PLATFORMS = re.compile(r'(?:YouTube|Wikipedia|Genius|Vimeo|Paroles\\.net|AZLyrics|Lyrics at|Archive INA|YouTube Music)', re.I)
-_NOISE = re.compile(r'^(?:genius lyrics|youtube|wikipedia|lyrics|paroles|audio|video|official|music video|clip officiel|french lyrics|english translation|the lyrics|archive ina|les paroles de la chanson|paroles\\.net|lyrics at)\\b', re.I)
+_PLATFORMS = re.compile(r'(?:YouTube|Wikipedia|Genius|Vimeo|Paroles\.net|AZLyrics|Lyrics at|Archive INA|YouTube Music)', re.I)
+_NOISE = re.compile(r'^(?:genius lyrics|youtube|wikipedia|lyrics|paroles|audio|video|official|music video|clip officiel|french lyrics|english translation|the lyrics|archive ina|les paroles de la chanson|paroles\.net|lyrics at)\b', re.I)
 
 def _artist_from_hit(title, hit_title):
     """Extract bounded headline artist suggestions; malformed aggregates are not evidence."""
@@ -39,17 +39,17 @@ def _artist_from_hit(title, hit_title):
     # Keep the first source segment and never create artists from platform labels.
     headline = _PLATFORMS.split(headline, maxsplit=1)[0].strip()
     title_terms = set(terms(title))
-    chunks = re.split(r'\\s+(?:-|–|—|~|\\|)\\s+', headline)
+    chunks = re.split(r'\s+(?:-|–|—|~|\|)\s+', headline)
     candidates = []
     for chunk in chunks:
-        chunk = re.sub(r'\\s*\\([^)]*(?:official|video|audio|lyrics|clip|live)[^)]*\\).*$', '', chunk, flags=re.I).strip()
-        chunk = re.sub(r'\\s*\\[[^]]*\\]\\s*$', '', chunk).strip(' -–—:|')
+        chunk = re.sub(r'\s*\([^)]*(?:official|video|audio|lyrics|clip|live)[^)]*\).*$', '', chunk, flags=re.I).strip()
+        chunk = re.sub(r'\s*\[[^]]*\]\s*$', '', chunk).strip(' -–—:|')
         if not chunk or _NOISE.search(chunk):
             continue
         words = terms(chunk)
         if not (1 <= len(words) <= 4) or set(words).intersection(title_terms):
             continue
-        if re.search(r'\\b(?:lyrics|video|audio|official|meaning|history|song|translation|paroles)\\b', chunk, re.I):
+        if re.search(r'\b(?:lyrics|video|audio|official|meaning|history|song|translation|paroles)\b', chunk, re.I):
             continue
         if chunk not in candidates:
             candidates.append(chunk)
