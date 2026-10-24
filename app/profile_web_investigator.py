@@ -28,6 +28,23 @@ def _is_song_related(hit, title, artist):
             return False
     return True
 
+
+def _source_priority(hit):
+    """Rank discovery URLs, never certify the exact recording."""
+    from urllib.parse import urlsplit
+    try:
+        host=(urlsplit(hit.get("url") or "").hostname or "").lower()
+    except ValueError:
+        host=""
+    if host=="musicbrainz.org":
+        return (0,"musicbrainz_recording_or_release_candidate")
+    if host in ("discogs.com","www.discogs.com"):
+        return (1,"discogs_release_candidate")
+    if host=="coverartarchive.org" or host.endswith(".archive.org"):
+        return (2,"printed_document_candidate")
+    return (3,"general_web_candidate")
+
+
 TERMS={"duration":"track duration length minutes seconds","tempo":"BPM tempo","meter":"time signature meter","key":"musical key tonality","genre":"genre style","lead_vocal":"lead vocals singer","backing_vocals":"backing vocals","choir":"choir choral vocals","vocal_harmonies":"vocal harmonies"}
 
 def research_each_assertion(row, identity, *, source_research=None, **unused):
@@ -76,6 +93,10 @@ def research_assertions(assertions, identity, *, source_research=None):
         try:
             base_hits=[h for h in search(artist+" "+title+" song BPM key credits instruments",max_results=12)
                        if _is_song_related(h,title,artist)]
+            # Dedicated credit query reduces dependence on generic SEO results.
+            more=search(artist+" "+title+" musicbrainz recording credits",max_results=8)
+            base_hits=sorted(base_hits+[h for h in more if _is_song_related(h,title,artist)],
+                             key=lambda h:_source_priority(h)[0])
         except Exception as exc:
             base_error=type(exc).__name__+":"+str(exc)[:120]
     for assertion in assertions:
@@ -95,7 +116,7 @@ def research_assertions(assertions, identity, *, source_research=None):
             except Exception as exc:
                 specific_hits=[]
                 item["specific_search_error"]=type(exc).__name__+":"+str(exc)[:120]
-            hits=base_hits+specific_hits
+            hits=sorted(base_hits+specific_hits,key=lambda h:_source_priority(h)[0])
             item["search_hits"]=len(hits)
             if base_error:item["base_search_error"]=base_error
             seen_urls=set()
@@ -105,7 +126,10 @@ def research_assertions(assertions, identity, *, source_research=None):
                 url=hit.get("url")
                 if not url or url in seen_urls:continue
                 seen_urls.add(url)
+                priority,source_scope=_source_priority(hit)
                 doc={"url":url,"title":hit.get("title"),"snippet":hit.get("snippet"),
+                     "discovery_priority":priority,"source_scope":source_scope,
+                     "recording_identity_verified":False,
                      "status":"unread"}
                 try:
                     if url not in document_cache:
