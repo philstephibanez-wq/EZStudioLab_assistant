@@ -36,6 +36,7 @@ def consult(identity, reviews, *, transport=None):
     raw=json.dumps(body,ensure_ascii=True).encode("ascii")
     request=urllib.request.Request(ENDPOINT+"/v1/chat/completions",data=raw,
                 headers={"Content-Type":"application/json"},method="POST")
+    diagnostic={"finish_reason":None,"content_chars":0,"json_parse":"not_attempted"}
     try:
         if transport is None:
             with urllib.request.urlopen(request,timeout=45) as response:
@@ -43,18 +44,22 @@ def consult(identity, reviews, *, transport=None):
         else:
             output=transport(request)
         choice=output["choices"][0]
+        diagnostic["finish_reason"]=str(choice.get("finish_reason") or "missing")[:24]
         if choice.get("finish_reason")=="length":
             raise ValueError("generation_truncated")
         content=str(choice["message"].get("content") or "").strip()
+        diagnostic["content_chars"]=len(content)
         if not content:
             raise ValueError("empty_advisory")
         try:
             message=json.loads(content)
+            diagnostic["json_parse"]="valid"
         except json.JSONDecodeError:
             fenced=re.fullmatch(r"```(?:json)?\s*(\{.*\})\s*```",content,re.I|re.S)
             if not fenced:
                 raise ValueError("invalid_json_advisory")
             message=json.loads(fenced.group(1))
+            diagnostic["json_parse"]="fenced_valid"
         if not isinstance(message,dict):
             raise ValueError("invalid_advisory_object")
         raw_status=message.get("status")
@@ -84,7 +89,12 @@ def consult(identity, reviews, *, transport=None):
                 "summary":summary[:2000],
                 "uncertainty":uncertainty[:1000],
                 "translation_notes":[str(x)[:400] for x in notes[:8]],
-                "advisory_only":True,"promotes_verdict":False,"raw_status":raw_status}
+                "advisory_only":True,"promotes_verdict":False,"raw_status":raw_status,
+                "diagnostic":diagnostic}
     except Exception as exc:
-        return {"status":"error","reason":type(exc).__name__,"advisory_only":True,
-                "promotes_verdict":False}
+        code=str(exc) if isinstance(exc,ValueError) and str(exc) in (
+            "generation_truncated","empty_advisory","invalid_json_advisory",
+            "invalid_advisory_object","invalid_advisory_status",
+            "empty_advisory_fields") else type(exc).__name__
+        return {"status":"error","reason":type(exc).__name__,"error_code":code,
+                "diagnostic":diagnostic,"advisory_only":True,"promotes_verdict":False}
