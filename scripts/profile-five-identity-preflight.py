@@ -64,27 +64,27 @@ def select_five(rows,number=5,seed=SEED):
 def parse_filename_identity(raw):
     """Conservative interpretation of filename labels; never identity evidence."""
     original=" ".join(str(raw or "").split())
-    parts=[p.strip() for p in re.split(r"\\s+-\\s+",original) if p.strip()]
+    parts=[p.strip() for p in re.split(r"\s+-\s+",original) if p.strip()]
     if not parts:
         return {"search_title":"","artist_hint":None,"annotations":[]}
     first=parts[0]
-    year=re.search(r"\\s*\\((?:19|20)\\d{2}\\)\\s*$",first)
+    year=re.search(r"\s*\((?:19|20)\d{2}\)\s*$",first)
     annotations=[]
     if year:
         annotations.append(year.group().strip())
         first=first[:year.start()].strip()
     artist=None
     for part in parts[1:]:
-        if re.fullmatch(r"\\d{2,3}\\s*bpm",part,re.I) or re.fullmatch(r"[A-G](?:#|b)?(?:maj|min|m)?",part,re.I):
+        if re.fullmatch(r"\d{2,3}\s*bpm",part,re.I) or re.fullmatch(r"[A-G](?:#|b)?(?:maj|min|m)?",part,re.I):
             annotations.append(part)
-        elif re.fullmatch(r"\\((?:19|20)\\d{2}\\)",part):
+        elif re.fullmatch(r"\((?:19|20)\d{2}\)",part):
             annotations.append(part)
         elif artist is None:
             artist=part
         else:
             annotations.append(part)
     if artist:
-        artist=re.sub(r"\\s*\\([A-Z]\\)\\s*$","",artist).strip()
+        artist=re.sub(r"\s*\([A-Z]\)\s*$","",artist).strip()
     return {"search_title":first,"artist_hint":artist or None,"annotations":annotations}
 
 def discover_by_title(title,*,transport=None):
