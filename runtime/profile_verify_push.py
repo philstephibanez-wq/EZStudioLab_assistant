@@ -73,6 +73,45 @@ def verify(payload):
         "technical_errors": investigation.get("technical_errors", 0),
     }
     validate_verdicts(request, result)
+    # Documentary provenance, not scientific evidence. No raw page text stored.
+    source_registry = {}
+    item_provenance = {}
+    for key in ITEMS:
+        investigation_row = by_key.get(WEB_KEYS[key], {})
+        sources = []
+        for document in (investigation_row.get("documents") or []):
+            if not isinstance(document, dict):
+                continue
+            url = document.get("url")
+            if not isinstance(url, str) or not url.startswith("https://"):
+                continue
+            status = str(document.get("status") or "unread")
+            scope = str(document.get("source_scope") or "unknown_candidate")
+            priority = document.get("discovery_priority")
+            entry = {"url": url, "read_status": status, "source_scope": scope,
+                     "discovery_priority": priority,
+                     "recording_identity_verified": False,
+                     "evidence_eligible": False}
+            if url not in source_registry:
+                source_registry[url] = dict(entry)
+            if all(other["url"] != url for other in sources):
+                sources.append(entry)
+        item_provenance[key] = {
+            "candidate_sources": sources[:25],
+            "candidate_count": len(sources),
+            "explicit_reference_count": len(reviews[key]["references"]),
+            "scientific_verdict": reviews[key]["verdict"],
+            "recording_identity_verified": False,
+        }
+    result["documentary_provenance"] = {
+        "schema": "ezstudio.profile.documentary-provenance.v1",
+        "distinct_source_count": len(source_registry),
+        "readable_distinct_count": sum(
+            1 for x in source_registry.values() if x["read_status"] == "read"),
+        "items": item_provenance,
+        "recording_identity_verified": False,
+        "advisory_only": True,
+    }
     # Only opt-in release scans supplied by the trusted caller are eligible.
     # Never infer release/recording identity from a cover or an OCR line.
     candidate_documents = payload.get("release_documents")
