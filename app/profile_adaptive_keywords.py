@@ -22,7 +22,7 @@ def queries(title,artist_hint=None):
     if artist_words:
         for name in artist_words:
             add(title_words+[name])
-    if len(title_words)>2 and title_words[0] in {"javais","j","i"}:
+    if len(title_words)>2 and len(title_words[0])>=2:
         for name in artist_words:
             add(title_words[1:]+[name])
     add(title_words)
