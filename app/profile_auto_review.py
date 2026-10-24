@@ -981,7 +981,8 @@ def enrich_review_payload_with_ai(
     if ai_review.get("status") == "completed":
         # Content-addressed history: new conclusions get new revision IDs.
         fingerprint = hashlib.sha256(json.dumps(
-            {"ai": ai_review, "external_validation": comparison["external_validation"]},
+            {"ai": ai_review, "external_validation": comparison["external_validation"],
+             "documentary_catalogue_suggestions": comparison.get("documentary_catalogue_suggestions")},
             ensure_ascii=False, sort_keys=True, default=str
         ).encode("utf-8")).hexdigest()[:16]
         result["revision_key"] = f"profile-{int(result['run_id'])}-assistant-ai-{fingerprint}"
