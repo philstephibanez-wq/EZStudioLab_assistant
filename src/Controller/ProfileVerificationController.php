@@ -54,8 +54,16 @@ final class ProfileVerificationController extends AbstractController
                 return $this->json(["error"=>"verification_invalid_json"],503);
             }
             if (!$process->isSuccessful()) {
-                return $this->json(['error' => $result['error'] ?? 'verification_failed'], 
-                    ($result['error'] ?? '') === 'unauthorized' ? 401 : 422);
+                $error = is_array($result) ? ($result['error'] ?? 'verification_failed') : 'verification_failed';
+                $this->logger->error('PROFILE verification subprocess failed', [
+                    'error'=>$error,
+                    'python_error_type'=>is_array($result) ? ($result['type'] ?? null) : null,
+                    'exit_code'=>$process->getExitCode(),
+                    'stderr_present'=>$stderr !== '',
+                ]);
+                return $this->json(['error'=>$error,
+                    'reason'=>is_array($result) ? ($result['type'] ?? $result['reason'] ?? null) : null],
+                    $error === 'unauthorized' ? 401 : 422);
             }
             return $this->json($result);
         } catch (\Throwable $e) {
