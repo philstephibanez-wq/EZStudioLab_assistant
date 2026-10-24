@@ -36,6 +36,7 @@ def exclusion_diagnostic(rows):
     reasons={"not_completed":0,"invalid_identifiers":0,"missing_title_or_artist":0,
              "missing_duration":0,"unrecognized_duration":0,"eligible_rows":0}
     duration_keys={}
+    identity_counts={"title_missing_only":0,"artist_missing_only":0,"both_missing":0,"identity_complete":0}
     for row in rows:
         if not isinstance(row,dict):
             reasons["invalid_identifiers"]+=1
