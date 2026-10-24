@@ -64,17 +64,18 @@ def execute(*, fetch_queue=None, discover=discover_recordings):
         # The queue embeds large diagnostic objects; request a bounded candidate pool.
         # This is a random sample of this pool, NOT a uniform sample of all LAB runs.
         queue_limit=20
+        max_response_bytes=32_000_000
         url=BASE+"/internal/analysis/desktop/profile/reviews/queue?"+urllib.parse.urlencode({"limit":queue_limit})
         request=urllib.request.Request(url,headers={
             "X-EZScore-Analysis-Token":token,"Accept":"application/json"},method="GET")
         try:
             with urllib.request.urlopen(request,timeout=20) as response:
                 content_type=str(response.headers.get("Content-Type") or "").split(";")[0].strip().lower()
-                raw=response.read(5_000_001)
+                raw=response.read(max_response_bytes+1)
                 http_status=response.status
-            if len(raw)>5_000_000:
+            if len(raw)>max_response_bytes:
                 return {"status":"lab_response_too_large","http_status":http_status,
-                        "queue_limit":queue_limit,"lab_writes":0}
+                        "queue_limit":queue_limit,"response_limit_bytes":max_response_bytes,"lab_writes":0}
             if content_type!="application/json" and not content_type.endswith("+json"):
                 return {"status":"lab_non_json_response","http_status":http_status,
                         "content_type":content_type[:80],"response_bytes":len(raw),
@@ -95,10 +96,15 @@ def execute(*, fetch_queue=None, discover=discover_recordings):
         body=fetch_queue()
     if not isinstance(body,dict) or not isinstance(body.get("reviews"),list):
         return {"status":"lab_queue_invalid","lab_writes":0}
-    picked=sample(body["reviews"])
+    # Immediately project the bounded response to minimum metadata; never retain
+    # full scientific diagnostics in the test report or send them to MusicBrainz.
+    rows=[{k:row.get(k) for k in ("run_id","song_id","state","title","artist","metrics")}
+          for row in body["reviews"] if isinstance(row,dict)]
+    del body
+    picked=sample(rows)
     report={"schema":"ezstudio.profile.five-song-readonly.v1",
             "status":picked["status"],"sampling_scope":"completed_profiles_in_review_queue",
-            "seed":20261024,"queue_count":len(body["reviews"]),
+            "seed":20261024,"queue_count":len(rows),
             "queue_limit":20 if fetch_queue is None else None,
             "eligible_count":picked["eligible_count"],"requested":5,
             "lab_writes":0,"lab_jobs_created":0,"identity_verified":False,
