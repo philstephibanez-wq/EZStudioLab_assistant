@@ -16,6 +16,7 @@ from web_status import DEFAULT_TOKEN_FILE, _read_dpapi_token
 from profile_recording_reconciliation import compare_durations
 from profile_musicbrainz_structured import discover_recordings
 from profile_adaptive_keywords import matching_hits
+from profile_documentary_reconcile import reconcile
 
 BASE=os.getenv("EZSTUDIOLAB_ASSISTANT_BASE_URL","http://EZSTUDIO-MAIN:8702").rstrip("/")
 MAX_BYTES=32_000_000
@@ -98,6 +99,13 @@ def parse_filename_identity(raw):
             annotations.append(artist_year.group().strip())
             artist=artist[:artist_year.start()].strip()
         artist=re.sub(r"\s*\([A-Z]\)\s*$","",artist).strip()
+    if not artist:
+        # Accept a trailing year plus an artist in an undelimited file label.
+        embedded=re.fullmatch(r"(.+?)\\s+\\((19\\d{2}|20\\d{2})\\)\\s+(.+)",first)
+        if embedded:
+            first=embedded.group(1).strip()
+            artist=embedded.group(3).strip()
+            annotations.append("("+embedded.group(2)+")")
     return {"search_title":first,"artist_hint":artist or None,"annotations":annotations}
 
 def discover_by_title(title,*,transport=None):
@@ -174,6 +182,7 @@ def execute(*,rows=None,discover=discover_by_title,web_discover=matching_hits):
                                 "documentary_status":catalogue.get("status"),
                                 "recording_candidates":candidates,
                                 "web_keyword_research":web,
+                                "documentary_reconciliation":reconcile(parsed["search_title"],parsed["artist_hint"],web,candidates),
                                 "identity_verified":False,"lab_duration_available":True})
     if picked:
         report["status"]="documentary_candidates_only"
