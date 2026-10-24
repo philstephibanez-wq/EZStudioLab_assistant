@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import random
+import re
 import sys
 import urllib.error
 import urllib.parse
@@ -60,6 +61,32 @@ def select_five(rows,number=5,seed=SEED):
     eligible=sorted(by_song.values(),key=lambda item:item["song_id"])
     return eligible,random.Random(seed).sample(eligible,number) if len(eligible)>=number else []
 
+def parse_filename_identity(raw):
+    """Conservative interpretation of filename labels; never identity evidence."""
+    original=" ".join(str(raw or "").split())
+    parts=[p.strip() for p in re.split(r"\\s+-\\s+",original) if p.strip()]
+    if not parts:
+        return {"search_title":"","artist_hint":None,"annotations":[]}
+    first=parts[0]
+    year=re.search(r"\\s*\\((?:19|20)\\d{2}\\)\\s*$",first)
+    annotations=[]
+    if year:
+        annotations.append(year.group().strip())
+        first=first[:year.start()].strip()
+    artist=None
+    for part in parts[1:]:
+        if re.fullmatch(r"\\d{2,3}\\s*bpm",part,re.I) or re.fullmatch(r"[A-G](?:#|b)?(?:maj|min|m)?",part,re.I):
+            annotations.append(part)
+        elif re.fullmatch(r"\\((?:19|20)\\d{2}\\)",part):
+            annotations.append(part)
+        elif artist is None:
+            artist=part
+        else:
+            annotations.append(part)
+    if artist:
+        artist=re.sub(r"\\s*\\([A-Z]\\)\\s*$","",artist).strip()
+    return {"search_title":first,"artist_hint":artist or None,"annotations":annotations}
+
 def discover_by_title(title,*,transport=None):
     # Title-only candidates are hypotheses, not identification of a recording.
     import re
@@ -114,7 +141,9 @@ def execute(*,rows=None,discover=discover_by_title):
             "requested":5,"lab_writes":0,"lab_jobs_created":0,"identity_verified":False,
             "scientific_validation":False,"songs":[]}
     for item in picked:
-        catalogue=discover(item["title"]) if not item["catalogue_artist"] else discover_recordings(item["title"],item["catalogue_artist"])
+        parsed=parse_filename_identity(item["title"])
+        # Search normalized title without treating the filename artist as authoritative.
+        catalogue=discover(parsed["search_title"])
         comparison=compare_durations(catalogue,item["duration"])
         candidates=[]
         for source,c in zip(catalogue.get("candidates",[]),comparison["candidates"]):
@@ -124,6 +153,9 @@ def execute(*,rows=None,discover=discover_by_title):
                                "identity_verified":False})
         report["songs"].append({"run_id":item["run_id"],"song_id":item["song_id"],
                                 "title":item["title"],"catalogue_artist":item["catalogue_artist"] or None,
+                                "search_title":parsed["search_title"],
+                                "artist_hint_unverified":parsed["artist_hint"],
+                                "filename_annotations":parsed["annotations"],
                                 "documentary_status":catalogue.get("status"),
                                 "recording_candidates":candidates,
                                 "identity_verified":False,"lab_duration_available":True})
