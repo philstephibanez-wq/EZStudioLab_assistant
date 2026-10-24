@@ -36,6 +36,7 @@ def exclusion_diagnostic(rows):
     reasons={"not_completed":0,"invalid_identifiers":0,"missing_title_or_artist":0,
              "missing_duration":0,"unrecognized_duration":0,"eligible_rows":0}
     duration_keys={}
+    duration_counts={"missing":0,"unrecognized":0,"available":0}
     identity_counts={"title_missing_only":0,"artist_missing_only":0,"both_missing":0,"identity_complete":0}
     for row in rows:
         if not isinstance(row,dict):
@@ -57,13 +58,19 @@ def exclusion_diagnostic(rows):
                 if key in metrics:
                     duration_keys[key]=duration_keys.get(key,0)+1
         duration=_lab_duration(metrics)
-        if duration is None:
+        kind="missing" if duration is None else "available" if compare_durations({"candidates":[]},duration)["lab_duration_available"] else "unrecognized"
+        duration_counts[kind]+=1
+        if tm or am:
+            reasons["missing_title_or_artist"]+=1
+        elif kind=="missing":
             reasons["missing_duration"]+=1
-        elif not compare_durations({"candidates":[]},duration)["lab_duration_available"]:
+        elif kind=="unrecognized":
             reasons["unrecognized_duration"]+=1
         else:
             reasons["eligible_rows"]+=1
-    return {"exclusion_counts":reasons,"known_duration_fields_present":duration_keys,
+    return {"exclusion_counts":reasons,"identity_counts":identity_counts,
+            "duration_counts_independent_of_identity":duration_counts,
+            "known_duration_fields_present":duration_keys,
             "duration_metrics_type_counts":{
                 "object":sum(isinstance(r.get("metrics"),dict) for r in rows if isinstance(r,dict)),
                 "non_object":sum(not isinstance(r.get("metrics"),dict) for r in rows if isinstance(r,dict))}}
