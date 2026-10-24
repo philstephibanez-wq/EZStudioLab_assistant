@@ -59,10 +59,15 @@ final class DashboardController extends AbstractController {
         }
     }
     #[Route('/api/profile/latest-review', name: 'assistant_profile_latest_review', methods: ['GET'])]
-    public function latestProfileReview(): JsonResponse {
+    public function latestProfileReview(\Symfony\Component\HttpFoundation\Request $request): JsonResponse {
         $root = dirname(__DIR__, 2);
         $python = $_ENV['EZSTUDIOLAB_ASSISTANT_PYTHON'] ?? $_SERVER['EZSTUDIOLAB_ASSISTANT_PYTHON'] ?? 'python';
-        $process = new Process([$python, $root.'/runtime/profile_latest_review.py'], $root);
+        $runId = (string) $request->query->get('run_id', '');
+        if ($runId !== '' && (!ctype_digit($runId) || (int) $runId < 1)) {
+            return $this->json(['ok'=>false,'error'=>'run_id_invalid'],422);
+        }
+        $env = $runId !== '' ? ['EZSTUDIOLAB_PROFILE_RUN_ID'=>$runId] : [];
+        $process = new Process([$python, $root.'/runtime/profile_latest_review.py'], $root, $env);
         $process->setTimeout(35.0);
         try {
             $process->run();
