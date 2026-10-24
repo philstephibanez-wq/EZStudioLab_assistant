@@ -935,6 +935,45 @@ def enrich_review_payload_with_documentary(payload: dict[str, Any], row: dict[st
     # No snippet-based assertion if the normal workflow did not perform such search.
     documentary = reconcile(title, artist, {"candidates": []}, candidates)
     suggestions = build_catalogue_suggestions(title, artist, documentary)
+    # An identity-matched MusicBrainz result supports *candidate* performer
+    # metadata, not identification of the precise recording.
+    for source in research.get("sources") or []:
+        if not isinstance(source, dict) or source.get("source") != "MusicBrainz":
+            continue
+        if not source.get("available") or not _source_matches_identity(source, title, artist):
+            continue
+        url = source.get("url")
+        if not isinstance(url, str) or not url.startswith("https://musicbrainz.org/recording/"):
+            continue
+        title_from_source = _compact(source.get("canonical_title"))
+        performer_from_source = _compact(source.get("canonical_artist"))
+        if title_from_source:
+            suggestions["work"]["full_title"] = {
+                "value": title_from_source, "original": title,
+                "status": "candidate", "confidence": None,
+                "sources": [url], "human_validated": False,
+            }
+        if performer_from_source:
+            suggestions["recording"]["performers"] = [{
+                "value": performer_from_source, "original": artist or None,
+                "status": "candidate", "confidence": None,
+                "sources": [url], "human_validated": False,
+            }]
+            suggestions["missing"]["performers"] = None
+        # Recording musician credits are not work authorship/arrangement proof.
+        # Retain only explicitly attributed recording credits and their scope.
+        credits = []
+        for credit in (source.get("recording_credits") or [])[:30]:
+            if not isinstance(credit, dict) or credit.get("scope") != "recording":
+                continue
+            musician, role = _compact(credit.get("musician")), _compact(credit.get("role"))
+            credit_url = credit.get("source_url")
+            if musician and role and credit_url == url:
+                credits.append({"name": musician, "role": role,
+                                "source": url, "status": "candidate",
+                                "recording_only": True})
+        suggestions["recording"]["musician_credits"] = credits
+        break
     urls = sorted({x.get("url") for x in (research.get("sources") or [])
                    if isinstance(x, dict) and x.get("available") and
                    _source_matches_identity(x, title, artist) and
