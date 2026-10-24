@@ -34,6 +34,8 @@ def main():
                       qwen_error_code=(result.get("ai_consultation") or {}).get("error_code"),
                       qwen_diagnostic=(result.get("ai_consultation") or {}).get("diagnostic"),
                       search_status=(result.get("tool_audit") or {}).get("document_search"),
+                      musicbrainz_status=(result.get("structured_musicbrainz") or {}).get("status"),
+                      musicbrainz_recording_candidates=(result.get("structured_musicbrainz") or {}).get("candidates",[]),
                       distinct_source_count=(result.get("documentary_provenance") or {}).get("distinct_source_count"),
                       readable_distinct_count=(result.get("documentary_provenance") or {}).get("readable_distinct_count"),
                       documentary_items={key:{
