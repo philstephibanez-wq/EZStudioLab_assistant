@@ -56,6 +56,30 @@
                 state.textContent=(scoped?'Révision du run demandé #'+run+' · ':'HISTORIQUE LAB — PAS LE JOB COURANT · ')+'Analyse #'+(data.analysis_reference||data.run_id)+' · Preset #'+(data.preset_reference||'non renseigné')+' · Révision #'+data.revision_id+' · '+data.status+
                     ' · Identité déclarée : '+(declared.title||'?')+' — '+(declared.artist||'?')+
                     ' · Correspondance de l’enregistrement non confirmée';
+                var doc=data.documentary_catalogue_suggestions||{};
+                if(doc.schema){
+                    var block=element('section');block.className='card';block.style.marginTop='12px';
+                    block.appendChild(element('h3','Identité et crédits proposés · avis consultatif'));
+                    var work=doc.work||{}, recording=doc.recording||{};
+                    function field(name,value){
+                        var values=Array.isArray(value)?value:[value];
+                        var label=values.filter(function(v){return v&&v.value;}).map(function(v){
+                            return v.value+' ('+(v.status||'inconnu')+')';
+                        }).join(', ');
+                        block.appendChild(element('p',name+' : '+(label||'Non documenté')));
+                    }
+                    field('Titre complet',work.full_title);
+                    field('Interprètes',recording.performers);
+                    field('Paroliers / auteurs',work.lyricists);
+                    field('Compositeurs',work.composers);
+                    field('Arrangeurs',recording.arrangers);
+                    (doc.consulted_identity_sources||[]).forEach(function(url){
+                        if(typeof url!=='string'||!url.startsWith('https://'))return;
+                        var link=element('a',url);link.href=url;link.target='_blank';link.rel='noopener noreferrer';
+                        block.appendChild(link);
+                    });
+                    output.appendChild(block);
+                }
                 var labels={'duration':'Durée','tempo':'Tempo','meter':'Mesure','key':'Tonalité',
                     'genre':'Genre','instrument:0':'Instruments','lead_vocal':'Voix principale',
                     'backing_vocals':'Voix d’accompagnement','vocal_harmonies':'Harmonies vocales','choir':'Chœurs'};
