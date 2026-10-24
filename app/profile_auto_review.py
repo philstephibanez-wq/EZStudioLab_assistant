@@ -1007,6 +1007,22 @@ def enrich_review_payload_with_documentary(payload: dict[str, Any], row: dict[st
                                 "source": url, "status": "candidate",
                                 "recording_only": True})
         suggestions["recording"]["musician_credits"] = credits
+        for work_credit in (source.get("work_credits") or [])[:30]:
+            if not isinstance(work_credit, dict) or work_credit.get("scope") != "work":
+                continue
+            field = work_credit.get("field")
+            url_credit = work_credit.get("source_url")
+            name = _compact(work_credit.get("name"))
+            if field not in ("lyricists", "composers", "arrangers") or not name:
+                continue
+            if not isinstance(url_credit, str) or not url_credit.startswith("https://musicbrainz.org/work/"):
+                continue
+            proposal = {"value": name, "original": None, "status": "candidate",
+                        "confidence": None, "sources": [url_credit], "human_validated": False}
+            destination = suggestions["recording"] if field == "arrangers" else suggestions["work"]
+            if not any(item.get("value") == name for item in destination[field]):
+                destination[field].append(proposal)
+            suggestions["missing"][field] = None
         break
     urls = sorted({x.get("url") for x in (research.get("sources") or [])
                    if isinstance(x, dict) and x.get("available") and
