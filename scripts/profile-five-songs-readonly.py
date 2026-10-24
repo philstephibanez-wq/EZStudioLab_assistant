@@ -61,7 +61,10 @@ def execute(*, fetch_queue=None, discover=discover_recordings):
     if fetch_queue is None and not token:
         return {"status":"token_missing","lab_writes":0}
     if fetch_queue is None:
-        url=BASE+"/internal/analysis/desktop/profile/reviews/queue?"+urllib.parse.urlencode({"limit":500})
+        # The queue embeds large diagnostic objects; request a bounded candidate pool.
+        # This is a random sample of this pool, NOT a uniform sample of all LAB runs.
+        queue_limit=20
+        url=BASE+"/internal/analysis/desktop/profile/reviews/queue?"+urllib.parse.urlencode({"limit":queue_limit})
         request=urllib.request.Request(url,headers={
             "X-EZScore-Analysis-Token":token,"Accept":"application/json"},method="GET")
         try:
@@ -71,7 +74,7 @@ def execute(*, fetch_queue=None, discover=discover_recordings):
                 http_status=response.status
             if len(raw)>5_000_000:
                 return {"status":"lab_response_too_large","http_status":http_status,
-                        "lab_writes":0}
+                        "queue_limit":queue_limit,"lab_writes":0}
             if content_type!="application/json" and not content_type.endswith("+json"):
                 return {"status":"lab_non_json_response","http_status":http_status,
                         "content_type":content_type[:80],"response_bytes":len(raw),
@@ -96,6 +99,7 @@ def execute(*, fetch_queue=None, discover=discover_recordings):
     report={"schema":"ezstudio.profile.five-song-readonly.v1",
             "status":picked["status"],"sampling_scope":"completed_profiles_in_review_queue",
             "seed":20261024,"queue_count":len(body["reviews"]),
+            "queue_limit":20 if fetch_queue is None else None,
             "eligible_count":picked["eligible_count"],"requested":5,
             "lab_writes":0,"lab_jobs_created":0,"identity_verified":False,
             "scientific_validation":False,"songs":[]}
