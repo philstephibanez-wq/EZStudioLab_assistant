@@ -47,9 +47,10 @@ def exclusion_diagnostic(rows):
         if type(row.get("run_id")) is not int or type(row.get("song_id")) is not int or row["run_id"]<=0 or row["song_id"]<=0:
             reasons["invalid_identifiers"]+=1
             continue
-        if not str(row.get("title") or "").strip() or not str(row.get("artist") or "").strip():
-            reasons["missing_title_or_artist"]+=1
-            continue
+        tm=not str(row.get("title") or "").strip()
+        am=not str(row.get("artist") or "").strip()
+        category="both_missing" if tm and am else "title_missing_only" if tm else "artist_missing_only" if am else "identity_complete"
+        identity_counts[category]+=1
         metrics=row.get("metrics")
         if isinstance(metrics,dict):
             for key in DURATION_KEYS:
