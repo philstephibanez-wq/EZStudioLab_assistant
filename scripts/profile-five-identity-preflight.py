@@ -15,6 +15,7 @@ sys.path.insert(0,str(ROOT/"app"))
 from web_status import DEFAULT_TOKEN_FILE, _read_dpapi_token
 from profile_recording_reconciliation import compare_durations
 from profile_musicbrainz_structured import discover_recordings
+from profile_adaptive_keywords import matching_hits
 
 BASE=os.getenv("EZSTUDIOLAB_ASSISTANT_BASE_URL","http://EZSTUDIO-MAIN:8702").rstrip("/")
 MAX_BYTES=32_000_000
@@ -129,7 +130,7 @@ def discover_by_title(title,*,transport=None):
     except Exception as exc:
         return {"status":"unavailable","error_type":type(exc).__name__,"candidates":[]}
 
-def execute(*,rows=None,discover=discover_by_title):
+def execute(*,rows=None,discover=discover_by_title,web_discover=matching_hits):
     if rows is None:
         try:
             rows=fetch_rows()
@@ -149,6 +150,7 @@ def execute(*,rows=None,discover=discover_by_title):
         # Search normalized title without treating the filename artist as authoritative.
         catalogue=discover(parsed["search_title"])
         comparison=compare_durations(catalogue,item["duration"])
+        web=web_discover(parsed["search_title"],parsed["artist_hint"]) if not catalogue.get("candidates") else {"status":"not_needed","queries":[],"candidates":[],"technical_errors":[]}
         candidates=[]
         for source,c in zip(catalogue.get("candidates",[]),comparison["candidates"]):
             candidates.append({"url":c["url"],"artist_candidates":source.get("artist_credit",[]),
@@ -162,6 +164,7 @@ def execute(*,rows=None,discover=discover_by_title):
                                 "filename_annotations":parsed["annotations"],
                                 "documentary_status":catalogue.get("status"),
                                 "recording_candidates":candidates,
+                                "web_keyword_research":web,
                                 "identity_verified":False,"lab_duration_available":True})
     if picked:
         report["status"]="documentary_candidates_only"
