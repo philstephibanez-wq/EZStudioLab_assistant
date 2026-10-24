@@ -33,7 +33,20 @@ def main():
                       qwen_error_reason=(result.get("ai_consultation") or {}).get("reason"),
                       qwen_error_code=(result.get("ai_consultation") or {}).get("error_code"),
                       qwen_diagnostic=(result.get("ai_consultation") or {}).get("diagnostic"),
-                      search_status=(result.get("tool_audit") or {}).get("document_search"))
+                      search_status=(result.get("tool_audit") or {}).get("document_search"),
+                      distinct_source_count=(result.get("documentary_provenance") or {}).get("distinct_source_count"),
+                      readable_distinct_count=(result.get("documentary_provenance") or {}).get("readable_distinct_count"),
+                      documentary_items={key:{
+                          "candidate_count": item.get("candidate_count"),
+                          "explicit_reference_count": item.get("explicit_reference_count"),
+                          "scientific_verdict":item.get("scientific_verdict"),
+                          "recording_identity_verified": False,
+                          "top_sources":[{"url":source.get("url"),
+                              "source_scope":source.get("source_scope"),
+                              "read_status":source.get("read_status")} for source in
+                              (item.get("candidate_sources") or [])[:3]]
+                      } for key,item in
+                      ((result.get("documentary_provenance") or {}).get("items") or {}).items()})
     except Exception as exc:
         report.update(status="failed",exception_type=type(exc).__name__,
                       exception_reason=str(exc)[:120] if isinstance(exc,ValueError) else None)
