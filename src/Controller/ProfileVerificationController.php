@@ -9,9 +9,11 @@ use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\Process\Process;
 use Symfony\Component\Routing\Attribute\Route;
+use Psr\Log\LoggerInterface;
 
 final class ProfileVerificationController extends AbstractController
 {
+    public function __construct(private readonly LoggerInterface $logger) {}
     #[Route('/api/profile/verify', name: 'assistant_profile_verify_push', methods: ['POST'])]
     public function verify(Request $request): JsonResponse
     {
@@ -35,14 +37,33 @@ final class ProfileVerificationController extends AbstractController
             $process->setInput(json_encode($data, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE));
             $process->setTimeout(900);
             $process->run();
-            $result = json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR);
+            $stdout = trim($process->getOutput());
+            $stderr = trim($process->getErrorOutput());
+            if ($stdout === '') {
+                $this->logger->error("PROFILE verify returned empty output", [
+                    "exit_code"=>$process->getExitCode(), "stderr_type"=>$stderr !== '' ? "present" : "empty",
+                    "run_id"=>$data["analysis_id"] ?? null]);
+                return $this->json(["error"=>"verification_empty_output","exit_code"=>$process->getExitCode()], 503);
+            }
+            try {
+                $result = json_decode($stdout, true, flags: JSON_THROW_ON_ERROR);
+            } catch (\JsonException $jsonError) {
+                $this->logger->error("PROFILE verify returned malformed JSON", [
+                    "exception_type"=>get_class($jsonError), "stdout_bytes"=>strlen($stdout),
+                    "exit_code"=>$process->getExitCode()]);
+                return $this->json(["error"=>"verification_invalid_json"],503);
+            }
             if (!$process->isSuccessful()) {
                 return $this->json(['error' => $result['error'] ?? 'verification_failed'], 
                     ($result['error'] ?? '') === 'unauthorized' ? 401 : 422);
             }
             return $this->json($result);
         } catch (\Throwable $e) {
-            return $this->json(['error' => 'verification_processing_failed'], 503);
+            $reason = $e instanceof \Symfony\Component\Process\Exception\ProcessTimedOutException
+                ? "process_timeout" : get_class($e);
+            $this->logger->error("PROFILE verification transport failure", [
+                "exception"=>$e, "reason"=>$reason]);
+            return $this->json(['error' => 'verification_processing_failed', 'reason' => $reason], 503);
         }
     }
 }
