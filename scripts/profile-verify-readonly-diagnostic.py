@@ -31,6 +31,8 @@ def main():
                       consulted_url_count=sum(len(v.get("consulted_urls") or []) for v in result.get("reviews",{}).values()),
                       qwen_status=(result.get("ai_consultation") or {}).get("status"),
                       qwen_error_reason=(result.get("ai_consultation") or {}).get("reason"),
+                      qwen_error_code=(result.get("ai_consultation") or {}).get("error_code"),
+                      qwen_diagnostic=(result.get("ai_consultation") or {}).get("diagnostic"),
                       search_status=(result.get("tool_audit") or {}).get("document_search"))
     except Exception as exc:
         report.update(status="failed",exception_type=type(exc).__name__,
