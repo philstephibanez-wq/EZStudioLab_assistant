@@ -5,6 +5,7 @@ unless the real Tesseract executable and traineddata are available.
 from __future__ import annotations
 import json
 import subprocess
+import tempfile
 import sys
 import time
 from pathlib import Path
@@ -14,13 +15,45 @@ sys.path.insert(0,str(ROOT/"app"))
 from profile_tesseract_runtime import resolve_tesseract, booklet_ocr_enabled
 from profile_document_consultation import consult
 
+# 5x7 bitmap, scaled without image packages; recognizable synthetic OCR input.
+FONT={
+"T":("11111","00100","00100","00100","00100","00100","00100"),
+"E":("11111","10000","10000","11110","10000","10000","11111"),
+"S":("01111","10000","10000","01110","00001","00001","11110"),
+}
+def _image_fixture():
+    glyphs="TEST"
+    scale=12
+    width=(len(glyphs)*6+2)*scale
+    height=11*scale
+    bitmap=bytearray([255])*(width*height)
+    for n,char in enumerate(glyphs):
+        for y,line in enumerate(FONT[char]):
+            for x,val in enumerate(line):
+                if val=="1":
+                    for dy in range(scale):
+                        start=((y+2)*scale+dy)*width+(n*6+x+2)*scale
+                        bitmap[start:start+scale]=bytes([0])*scale
+    return ("P5\\n%d %d\\n255\\n"%(width,height)).encode("ascii")+bitmap
+
 def check_ocr():
     state=resolve_tesseract()
     if state.get("status")!="ready":
         return {"status":"unavailable","reason":state.get("status"),"executed":False}
-    # Text-only Tesseract probe verifies binary and model access, not image recognition.
-    # A genuine OCR image test requires an authorized input scan and is a separate gate.
-    return {"status":"ready_not_executed","executed":False,"models":"eng+fra"}
+    try:
+        with tempfile.TemporaryDirectory(prefix="ezs_ocr_smoke_") as folder:
+            image=Path(folder)/"synthetic.pgm"
+            image.write_bytes(_image_fixture())
+            done=subprocess.run([state["executable"],str(image),"stdout","-l","eng",
+                    "--tessdata-dir",state["tessdata_dir"],"--psm","7"],
+                    capture_output=True,timeout=20,check=False)
+        recognized=done.stdout.decode("utf-8","replace").strip()
+        return {"status":"recognized" if "TEST" in recognized.upper() else "recognition_mismatch",
+                "executed":True,"exit_code":done.returncode,
+                "expected":"TEST","recognized":recognized[:80],
+                "model":"eng","fixture":"synthetic_bitmap"}
+    except (OSError,subprocess.TimeoutExpired) as exc:
+        return {"status":"execution_error","reason":type(exc).__name__,"executed":False}
 
 def check_translation():
     # Deliberately synthetic; passing only proves a real inference, not accuracy.
