@@ -209,6 +209,39 @@ def _musicbrainz(http: ThrottledPublicHttp, title: str, artist: str, *, duration
     recording_genres = list(genres)
     recording_tags = list(tags)
     recording_credits = _recording_credits(detail.get("relations"), recording_url)
+    # Work credits belong to the musical work, not to the recording.
+    # Fetch only linked MusicBrainz work entities, and remain consultative.
+    work_credits = []
+    work_ids = []
+    for relation in detail.get("relations") or []:
+        if isinstance(relation, dict) and relation.get("target-type") == "work":
+            work = relation.get("work") or {}
+            wid = _compact(work.get("id")) if isinstance(work, dict) else ""
+            if re.fullmatch(r"[0-9a-fA-F-]{36}", wid) and wid not in work_ids:
+                work_ids.append(wid)
+    allowed_roles = {"composer": "composers", "lyricist": "lyricists",
+                     "writer": "lyricists", "arranger": "arrangers"}
+    for wid in work_ids[:2]:
+        if http.request_count >= http.budget.max_requests_per_item:
+            break
+        try:
+            work_detail = http.get_json(
+                "https://musicbrainz.org/ws/2/work/" + urllib.parse.quote(wid)
+                + "?" + _query({"fmt":"json","inc":"artist-rels"}), retries=1)
+        except Exception:
+            continue
+        work_url = "https://musicbrainz.org/work/" + wid
+        for relation in work_detail.get("relations") or []:
+            if not isinstance(relation, dict) or relation.get("target-type") != "artist":
+                continue
+            role = _compact(relation.get("type")).casefold()
+            artist_data = relation.get("artist") or {}
+            name = _compact(artist_data.get("name")) if isinstance(artist_data, dict) else ""
+            if role in allowed_roles and name:
+                work_credits.append({"name": name, "role": role,
+                                     "field": allowed_roles[role],
+                                     "source_url": work_url, "scope": "work",
+                                     "status": "candidate"})
     # An edition is not the recording: sleeve/back/booklet scans are only
     # discovery candidates until their text and track attribution are verified.
     edition_ids = [
@@ -313,6 +346,7 @@ def _musicbrainz(http: ThrottledPublicHttp, title: str, artist: str, *, duration
         "recording_tags": sorted(set(recording_tags)),
         "performers": performers[:30],
         "recording_credits": recording_credits,
+        "work_credits": work_credits,
         "recording_resolution_method": selected["status"],
         "recording_duration_difference_ms": selected.get("difference_ms"),
         "recording_detail_status": detail_status,
