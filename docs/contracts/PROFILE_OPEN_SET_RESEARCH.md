@@ -16,3 +16,12 @@ Le module ne reçoit que les assertions finales publiques, jamais les modules, s
 
 ## Handoff
 Élargir à documents longs segmentés et OCR, puis à l'exploration récursive et aux intersections par enregistrement, avec budget contrôlé ; benchmark multi-chansons contre le processus existant avant bascule.
+
+## Tranche 1.6a(107) : découverte itérative des ensembles
+- Requête humaine courte : mots discriminants titre + artiste, suppression des articles, recherche tolérant les variations orthographiques.
+- Premier objectif : découvrir des **sources**, sans pré-cibler un item ni un domaine.
+- Classement des résultats à partir titre/extrait ; conservation des rejets et motifs ; ouverture de chaque source retenue.
+- Chaque page ouverte est balayée pour **toutes les assertions finales** ; consolidation via le moteur d'ensembles 106.
+- Les nouveaux indices repérés dans les résultats (édition, année, album, live, etc.) orientent les requêtes suivantes. Sans indice, élargir au titre seul.
+- Budgets bornés (recherches, résultats, documents), URL dédoublonnées. Aucun verdict automatique.
+- Cette tranche **n'est pas connectée au worker** ; pas de crawl de liens, pas d'OCR/PDF, pas de preuve sémantique ni de validation de version. Les recherches de nouvelle génération restent expérimentales tant que le benchmark n'est pas validé.
