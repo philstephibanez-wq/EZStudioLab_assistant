@@ -7,7 +7,7 @@
   <div class="card"><div class="label">Activité</div><div id="activity" class="value">—</div></div>
   <div class="card"><div class="label">LAB</div><div id="lab" class="value">REST</div></div>
   <div class="card"><div class="label">Modèles IA</div><div id="models" class="value">SMB</div></div>
-  <div class="card"><div class="label">Moteur d’inférence</div><div id="inference-state" class="value">Vérification…</div><div id="inference-version">Version non vérifiée</div><div id="inference-model">Modèle non vérifié</div></div>
+  <div class="card"><div class="label">Moteur d’inférence</div><div id="inference-state" class="value">Vérification…</div><div id="inference-version">Version non vérifiée</div><div id="inference-model">Modèle non vérifié</div><details><summary>Chemin du modèle</summary><div id="inference-model-path" style="overflow-wrap:anywhere;font-size:.8rem"></div></details></div>
   <div class="card"><div class="label">Persistance</div><div class="value">LAB uniquement</div></div>
   <div class="card"><div class="label">Base Assistant</div><div class="value">Aucune</div></div>
 </div>
@@ -136,7 +136,9 @@
   $.getJSON('/api/inference/status').done(function(d){
     $('#inference-state').text(d.state==='READY'?'PRÊT':'INDISPONIBLE').attr('class','value '+(d.ok?'ok':'bad'));
     $('#inference-version').text('Moteur : '+(d.engine||'llama.cpp')+' · version '+(d.engine_version||'non exposée'));
-    $('#inference-model').text('Modèle : '+(d.model||'non identifié'));
+    var modelPath=String(d.model||'');
+    $('#inference-model').text('Modèle : '+(modelPath.split(/[\\\\/]/).pop()||'non identifié'));
+    $('#inference-model-path').text(modelPath||'non renseigné');
   }).fail(function(xhr){
     $('#inference-state').text('INDISPONIBLE').attr('class','value bad');
     $('#inference-version').text('Version non vérifiée');
