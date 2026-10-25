@@ -26,9 +26,9 @@
 
 ## PRÉFIXE DE COMMIT ET CONFORMITÉ DE LIVRAISON — OBLIGATOIRE
 
-- Commits intermédiaires : `type(périmètre): description` sans version et sans modification de VERSION. Livraison réellement validée uniquement : `[numéro réel] type(périmètre): description` (exemple `[1.5b] feat(profile): contre-analyse musicale validée`). Le préfixe `[v]` est interdit.
+- Tous les commits, y compris les modifications documentaires et les correctifs, doivent comporter en tête `[vVERSION]`, où `VERSION` correspond exactement à la valeur du fichier canonique dans le même commit. Aucun commit non versionné.
 - Corps de message multiligne : `Contexte`, `Modifications`, `Validation`, `Impact`, et `Limites / risques` si nécessaire.
-- Aucun incrément de `VERSION` pour test, refactorisation ou correction intermédiaire. Seule une livraison fonctionnelle validée ou un fix définitif validé peut changer `VERSION`, avec code, tests et version dans un commit cohérent.
+- Chaque commit livré incrémente `VERSION`, même pour les modifications documentaires, tests ou refactorisations ; la validation effectuée et les limites sont indiquées sans exagération.
 - Avant toute publication : confirmer fichiers concernés, absence de fichiers temporaires, version, préfixe, messages, vérifications statiques et tests pertinents. Aucun historique partagé n'est réécrit de force.
 - Un test CI qui échoue ne bloque pas à lui seul un push direct tant qu'une protection de branche n'impose pas le statut. Ne jamais annoncer un blocage effectif avant sa configuration et sa vérification.
 
@@ -70,7 +70,7 @@ Cette précision prime sur les exemples anciens de suffixes successifs et sur la
 - Chaque correctif publié : même identifiant de release, compteur incrémenté `vN.Na(1)`, `vN.Na(2)`, etc. Aucun push fonctionnel ne conserve le même numéro.
 - Après validation effective de stabilité : suppression du compteur, `vN.Na` (exemple `v1.7a`). Ne pas annoncer la stabilité sans tests et acceptation.
 - Release suivante : nouvelle composante mineure et compteur remis à zéro, `vN.N(0)` (exemple `v1.8(0)`), puis `vN.N(1)`, etc. Stabilisation : `vN.N`.
-- Le fichier `VERSION` est la source de vérité ; les interfaces affichent « Version » et « Révision Git » séparément. Le préfixe d'affichage `v` ne doit pas imposer un préfixe `[v]` dans les messages de commit.
+- Le fichier `VERSION` est la source de vérité ; les interfaces affichent version et SHA Git séparément. Le préfixe du message `[vVERSION]` n'altère pas le nom de la version dans le fichier.
 - Historique : conserver les anciens commits et leurs SHA, ne jamais réécrire rétroactivement des versions qui n'existaient pas.
 - En cas de conflit avec les anciennes clauses, appliquer ce cycle explicite tout en conservant les exigences de tests, de messages descriptifs et de handoff.
 
@@ -92,7 +92,7 @@ Cette précision prime sur les exemples anciens de suffixes successifs et sur la
 
 Chaque commit publié doit être intelligible sans ouvrir le diff. Rédiger **en français**, avec :
 
-- Un titre précis au format `[v] type(périmètre): résultat obtenu — version` (par exemple `fix(profile): rejeter les preuves CLAP non indépendantes — 1.4n`). Types usuels : `fix`, `feat`, `refactor`, `test`, `docs`, `chore`.
+- Format obligatoire du titre : `[vVERSION] type(périmètre): résultat concret`, avec la version identique à `VERSION` dans le même commit ; par exemple `[v1.4a(18)] fix(profile): écarter les comparaisons documentaires invalides`.
 - Un **corps de message multiligne** expliquant `Contexte`, `Modifications`, `Validation`, `Impact` et, si nécessaire, `Limites / risques`.
 - Dans `Validation`, distinguer explicitement les tests exécutés des tests seulement ajoutés ou non exécutés. Ne jamais affirmer une réussite non constatée.
 - Dans `Impact`, indiquer les dépôts ou composants touchés, les éventuels redémarrages/déploiements, et si les modèles, presets scientifiques, données et interfaces sont inchangés.
