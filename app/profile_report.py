@@ -12,12 +12,43 @@ import os
 import re
 import subprocess
 import shutil
+import sys
+import datetime
 from pathlib import Path
 
 DEST = "philstephibanez-wq/EZStudio_Run_Reports"
 DIMENSIONS = ("genre", "instrumentation", "lead_vocal", "backing_vocals", "choir")
 SAFE_REASON = re.compile(r"^[a-z][a-z0-9_:-]{0,80}$")
 SAFE_KEY = re.compile(r"^[a-z][a-z0-9_]{0,40}$")
+
+
+def _runtime_provenance():
+    """Capture code loaded by this worker process, not the web dashboard version."""
+    root = Path(__file__).resolve().parents[1]
+    def cmd(*args):
+        try:
+            result = subprocess.run(args, cwd=str(root), capture_output=True,
+                                    text=True, encoding="utf-8", errors="replace",
+                                    timeout=5, check=False)
+            return result.stdout.strip() if result.returncode == 0 else None
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+    try:
+        version = (root / "VERSION").read_text(encoding="utf-8-sig").strip()
+    except OSError:
+        version = None
+    commit = cmd("git", "rev-parse", "HEAD")
+    dirty = cmd("git", "status", "--porcelain", "--untracked-files=no")
+    return {
+        "application_version_on_disk": version,
+        "git_commit_on_disk": commit if commit and re.fullmatch(r"[a-fA-F0-9]{40}", commit) else None,
+        "git_dirty_on_disk": bool(dirty) if dirty is not None else None,
+        "pid": os.getpid(),
+        "python_version": sys.version.split()[0],
+        "worker_entrypoint": "runtime/profile_ai_requests_worker.py",
+        "process_code_provenance": "filesystem_at_report_time_not_verified_loaded_code",
+        "observed_at_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+    }
 
 
 def make_report(trace, outcome):
@@ -32,6 +63,14 @@ def make_report(trace, outcome):
                 events.append(item)
     def last(name):
         return next((x.get("data") for x in reversed(events) if x.get("event") == name), None)
+    research_observed = last("research.result") or {}
+    observed_sources = research_observed.get("sources") if isinstance(research_observed, dict) else []
+    if not isinstance(observed_sources, list):
+        observed_sources = []
+    source_audit = [{"source": str(item.get("source") or "")[:64],
+                     "available": item.get("available") is True,
+                     "reason": str(item.get("reason") or "")[:100]}
+                    for item in observed_sources if isinstance(item, dict)]
     sent = last("qwen.evidence.sent") or {}
     decoded = last("qwen.content.decoded") or {}
     validated = last("qwen.validated") or last("ai.review.normalized") or {}
@@ -119,7 +158,15 @@ def make_report(trace, outcome):
     )):
         raise ValueError("profile_report_incomplete_module_audit")
     return {
-        "schema": "ezstudio.profile-execution-report.v1",
+        "schema": "ezstudio.profile-execution-report.v2",
+        "producer": "assistant",
+        "runtime": _runtime_provenance(),
+        "public_research_audit": {
+            "status": research_observed.get("status") if isinstance(research_observed, dict) else None,
+            "request_count": research_observed.get("request_count") if isinstance(research_observed, dict) else None,
+            "sources": source_audit,
+            "musicbrainz_work_attempted": any(x["source"] == "MusicBrainzWork" for x in source_audit),
+        },
         "run_id": trace.run_id,
         "revision_id": outcome.get("revision") if isinstance(outcome, dict) and isinstance(outcome.get("revision"), int) else None,
         "status": "completed" if isinstance(outcome, dict) else "error",
