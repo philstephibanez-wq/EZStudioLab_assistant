@@ -541,6 +541,11 @@ def _source_matches_identity(source: dict[str, Any], title: str, artist: str) ->
             and score >= 90
         )
 
+    if name == "MusicBrainzWork":
+        return (_normalize_identity_text(source.get("canonical_title")) == expected_title
+                and _normalize_identity_text(source.get("canonical_artist")) == expected_artist
+                and bool(source.get("work_credits")))
+
     if name == "Wikidata":
         label = _normalize_identity_text(source.get("label"))
         performers = " ".join(
@@ -558,6 +563,49 @@ def _source_matches_identity(source: dict[str, Any], title: str, artist: str) ->
         return title_supported and artist_supported
 
     return False
+
+
+def _musicbrainz_work(http: ThrottledPublicHttp, title: str, artist: str) -> dict[str, Any]:
+    """Find work authorship independently of an ambiguous recording identity."""
+    query = 'work:"' + title.replace('"', ' ') + '"'
+    data = http.get_json("https://musicbrainz.org/ws/2/work/?" +
+                         _query({"query": query, "fmt": "json", "limit": 8}), retries=0)
+    rows = [x for x in (data.get("works") or []) if isinstance(x, dict)
+            and _normalize_identity_text(x.get("title")) == _normalize_identity_text(title)]
+    if not rows:
+        return {"source":"MusicBrainzWork","available":False,"reason":"no_exact_work"}
+    for row in rows[:3]:
+        wid = _compact(row.get("id"))
+        if not re.fullmatch(r"[0-9a-fA-F-]{36}", wid):
+            continue
+        if http.request_count >= http.budget.max_requests_per_item:
+            break
+        detail = http.get_json("https://musicbrainz.org/ws/2/work/" + wid +
+                               "?" + _query({"fmt":"json","inc":"artist-rels"}), retries=0)
+        roles = {"composer":"composers","lyricist":"lyricists",
+                 "writer":"lyricists","arranger":"arrangers"}
+        credits = []
+        credited_names = []
+        for rel in detail.get("relations") or []:
+            if not isinstance(rel, dict) or rel.get("target-type") != "artist":
+                continue
+            person = rel.get("artist") or {}
+            name = _compact(person.get("name")) if isinstance(person, dict) else ""
+            role = _compact(rel.get("type")).casefold()
+            if name and role in roles:
+                credited_names.append(name)
+                credits.append({"name":name,"role":role,"field":roles[role],
+                                "scope":"work","status":"candidate",
+                                "source_url":"https://musicbrainz.org/work/"+wid})
+        if credits and any(_normalize_identity_text(artist) in _normalize_identity_text(n)
+                           for n in credited_names):
+            return {"source":"MusicBrainzWork","available":True,
+                    "canonical_title":_compact(detail.get("title") or row.get("title")),
+                    "canonical_artist":artist,"url":"https://musicbrainz.org/work/"+wid,
+                    "work_credits":credits,"identity_relevant":True,
+                    "recording_identity_verified":False}
+    return {"source":"MusicBrainzWork","available":False,
+            "reason":"work_artist_not_confirmed"}
 
 
 def research_public_sources(identity: dict[str, Any], budget: NetworkBudget) -> dict[str, Any]:
@@ -582,6 +630,12 @@ def research_public_sources(identity: dict[str, Any], budget: NetworkBudget) -> 
     except Exception as exc:
         warnings.append(f"MusicBrainz:{type(exc).__name__}:{exc}")
         mb = {"source": "MusicBrainz", "available": False}
+
+    # Authorship is work-scoped and can be found despite multiple recording candidates.
+    try:
+        sources.append(_musicbrainz_work(http, title, artist))
+    except Exception as exc:
+        warnings.append(f"MusicBrainzWork:{type(exc).__name__}:{exc}")
 
     # Search Wikipedia before Wikidata: the former can provide a recording-specific
     # narrative; Wikidata may consume multiple calls for an unrelated entity.
