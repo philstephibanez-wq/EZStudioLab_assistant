@@ -88,7 +88,7 @@
                     output.appendChild(card);
                     card.appendChild(element('h3',labels[item.key]||item.key));
                     card.appendChild(element('p','LAB : '+(item.lab_value||'non renseigné')));
-                    card.appendChild(element('p','Référence : '+(item.external_value||'non trouvée')));
+                    card.appendChild(element('p','Référence scientifique validée : '+(item.external_value||'aucune')));
                     var outcome=element('p','Avis : '+(item.verdict||'INCONNU')+' · '+(item.reason||'Aucune justification disponible'));
                     outcome.style.padding='6px 10px';
                     outcome.style.borderRadius='6px';
@@ -114,7 +114,7 @@
                         });
                     }
                     var urls=Array.from(new Set(item.sources||[]));
-                    if(!urls.length)card.appendChild(element('p','Aucune source lue.'));
+                    if(!urls.length)card.appendChild(element('p','Aucune source admissible pour la validation scientifique.'));
                     urls.forEach(function(url){
                         if(typeof url!=='string'||!url.startsWith('https://'))return;
                         var link=element('a','Source consultée');
