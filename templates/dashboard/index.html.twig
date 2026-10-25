@@ -89,11 +89,21 @@
                     card.appendChild(element('h3',labels[item.key]||item.key));
                     card.appendChild(element('p','LAB : '+(item.lab_value||'non renseigné')));
                     card.appendChild(element('p','Référence : '+(item.external_value||'non trouvée')));
-                    card.appendChild(element('p','Avis : '+(item.verdict||'INCONNU')+' · '+(item.reason||'Aucune justification disponible')));
+                    var outcome=element('p','Avis : '+(item.verdict||'INCONNU')+' · '+(item.reason||'Aucune justification disponible'));
+                    outcome.style.padding='6px 10px';
+                    outcome.style.borderRadius='6px';
+                    outcome.style.background=item.verdict==='BON'?'#173a2b':item.verdict==='MAUVAIS'?'#46232a':'#303842';
+                    outcome.style.color=item.verdict==='BON'?'#93edb9':item.verdict==='MAUVAIS'?'#ffb3b3':'#c8d0db';
+                    card.appendChild(outcome);
                     var observation=item.documentary_observation||{};
                     if(observation.status){
                         var cmp={concordant:'CONCORDANTE',discordant:'DISCORDANTE',indeterminate:'INDÉTERMINÉE'};
-                        card.appendChild(element('p','Comparaison documentaire : '+(cmp[observation.comparison]||'INDÉTERMINÉE')));
+                        var indicator=element('p','Comparaison documentaire : '+(cmp[observation.comparison]||'INDÉTERMINÉE'));
+                        indicator.style.padding='6px 10px';
+                        indicator.style.borderRadius='6px';
+                        indicator.style.background=observation.comparison==='concordant'?'#1b3852':observation.comparison==='discordant'?'#4b321a':'#303842';
+                        indicator.style.color=observation.comparison==='concordant'?'#a0d6ff':observation.comparison==='discordant'?'#ffd596':'#c8d0db';
+                        card.appendChild(indicator);
                         if(observation.reference_value)card.appendChild(element('p','Valeur documentaire : '+observation.reference_value));
                         card.appendChild(element('p','Enregistrement exact non confirmé · verdict scientifique inchangé.'));
                         (observation.citations||[]).forEach(function(url,index){
