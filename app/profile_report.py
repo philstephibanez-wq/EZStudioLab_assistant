@@ -161,6 +161,7 @@ def make_report(trace, outcome):
         "schema": "ezstudio.profile-execution-report.v2",
         "producer": "assistant",
         "runtime": _runtime_provenance(),
+        "worker_startup": last("worker.startup_provenance"),
         "public_research_audit": {
             "status": research_observed.get("status") if isinstance(research_observed, dict) else None,
             "request_count": research_observed.get("request_count") if isinstance(research_observed, dict) else None,
