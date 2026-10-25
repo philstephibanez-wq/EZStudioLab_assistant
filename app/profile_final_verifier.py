@@ -194,6 +194,23 @@ def verify_final_values(row, identity, research):
             "scientific_preset_mutation_allowed":False}
 
 
+def _documentary_type_ok(key, value):
+    """Avoid incompatible units/values being marked as documentary agreement."""
+    import re
+    v = str(value or "").strip()
+    if not v:
+        return False
+    if key == "tempo":
+        return bool(re.fullmatch(r"\d{1,3}(?:[.,]\d+)?\s*(?:bpm)?", v, re.I))
+    if key == "duration":
+        return bool(re.fullmatch(r"\d{1,3}:\d{2}(?::\d{2})?", v))
+    if key == "meter":
+        return bool(re.fullmatch(r"\d{1,2}\s*/\s*\d{1,2}", v))
+    if key.startswith("instrument:") or key in ("lead_vocal", "backing_vocals", "vocal_harmonies", "choir", "genre", "key"):
+        return not bool(re.search(r"\b\d+(?:[.,]\d+)?\s*bpm\b", v, re.I) or re.fullmatch(r"\d+(?:[.,]\d+)?", v))
+    return True
+
+
 def attach_documentary_findings(verification, investigation, local_review):
     """Merge post-verification documentary observations without promoting proof.
 
@@ -228,6 +245,9 @@ def attach_documentary_findings(verification, investigation, local_review):
             proposed = candidate.get("proposed_verdict")
         if proposed not in ("bon", "faux"):
             proposed = None
+        incompatible = value is not None and not _documentary_type_ok(key, value)
+        if incompatible:
+            value, proposed, urls = None, None, []
         assertion["documentary_observation"] = {
             "status": "provisional" if value else "not_found",
             "reference_value": str(value)[:160] if value is not None else None,
@@ -236,7 +256,7 @@ def attach_documentary_findings(verification, investigation, local_review):
             "citations": urls[:12],
             "recording_identity_confirmed": False,
             "scientific_validation": False,
-            "reason": review.get("reason") or candidate.get("explanation") or
+            "reason": ("Valeur documentaire incompatible avec le type de cet item" if incompatible else None) or review.get("reason") or candidate.get("explanation") or
                       "Aucune valeur documentaire exploitable",
         }
     merged["web_investigation"] = investigation
