@@ -192,3 +192,53 @@ def verify_final_values(row, identity, research):
             "verified_at":datetime.now(timezone.utc).isoformat(),
             "assertions":result,"evidence_diagnostic":audit,
             "scientific_preset_mutation_allowed":False}
+
+
+def attach_documentary_findings(verification, investigation, local_review):
+    """Merge post-verification documentary observations without promoting proof.
+
+    BON/FAUX from the independent verifier remain unchanged. Every provisional
+    reference remains visible with provenance and an explicit identity caveat.
+    """
+    import copy
+    merged = copy.deepcopy(verification)
+    web_by_key = {str(item["key"]): item for item in (investigation.get("items") or [])
+                  if isinstance(item, dict) and item.get("key")}
+    ai_by_key = {str(item["key"]): item for item in (local_review.get("items") or [])
+                 if isinstance(item, dict) and item.get("key")}
+    for assertion in merged.get("assertions") or []:
+        key = str(assertion.get("key") or "")
+        if not key or assertion.get("verdict") in ("bon", "faux"):
+            continue
+        web = web_by_key.get(key) or {}
+        review = web.get("evidence_review") or {}
+        candidate = ai_by_key.get(key) or {}
+        value = review.get("reference_value") or candidate.get("reference_value")
+        urls = []
+        for ref in review.get("references") or []:
+            if isinstance(ref, dict):
+                url = ref.get("url")
+                if isinstance(url, str) and url.startswith("https://") and url not in urls:
+                    urls.append(url)
+        for url in candidate.get("citations") or []:
+            if isinstance(url, str) and url.startswith("https://") and url not in urls:
+                urls.append(url)
+        proposed = review.get("proposed_verdict")
+        if proposed not in ("bon", "faux"):
+            proposed = candidate.get("proposed_verdict")
+        if proposed not in ("bon", "faux"):
+            proposed = None
+        assertion["documentary_observation"] = {
+            "status": "provisional" if value else "not_found",
+            "reference_value": str(value)[:160] if value is not None else None,
+            "comparison": "concordant" if proposed == "bon" else
+                          "discordant" if proposed == "faux" else "indeterminate",
+            "citations": urls[:12],
+            "recording_identity_confirmed": False,
+            "scientific_validation": False,
+            "reason": review.get("reason") or candidate.get("explanation") or
+                      "Aucune valeur documentaire exploitable",
+        }
+    merged["web_investigation"] = investigation
+    merged["local_web_review"] = local_review
+    return merged
