@@ -109,6 +109,13 @@ def require_completed_ai_review(ai):
 
 def process(run_id, client):
     row = api('/internal/analysis/desktop/profile/reviews/run/' + str(run_id))['item']
+    inventory = api('/internal/analysis/desktop/profile/reviews/run/' + str(run_id) + '/final-assertions')
+    if inventory.get('schema') != 'ezstudio.profile-final-assertions.v1' or not isinstance(inventory.get('assertions'), list):
+        raise RuntimeError('profile_final_assertions_schema_invalid')
+    if inventory.get('run_id') != run_id or inventory.get('count') != len(inventory['assertions']):
+        raise RuntimeError('profile_final_assertions_count_mismatch')
+    row = {**row, '_public_final_assertions': inventory['assertions']}
+    emit('profile.final_assertions.loaded', {'count': inventory['count']})
     snap('lab.profile.row', row)
     ident = row.get('normalized_identity') or normalize_track_identity(row)
     if not ident.get('title'):

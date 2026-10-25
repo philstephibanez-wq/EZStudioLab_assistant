@@ -32,6 +32,25 @@ def _url(source):
 
 def final_assertions(row):
     """Explicit allowlist: absolutely no raw diagnostic/module/preset leaves this boundary."""
+    if "_public_final_assertions" in row:
+        published = row["_public_final_assertions"]
+        if not isinstance(published, list):
+            raise ValueError("invalid_public_assertions")
+        result, seen = [], set()
+        for item in published:
+            if not isinstance(item, dict) or not all(k in item for k in ("id","dimension","value")):
+                raise ValueError("invalid_public_assertion")
+            key = str(item["id"])
+            if not key or key in seen:
+                raise ValueError("duplicate_or_empty_assertion_id")
+            seen.add(key)
+            if not _valid(item["value"]):
+                raise ValueError("invalid_public_assertion_value")
+            dimension = str(item["dimension"])
+            if dimension == "instruments" and key.startswith("instruments:"):
+                key = "instrument:" + key.split(":",1)[1]
+            result.append({"key":key, "label":dimension, "value":_clean(item["value"])})
+        return result
     view = (row.get("diagnostics") or {}).get("profile_view") or {}
     metrics = row.get("metrics") or {}
     vox = (view.get("vocal_profile") or {}).get("dimensions") or {}
