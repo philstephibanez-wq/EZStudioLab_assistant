@@ -2,8 +2,8 @@
 
 **L'ASSISTANT N'EXPERTISE PAS LAB. IL EXPERTISE UNIQUEMENT LES ITEMS MUSICAUX PRODUITS PAR LAB.**
 
-- Son entrée métier est : identité de la chanson et de l'enregistrement (titre, interprète, version si connue), puis **les dix items PROFILE et leurs valeurs** : Durée, Tempo, Mesure, Tonalité, Genre, Instruments, Voix principale, Voix d'accompagnement, Harmonies vocales, Chœurs.
-- Il recherche indépendamment des sources publiques pertinentes pour **l'enregistrement de l'interprète concerné** ; une œuvre originale, une reprise ou une partition arrangée ne prouve pas les caractéristiques d'une autre version.
+- Son entrée métier est : identité de la chanson et de l'enregistrement (titre, interprète, version si connue), puis **toutes les assertions musicales finales réellement émises par LAB**, dynamiques et individuelles (instruments compris), jamais une liste fixe de dix items.
+- Il découvre par recherche Web ouverte les ressources publiques, scanne chacune pour tous les items, en calcule les ensembles et intersections, puis affine les recherches ; il vérifie l'enregistrement concerné avant tout verdict ; une œuvre originale, une reprise ou une partition arrangée ne prouve pas les caractéristiques d'une autre version.
 - Il extrait et recoupe les faits musicaux ; HTML d'abord, OCR pour le texte en image, OMR pour la notation si nécessaire. Il fournit une référence vérifiable, une justification et un niveau de confiance.
 - Il juge **chaque item** : BON, FAUX ou NON TROUVÉ lorsque la preuve est insuffisante ; distinguer séparément l'erreur technique. Ne jamais inventer de valeur ni interpréter l'absence de source comme une réfutation.
 - Il persiste ses conclusions documentaires pour réutilisation ultérieure, avec identité de l'enregistrement et sources ; aucun résultat n'est présenté comme confirmé si l'identité est incertaine.
