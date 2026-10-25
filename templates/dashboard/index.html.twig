@@ -83,45 +83,55 @@
                 var labels={'duration':'Durée','tempo':'Tempo','meter':'Mesure','key':'Tonalité',
                     'genre':'Genre','instrument:0':'Instruments','lead_vocal':'Voix principale',
                     'backing_vocals':'Voix d’accompagnement','vocal_harmonies':'Harmonies vocales','choir':'Chœurs'};
+                var table=element('table');
+                table.style.width='100%';table.style.borderCollapse='collapse';
+                table.style.fontSize='0.92rem';
+                var head=element('thead'),header=element('tr');
+                ['Item','LAB','Avis','Documentaire','Référence','Preuves'].forEach(function(label){
+                    var th=element('th',label);th.style.textAlign='left';th.style.padding='9px 7px';
+                    header.appendChild(th);
+                });
+                head.appendChild(header);table.appendChild(head);
+                var body=element('tbody');
                 (data.items||[]).forEach(function(item){
-                    var card=element('div');card.className='card';card.style.marginTop='8px';
-                    output.appendChild(card);
-                    card.appendChild(element('h3',labels[item.key]||item.key));
-                    card.appendChild(element('p','LAB : '+(item.lab_value||'non renseigné')));
-                    card.appendChild(element('p','Référence scientifique validée : '+(item.external_value||'aucune')));
-                    var outcome=element('p','Avis : '+(item.verdict||'INCONNU')+' · '+(item.reason||'Aucune justification disponible'));
-                    outcome.style.padding='6px 10px';
-                    outcome.style.borderRadius='6px';
-                    outcome.style.background=item.verdict==='BON'?'#173a2b':item.verdict==='MAUVAIS'?'#46232a':'#303842';
-                    outcome.style.color=item.verdict==='BON'?'#93edb9':item.verdict==='MAUVAIS'?'#ffb3b3':'#c8d0db';
-                    card.appendChild(outcome);
                     var observation=item.documentary_observation||{};
-                    if(observation.status){
-                        var cmp={concordant:'CONCORDANTE',discordant:'DISCORDANTE',indeterminate:'INDÉTERMINÉE'};
-                        var indicator=element('p','Comparaison documentaire : '+(cmp[observation.comparison]||'INDÉTERMINÉE'));
-                        indicator.style.padding='6px 10px';
-                        indicator.style.borderRadius='6px';
-                        indicator.style.background=observation.comparison==='concordant'?'#1b3852':observation.comparison==='discordant'?'#4b321a':'#303842';
-                        indicator.style.color=observation.comparison==='concordant'?'#a0d6ff':observation.comparison==='discordant'?'#ffd596':'#c8d0db';
-                        card.appendChild(indicator);
-                        if(observation.reference_value)card.appendChild(element('p','Valeur documentaire : '+observation.reference_value));
-                        card.appendChild(element('p','Enregistrement exact non confirmé · verdict scientifique inchangé.'));
-                        (observation.citations||[]).forEach(function(url,index){
+                    var cmp={concordant:'Concordante',discordant:'Discordante',indeterminate:'Indéterminée'};
+                    var tr=element('tr');
+                    tr.style.borderTop='1px solid #344452';
+                    var tdName=element('td',labels[item.key]||item.key);
+                    tdName.style.padding='9px 7px';tdName.style.fontWeight='bold';
+                    tr.appendChild(tdName);
+                    var tdLab=element('td',item.lab_value||'—');tdLab.style.padding='9px 7px';tr.appendChild(tdLab);
+                    var tdVerdict=element('td',item.verdict||'INCONNU');tdVerdict.style.padding='9px 7px';
+                    tdVerdict.style.color=item.verdict==='BON'?'#93edb9':item.verdict==='MAUVAIS'?'#ffb3b3':'#c8d0db';
+                    tr.appendChild(tdVerdict);
+                    var tdComparison=element('td',observation.status?(cmp[observation.comparison]||'Indéterminée'):'—');
+                    tdComparison.style.padding='9px 7px';
+                    tdComparison.style.color=observation.comparison==='concordant'?'#a0d6ff':observation.comparison==='discordant'?'#ffd596':'#c8d0db';
+                    tr.appendChild(tdComparison);
+                    var tdRef=element('td',observation.reference_value||'—');tdRef.style.padding='9px 7px';tr.appendChild(tdRef);
+                    var tdProof=element('td');tdProof.style.padding='9px 7px';
+                    var details=element('details');var summary=element('summary','Détails');summary.style.cursor='pointer';
+                    details.appendChild(summary);
+                    details.appendChild(element('p','Avis : '+(item.verdict||'INCONNU')+' · '+(item.reason||'Aucune justification disponible')));
+                    details.appendChild(element('p','Enregistrement exact non confirmé · verdict scientifique inchangé.'));
+                    details.appendChild(element('p','Référence scientifique validée : '+(item.external_value||'aucune')));
+                    function addLinks(urls,prefix){
+                        Array.from(new Set(urls||[])).forEach(function(url,index){
                             if(typeof url!=='string'||!url.startsWith('https://'))return;
-                            var link=element('a','Référence documentaire '+(index+1));
+                            var link=element('a',prefix+' '+(index+1));
                             link.href=url;link.target='_blank';link.rel='noopener noreferrer';
-                            card.appendChild(link);
+                            link.style.display='block';details.appendChild(link);
                         });
                     }
-                    var urls=Array.from(new Set(item.sources||[]));
-                    if(!urls.length)card.appendChild(element('p','Aucune source admissible pour la validation scientifique.'));
-                    urls.forEach(function(url){
-                        if(typeof url!=='string'||!url.startsWith('https://'))return;
-                        var link=element('a','Source consultée');
-                        link.href=url;link.target='_blank';link.rel='noopener noreferrer';
-                        card.appendChild(link);
-                    });
+                    addLinks(observation.citations,'Référence documentaire');
+                    addLinks(item.sources,'Source consultée');
+                    if(!(item.sources||[]).length)details.appendChild(element('p','Aucune preuve scientifique admissible.'));
+                    tdProof.appendChild(details);tr.appendChild(tdProof);body.appendChild(tr);
                 });
+                table.appendChild(body);
+                var scrolling=element('div');scrolling.style.overflowX='auto';scrolling.appendChild(table);
+                output.appendChild(scrolling);
             })
             .catch(function(){state.textContent='Erreur technique : lecture LAB indisponible';});
     }
