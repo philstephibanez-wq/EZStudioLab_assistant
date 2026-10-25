@@ -211,6 +211,38 @@ def _documentary_type_ok(key, value):
     return True
 
 
+def _compare_documentary(key, lab, reference):
+    """Compute item-specific documentary comparisons, independently of model votes."""
+    if not _documentary_type_ok(key, reference):
+        return "indeterminate"
+    a, b = str(lab or "").strip().casefold(), str(reference).strip().casefold()
+    if key == "duration":
+        try:
+            def seconds(v):
+                p = [int(x) for x in v.split(":")]
+                return 60*p[0]+p[1] if len(p)==2 else 3600*p[0]+60*p[1]+p[2]
+            return "concordant" if abs(seconds(a)-seconds(b)) <= 2 else "discordant"
+        except (ValueError, IndexError):
+            return "indeterminate"
+    if key == "tempo":
+        try:
+            x,y = (float(z.replace("bpm","").strip().replace(",",".")) for z in (a,b))
+            return "concordant" if abs(x-y) <= max(2.0, 0.03*x) else "discordant"
+        except ValueError:
+            return "indeterminate"
+    if key == "meter":
+        return "concordant" if a.replace(" ","")==b.replace(" ","") else "discordant"
+    if key == "genre":
+        return "concordant" if a==b else "indeterminate"
+    if key.startswith("instrument:"):
+        return "concordant" if _instrument_matches(a,b) else "indeterminate"
+    if key in ("lead_vocal","backing_vocals","vocal_harmonies","choir"):
+        aliases={"present":"présent","detected":"présent","yes":"présent","no":"absent"}
+        a,b=aliases.get(a,a),aliases.get(b,b)
+        return ("concordant" if a==b else "discordant") if a in ("présent","absent") and b in ("présent","absent") else "indeterminate"
+    return "indeterminate"
+
+
 def attach_documentary_findings(verification, investigation, local_review):
     """Merge post-verification documentary observations without promoting proof.
 
@@ -248,11 +280,11 @@ def attach_documentary_findings(verification, investigation, local_review):
         incompatible = value is not None and not _documentary_type_ok(key, value)
         if incompatible:
             value, proposed, urls = None, None, []
+        comparison = _compare_documentary(key, assertion.get("value"), value)
         assertion["documentary_observation"] = {
             "status": "provisional" if value else "not_found",
             "reference_value": str(value)[:160] if value is not None else None,
-            "comparison": "concordant" if proposed == "bon" else
-                          "discordant" if proposed == "faux" else "indeterminate",
+            "comparison": comparison,
             "citations": urls[:12],
             "recording_identity_confirmed": False,
             "scientific_validation": False,
