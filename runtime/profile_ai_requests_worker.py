@@ -11,6 +11,8 @@ import urllib.error
 import traceback
 from contextlib import nullcontext
 from pathlib import Path
+from datetime import datetime, timezone
+import subprocess
 
 ROOT = Path(r'C:\EZStudioLab_assistant')
 sys.path.insert(0, str(ROOT/'app'))
@@ -32,6 +34,31 @@ from profile_final_verifier import verify_final_values, attach_documentary_findi
 from profile_recording_disambiguation import duration_from_catalog
 from profile_web_investigator import research_each_assertion
 from profile_web_local_review import review_web_items
+
+WORKER_START_UTC = datetime.now(timezone.utc).isoformat()
+WORKER_START_PID = os.getpid()
+def _startup_code_provenance():
+    root = Path(__file__).resolve().parents[1]
+    sources = [root / 'runtime' / 'profile_ai_requests_worker.py',
+               root / 'app' / 'profile_auto_review.py',
+               root / 'app' / 'profile_report.py']
+    digests = {}
+    for file in sources:
+        try:
+            digests[str(file.relative_to(root)).replace('\\', '/')] = hashlib.sha256(file.read_bytes()).hexdigest()
+        except OSError:
+            digests[str(file.relative_to(root)).replace('\\', '/')] = None
+    try:
+        p = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=str(root), capture_output=True,
+                           text=True, timeout=5, check=False)
+        commit = p.stdout.strip() if p.returncode == 0 else None
+    except (OSError, subprocess.TimeoutExpired):
+        commit = None
+    return {'process_started_at_utc': WORKER_START_UTC, 'pid': WORKER_START_PID,
+            'worker_source_sha256_at_start': digests, 'git_commit_at_start': commit,
+            'capture_semantics': 'startup_disk_bytes_not_loaded_module_attestation'}
+
+STARTUP_PROVENANCE = _startup_code_provenance()
 
 BASE = os.environ.get('EZSTUDIOLAB_ASSISTANT_BASE_URL', 'http://EZSTUDIO-MAIN:8702').rstrip('/')
 TOKEN = os.environ.get('EZSTUDIOLAB_ASSISTANT_TOKEN', '')
@@ -201,6 +228,7 @@ def once(client):
         with context:
             try:
                 emit('job.claimed', {'run_id': rid, 'claim': True})
+                snap('worker.startup_provenance', STARTUP_PROVENANCE)
                 outcome = process(rid, client)
                 message = 'Révision IA #' + str(outcome['revision']) + ' enregistrée'
                 print(json.dumps(outcome), flush=True)
