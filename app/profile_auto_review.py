@@ -1078,6 +1078,30 @@ def enrich_review_payload_with_documentary(payload: dict[str, Any], row: dict[st
                 destination[field].append(proposal)
             suggestions["missing"][field] = None
         break
+    # Work-level authorship can be recovered even when the specific recording is
+    # ambiguous. This remains a candidate, never a verified recording credit.
+    for source in research.get("sources") or []:
+        if not isinstance(source, dict) or source.get("source") != "MusicBrainzWork":
+            continue
+        if not source.get("available") or not _source_matches_identity(source, title, artist):
+            continue
+        for credit in source.get("work_credits") or []:
+            if not isinstance(credit, dict) or credit.get("scope") != "work":
+                continue
+            field = credit.get("field")
+            name = _compact(credit.get("name"))
+            link = credit.get("source_url")
+            if field not in ("lyricists", "composers", "arrangers") or not name:
+                continue
+            if not isinstance(link, str) or not link.startswith("https://musicbrainz.org/work/"):
+                continue
+            target = suggestions["recording"] if field == "arrangers" else suggestions["work"]
+            if not any(x.get("value") == name for x in target[field]):
+                target[field].append({"value":name,"original":None,
+                                      "status":"candidate","confidence":None,
+                                      "sources":[link],"human_validated":False})
+            suggestions["missing"][field] = None
+        break
     urls = sorted({x.get("url") for x in (research.get("sources") or [])
                    if isinstance(x, dict) and x.get("available") and
                    _source_matches_identity(x, title, artist) and
