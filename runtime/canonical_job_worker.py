@@ -73,15 +73,47 @@ def consume(job_id,client,execute=False,research=analyze):
             raise RuntimeError('error_finish_unconfirmed_job_may_be_running') from None
         raise RuntimeError('assistant_worker_exception_job_marked_error') from None
 
+def record_intake(job_id, client):
+    """Persist and reread an intake checkpoint without claiming or finishing a job."""
+    context=client.request(PATH+'/'+str(job_id)+'/context')
+    if (context.get('schema')!='ezstudio.assistant-final-job.v1'
+        or context.get('job_id')!=job_id or context.get('status')!='queued'
+        or not isinstance(context.get('run_id'),int) or context['run_id']<1
+        or not isinstance(context.get('song_id'),int) or context['song_id']<1):
+        raise RuntimeError('canonical_context_invalid')
+    normalized=normalize({'recording':context['recording'],'assertions':context['assertions']})
+    endpoint=PATH+'/'+str(job_id)+'/checkpoints'
+    event={'schema':'ezstudio.assistant-checkpoint.v1','event_key':'intake-v1',
+           'phase':'intake','outcome':'ok',
+           'detail':{'assertion_count':len(normalized['assertions'])}}
+    saved=client.request(endpoint,event)
+    if saved.get('ok') is not True:
+        raise RuntimeError('checkpoint_write_unconfirmed')
+    event_record=saved.get('event') or {}
+    history=client.request(endpoint)
+    if history.get('schema')!='ezstudio.assistant-checkpoint-history.v1' or history.get('job_id')!=job_id:
+        raise RuntimeError('checkpoint_history_invalid')
+    matches=[item for item in history.get('events',[]) if item.get('event_key')=='intake-v1']
+    if len(matches)!=1 or matches[0].get('run_id')!=context['run_id'] or matches[0].get('detail')!=event['detail'] or event_record.get('id')!=matches[0].get('id'):
+        raise RuntimeError('checkpoint_readback_mismatch')
+    return {'job_id':job_id,'run_id':context['run_id'],'song_id':context['song_id'],
+            'assertion_count':len(normalized['assertions']),
+            'status':'intake_checkpoint_persisted','event_id':matches[0]['id'],
+            'claimed':False,'finished':False,'review_persisted':False}
+
 def main():
     parser=argparse.ArgumentParser()
     parser.add_argument('--job-id',type=int,required=True)
     parser.add_argument('--lab-root',default=r'H:\EZStudio_lab')
     parser.add_argument('--execute',action='store_true',help='Moves canonical queued job to error on no verified review')
+    parser.add_argument('--record-intake',action='store_true',help='Persist and reread intake only; no claim/finish')
     args=parser.parse_args()
-    result=consume(args.job_id,LabClient(load_token(args.lab_root)),execute=args.execute)
+    if args.record_intake and args.execute:
+        parser.error('--record-intake and --execute are mutually exclusive')
+    client=LabClient(load_token(args.lab_root))
+    result=record_intake(args.job_id,client) if args.record_intake else consume(args.job_id,client,execute=args.execute)
     print(json.dumps(result,ensure_ascii=False))
-    return 0 if result['status']=='preflight_only' else 2
+    return 0 if result['status'] in ('preflight_only','intake_checkpoint_persisted') else 2
 
 if __name__=='__main__':
     raise SystemExit(main())
