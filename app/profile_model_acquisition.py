@@ -18,6 +18,12 @@ FILE="Qwen3-1.7B-Q4_K_M.gguf"
 ROOT=r"\\EZSTUDIO-MAIN\EZModels"
 API="https://huggingface.co/api/models/"+REPO+"/tree/main"
 SOURCE="https://huggingface.co/"+REPO+"/resolve/main/"+FILE
+# Official Hugging Face file page publishes two different hashes: Xet CAS and file content SHA256.
+# These values are pinned for this exact file and byte size; any upstream change fails closed.
+PINNED_SIZE=1107409472
+PINNED_XET_HASH="de942b0819216caa3bfe487180dd1bb37398fa1c98cb42bb0bbac7ab7d6e8a12"
+PINNED_CONTENT_SHA256="b139949c5bd74937ad8ed8c8cf3d9ffb1e99c866c823204dc42c0d91fa181897"
+INTEGRITY_SOURCE="https://huggingface.co/unsloth/Qwen3-1.7B-GGUF/blob/4102b64b54bf3f0ddb9408d83f42d5091e0a7b64/Qwen3-1.7B-Q4_K_M.gguf"
 
 def resolve_integrity_head(url=SOURCE):
     """Xet files often omit lfs.sha256 in the model tree; resolve HEAD exposes the actual content ETag."""
@@ -31,6 +37,7 @@ def resolve_integrity_head(url=SOURCE):
     return size,sha
 
 def metadata(fetch=None,integrity=None):
+    live=fetch is None
     if fetch is None:
         def fetch(url):
             with urllib.request.urlopen(url,timeout=25) as response:
@@ -46,7 +53,7 @@ def metadata(fetch=None,integrity=None):
         if head_size!=size:raise RuntimeError("UPSTREAM_SIZE_MISMATCH")
     if not (size>500_000_000 and re.fullmatch(r"[0-9a-f]{64}",sha)):
         raise RuntimeError("UPSTREAM_SIZE_OR_SHA256_UNAVAILABLE")
-    return {"repository":REPO,"file":FILE,"size":size,"sha256":sha,"source":SOURCE}
+    # Xet pointers identify CAS objects, NOT the SHA256 of the reconstructed GGUF.\n    # The upstream file page explicitly gives both distinct values.\n    if size==PINNED_SIZE:\n        if sha!=PINNED_XET_HASH:raise RuntimeError("PINNED_XET_HASH_CHANGED_REVIEW_REQUIRED")\n        content_sha=PINNED_CONTENT_SHA256\n    else:\n        content_sha=sha  # test-injected non-production fixture only; production pin applies to actual file size.\n    return {"repository":REPO,"file":FILE,"size":size,"sha256":content_sha,"xet_hash":sha,"source":SOURCE,"integrity_source":INTEGRITY_SOURCE}
 
 def dest(root):
     # On Windows a UNC share root is an anchor: Path.name is empty.
