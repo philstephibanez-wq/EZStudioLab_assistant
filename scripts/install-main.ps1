@@ -45,11 +45,11 @@ if (-not (Test-Path -LiteralPath (Join-Path $root 'vendor\autoload_runtime.php')
 if (-not (Test-Path -LiteralPath (Join-Path $root '.env.local'))) { throw 'ENV_LOCAL_MISSING' }
 $python = 'C:\Users\steph\AppData\Local\Programs\Python\Python313\python.exe'
 if (-not (Test-Path -LiteralPath $python -PathType Leaf)) { throw 'PYTHON_MISSING' }
-$caddy = if (Test-Path 'C:\Caddy\caddy.exe') { 'C:\Caddy\caddy.exe' } else {
+$caddy = if (Test-Path 'H:\Caddy\caddy.exe') { 'H:\Caddy\caddy.exe' } elseif (Test-Path 'C:\Caddy\caddy.exe') { 'C:\Caddy\caddy.exe' } else {
     $command = Get-Command caddy.exe -ErrorAction SilentlyContinue
     if ($command) { $command.Source } else { '' }
 }
-if (-not $caddy) { throw 'CADDY_MISSING:installer Caddy avant -Apply' }
+if (-not $caddy) { throw 'CADDY_MISSING: H:\Caddy\caddy.exe introuvable' }
 if (-not (Get-Command php.exe -ErrorAction SilentlyContinue)) { throw 'PHP_MISSING' }
 if ($LlamaServer -and -not (Test-Path -LiteralPath $LlamaServer -PathType Leaf)) {
     throw 'LLAMA_SERVER_SOURCE_MISSING'
@@ -64,7 +64,10 @@ if (-not $Apply) {
     Write-Output 'PREFLIGHT_READ_ONLY_OK'
     exit 0
 }
-foreach ($port in @(8712,8713,8720)) { Assert-FreePort $port }
+if (-not (Test-Path -LiteralPath $exe -PathType Leaf) -and -not $LlamaServer) {
+    throw 'LLAMA_SERVER_REQUIRED: definir -LlamaServer vers un executable deja present sur MAIN'
+}
+foreach ($port in @(8712,8713,8720,2022)) { Assert-FreePort $port }
 if (-not $aliasOk) {
     New-Item -ItemType Junction -Path $alias -Target $root -ErrorAction Stop | Out-Null
 }

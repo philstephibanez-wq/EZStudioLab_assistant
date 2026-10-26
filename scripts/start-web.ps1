@@ -93,7 +93,8 @@ $phpProc = $null
 $caddyProc = $null
 
 try {
-    $caddy = 'C:\Caddy\caddy.exe'
+    $caddy = 'H:\Caddy\caddy.exe'
+    if (-not (Test-Path -LiteralPath $caddy -PathType Leaf)) { $caddy = 'C:\Caddy\caddy.exe' }
     if (-not (Test-Path -LiteralPath $caddy -PathType Leaf)) {
         $caddy = (Get-Command caddy.exe -ErrorAction Stop).Source
     }

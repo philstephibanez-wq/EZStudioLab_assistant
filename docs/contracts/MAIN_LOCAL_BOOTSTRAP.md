@@ -21,3 +21,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-main.ps1 -
 La commande sans `-Apply` ne modifie rien. `-Apply` prepare une jonction `C:\EZStudioLab_assistant` vers H: pour le chemin absolu du worker, une jonction du modele vers le chemin physique du partage SMB, copie le binaire existant et les DLL presentes dans son dossier et cree un lanceur PROFILE prive dans `runtime/` lorsqu'il manque. Ne remplace pas un lanceur existant. Aucune edition de sources versionnees. La pile ne demarre qu'avec `-Start`.
 
 Limites: le parseur de `.env.local` traite les valeurs literales simples et ne prend pas en charge l'expansion dotenv; les secrets doivent etre valides localement sans impression. Le preset doit etre fourni. Le binaire llama.cpp peut requerir d'autres DLL; l'installateur ne garantit pas un serveur sain. Le contexte 24576 peut saturer RAM/VRAM sur MAIN: ne demarrer qu'avec budget ressources LAB libre. L'operation doit etre verifiee par tests d'integration sur MAIN; aucun fonctionnement reel n'est revendique a la publication.
+
+
+## v1.6a(120) — Correction infrastructure mutualisee
+
+L'orchestrateur utilise `H:\Caddy\caddy.exe` pour les services DEV/PROD/LAB. L'installateur MAIN et le script Web utilisent ce meme binaire existant sans le dupliquer ni modifier les instances de l'orchestrateur. Le Caddyfile Assistant isole son interface d'administration sur 127.0.0.1:2022, sans utiliser 2019/2020/2021. Le preflight exige la disponibilite du port 2022. Si llama-server manque dans runtime, fournir le chemin d'un executable existant a `-LlamaServer` avant toute creation de jonction. `scripts/start.ps1` n'est pas un installateur; ne pas le lancer avant l'installation.
