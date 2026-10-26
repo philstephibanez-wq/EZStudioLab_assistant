@@ -13,8 +13,14 @@ services:
       APP_ENV: prod
       APP_DEBUG: "0"
       APP_SECRET: "smoke-only-not-for-production"
+      EZSTUDIO_GPU_TELEMETRY_FILE: /run/ezstudio-gpu/telemetry.json
     ports:
       - "127.0.0.1:18713:8713"
+    volumes:
+      - type: bind
+        source: ${EZS_MAIN_GPU_TELEMETRY_DIR:?Set EZS_MAIN_GPU_TELEMETRY_DIR to H:/temp/EZSTUDIO_ASSISTANT_GPU}
+        target: /run/ezstudio-gpu
+        read_only: true
     read_only: true
     tmpfs:
       - /tmp
