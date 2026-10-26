@@ -53,7 +53,19 @@ def metadata(fetch=None,integrity=None):
         if head_size!=size:raise RuntimeError("UPSTREAM_SIZE_MISMATCH")
     if not (size>500_000_000 and re.fullmatch(r"[0-9a-f]{64}",sha)):
         raise RuntimeError("UPSTREAM_SIZE_OR_SHA256_UNAVAILABLE")
-    # Xet pointers identify CAS objects, NOT the SHA256 of the reconstructed GGUF.\n    # The upstream file page explicitly gives both distinct values.\n    if size==PINNED_SIZE:\n        if sha!=PINNED_XET_HASH:raise RuntimeError("PINNED_XET_HASH_CHANGED_REVIEW_REQUIRED")\n        content_sha=PINNED_CONTENT_SHA256\n    else:\n        content_sha=sha  # test-injected non-production fixture only; production pin applies to actual file size.\n    return {"repository":REPO,"file":FILE,"size":size,"sha256":content_sha,"xet_hash":sha,"source":SOURCE,"integrity_source":INTEGRITY_SOURCE}
+    # Xet CAS hash is distinct from the reconstructed file's SHA256.
+    # Pin both hashes and the size for this exact production artifact.
+    if live and size!=PINNED_SIZE:
+        raise RuntimeError("PINNED_CONTENT_SIZE_CHANGED_REVIEW_REQUIRED")
+    if size==PINNED_SIZE:
+        if sha!=PINNED_XET_HASH:
+            raise RuntimeError("PINNED_XET_HASH_CHANGED_REVIEW_REQUIRED")
+        content_sha=PINNED_CONTENT_SHA256
+    else:
+        # Synthetic metadata injected by existing offline unit tests.
+        content_sha=sha
+    return {"repository":REPO,"file":FILE,"size":size,"sha256":content_sha,
+            "xet_hash":sha,"source":SOURCE,"integrity_source":INTEGRITY_SOURCE}
 
 def dest(root):
     # On Windows a UNC share root is an anchor: Path.name is empty.

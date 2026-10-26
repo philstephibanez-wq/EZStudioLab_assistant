@@ -48,3 +48,7 @@ Suite au défaut réel sur XPS : `DOWNLOAD_SHA256_MISMATCH` après un transfert 
 ## v1.6a(116) — Xet CAS hash distinct du SHA-256 des octets
 
 Diagnostic réel du transfert complet de 1 107 409 472 octets : l'empreinte Xet `de942b0819216caa3bfe487180dd1bb37398fa1c98cb42bb0bbac7ab7d6e8a12` publiée par Hugging Face est différente du SHA-256 du fichier GGUF reconstruit `b139949c5bd74937ad8ed8c8cf3d9ffb1e99c866c823204dc42c0d91fa181897` (source officielle : https://huggingface.co/unsloth/Qwen3-1.7B-GGUF/blob/4102b64b54bf3f0ddb9408d83f42d5091e0a7b64/Qwen3-1.7B-Q4_K_M.gguf). Les deux valeurs et la taille exacte sont épinglées. La métadonnée amont doit concorder avec l'empreinte Xet épinglée ; les octets reçus sont vérifiés contre le SHA-256 de contenu épinglé. Changements upstream = arrêt et révision humaine. Le `.part` complet déjà présent sur MAIN est revalidé sans accès réseau aux données et promu en `.gguf` uniquement si SHA-256 conforme. Aucune dérogation à l'intégrité.
+
+## v1.6a(117) — Régression metadata() bloquante
+
+Les contrôles de la version 116 ne s'exécutaient pas : des séquences littérales `\\n` dans le code source avaient commenté le bloc de retour. Le préflight renvoyait `None`; le téléchargement était impossible. La version 117 rétablit les vraies lignes et ajoute des tests bloquants sur le type de retour, les deux empreintes officielles et la dérive Xet. Les validations sur XPS sont impératives avant promotion du `.part` et benchmark.
