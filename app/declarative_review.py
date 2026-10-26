@@ -21,7 +21,9 @@ def load_review_preset(phase='profile', path=None):
         raise ValueError('review_main_preset_path_required')
     selected = Path(configured)
     if os.name == 'nt' and not str(selected).startswith('\\\\'):
-        raise ValueError('review_preset_requires_main_unc_path')
+        canonical = Path(r'H:\EZStudio_lab\presets\assistant\profile-baseline-1.json')
+        if os.path.normcase(os.path.abspath(str(selected))) != os.path.normcase(os.path.abspath(str(canonical))):
+            raise ValueError('review_preset_requires_main_unc_or_local_canonical_path')
     raw = selected.read_bytes()
     if raw.startswith(b'\xef\xbb\xbf'):
         raise ValueError('review_preset_bom_forbidden')

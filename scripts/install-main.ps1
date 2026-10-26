@@ -34,7 +34,8 @@ foreach($port in @(8712,8713,8720,2022)){
     if (Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue) { throw "PORT_OCCUPIED:$port" }
 }
 # Validation du secret sans divulgation
-$required=@('EZSTUDIOLAB_ASSISTANT_TOKEN','EZSTUDIOLAB_REVIEW_PRESET_PATH')
+$required=@('EZSTUDIOLAB_ASSISTANT_TOKEN')
+$mainPreset='H:\EZStudio_lab\presets\assistant\profile-baseline-1.json'
 $local=@{}
 foreach($line in [IO.File]::ReadAllLines((Join-Path $root '.env.local'))){
     if($line -match '^\s*(EZSTUDIOLAB_ASSISTANT_TOKEN|EZSTUDIOLAB_ASSISTANT_BASE_URL|EZSTUDIOLAB_REVIEW_PRESET_PATH)\s*=\s*(.*)$'){
@@ -44,6 +45,7 @@ foreach($line in [IO.File]::ReadAllLines((Join-Path $root '.env.local'))){
     }
 }
 foreach($key in $required){if(-not $local.ContainsKey($key) -or -not $local[$key]){throw "LOCAL_CONFIG_REQUIRED:$key"}}
+if(-not $local.ContainsKey('EZSTUDIOLAB_REVIEW_PRESET_PATH') -or -not $local['EZSTUDIOLAB_REVIEW_PRESET_PATH']){$local['EZSTUDIOLAB_REVIEW_PRESET_PATH']=$mainPreset}
 if(-not (Test-Path -LiteralPath $local['EZSTUDIOLAB_REVIEW_PRESET_PATH'] -PathType Leaf)){throw 'REVIEW_PRESET_MISSING'}
 if(-not $exeOK){
     # Official GitHub release API; install only verified win-cpu-x64 ZIP in disposable H:\temp.
@@ -92,6 +94,7 @@ foreach($line in [IO.File]::ReadAllLines((Join-Path $root '.env.local'))){
     }
 }
 if(-not $env:EZSTUDIOLAB_ASSISTANT_TOKEN){throw 'TOKEN_MISSING'}
+if(-not $env:EZSTUDIOLAB_REVIEW_PRESET_PATH){$env:EZSTUDIOLAB_REVIEW_PRESET_PATH='H:\EZStudio_lab\presets\assistant\profile-baseline-1.json'}
 $python='C:\Users\steph\AppData\Local\Programs\Python\Python313\python.exe'
 & $python -u (Join-Path $root 'runtime\profile_ai_requests_worker.py')
 exit $LASTEXITCODE
