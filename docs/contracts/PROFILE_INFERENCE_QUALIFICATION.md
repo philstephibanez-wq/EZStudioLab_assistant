@@ -28,3 +28,7 @@ Nouveau benchmark explicitement opt-in avec `response_format=json_schema`, exemp
 ## v1.6a(111) — Comparaison à deux moteurs, isolée
 
 Le comparateur `app/profile_model_comparator.py` compare un serveur de référence à `127.0.0.1:8720` et un modèle candidat **déjà démarré** sur un autre port local, à schéma/consigne/corpus identiques. Il n'installe, ne copie, ne démarre ni n'arrête de modèle. Un essai en erreur est marqué invalide. Le serveur de production n'est pas reconfiguré. L'opérateur doit d'abord inventorier les modèles réellement présents sur MAIN et confirmer les ressources XPS avant tout lancement du candidat ; éviter toute saturation mémoire. Les résultats des trois textes synthétiques ne sont pas une expertise Web et ne suffisent pas à la sélection définitive du moteur. Les mêmes données doivent ultérieurement être évaluées sur corpus documentaire annoté et indépendant.
+
+## v1.6a(112) — Candidat Qwen3-1.7B, stockage MAIN
+
+Candidat GGUF Q4_K_M vérifié sur le catalogue Hugging Face Unsloth; aucun gain de qualité présumé. Le script d'acquisition ne fait rien en lecture seule par défaut, ne télécharge qu'avec --download, exige taille/SHA256 upstream et refuse l'écrasement. Écriture exclusivement sur `\\\\EZSTUDIO-MAIN\\EZModels`; aucune copie ni cache durable sur XPS. Ne lancer **aucun deuxième serveur** tant que les capacités de la machine et la stratégie de benchmark séquentiel n'ont pas été validées. Port 8720 et Qwen de référence intacts.
