@@ -14,7 +14,7 @@ from profile_recording_reconciliation import compare_durations
 from profile_document_consultation import consult
 from profile_tesseract_runtime import booklet_ocr_enabled
 from profile_physical_documents import inspect_scans_with_local_ocr, _safe_url
-from web_status import DEFAULT_TOKEN_FILE, _read_dpapi_token
+from profile_secret_reader import read_profile_token
 
 WEB_KEYS = dict(zip(ITEMS, (
     "duration", "tempo", "meter", "key", "genre", "instrument:0",
@@ -160,11 +160,11 @@ def verify(payload):
     }
     return result
 
-def process(envelope, token_reader=_read_dpapi_token):
+def process(envelope, token_reader=read_profile_token):
     if not isinstance(envelope, dict):
         raise ValueError("invalid_envelope")
     supplied = envelope.get("_auth_token")
-    stored = token_reader(DEFAULT_TOKEN_FILE)
+    stored = token_reader()
     if not isinstance(supplied, str) or not stored or not hmac.compare_digest(supplied, stored):
         raise PermissionError("unauthorized")
     request = {k: v for k, v in envelope.items() if k != "_auth_token"}

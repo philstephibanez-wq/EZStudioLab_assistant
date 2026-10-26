@@ -9,14 +9,14 @@ class PushProtocolTests(unittest.TestCase):
             "analysis_id": 142, "preset_id": None, "title": "Title", "artist": "Artist",
             "items": {key: "present" for key in ITEMS}, "diagnostics": {"token": "SECRET"}}
         with patch("runtime.profile_verify_push.research_assertions", return_value={"items": [], "status": "completed", "technical_errors": 0}):
-            result = process(payload, token_reader=lambda _: "TEST_NON_SECRET")
+            result = process(payload, token_reader=lambda: "TEST_NON_SECRET")
         self.assertEqual(result["expertise_type"], "profile")
         self.assertEqual(len(result["reviews"]), 10)
         self.assertEqual({r["verdict"] for r in result["reviews"].values()}, {"non_trouve"})
         self.assertNotIn("SECRET", str(result))
     def test_rejects_wrong_token(self):
         with self.assertRaises(PermissionError):
-            process({"_auth_token": "wrong"}, token_reader=lambda _: "expected")
+            process({"_auth_token": "wrong"}, token_reader=lambda: "expected")
 
 if __name__ == "__main__":
     unittest.main()
