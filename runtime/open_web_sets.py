@@ -93,6 +93,11 @@ class SearchResponseError(RuntimeError):
 def _engine_host(host, suffix):
     return host == suffix or host.endswith('.' + suffix)
 
+SEARCH_HOSTS = ('duckduckgo.com', 'bing.com', 'google.com', 'mojeek.com')
+
+def _search_host(host):
+    return any(_engine_host(host, suffix) for suffix in SEARCH_HOSTS)
+
 def _unwrap_search_url(href, engine):
     if href.startswith('//'):
         href = 'https:' + href
@@ -105,7 +110,7 @@ def _unwrap_search_url(href, engine):
         return wrapped[0] if wrapped else None
     if _engine_host(host, 'google.com'):
         return parse_qs(p.query).get('q', [None])[0] if p.path == '/url' else None
-    if _engine_host(host, 'bing.com'):
+    if _search_host(host):
         return None
     return href
 
@@ -117,7 +122,7 @@ def _search_links(html, engine, limit):
         href = _unwrap_search_url(href, engine)
         if not href:
             continue
-        if public_https(href) and href not in seen:
+        if public_https(href) and not _search_host((urlsplit(href).hostname or '').lower()) and href not in seen:
             seen.add(href)
             results.append({'url':href,'label':title[:180]})
             if len(results) >= limit:
@@ -159,7 +164,7 @@ def analyze(payload, *, search=search_web, fetch=fetch_public, max_pages=18):
             events.append({'phase':'discovery','query':query,'candidate_count':len(candidates)})
             for candidate in candidates:
                 url=candidate.get('url','') if isinstance(candidate,dict) else ''
-                if public_https(url):
+                if public_https(url) and not _search_host((urlsplit(url).hostname or '').lower()):
                     found.setdefault(url,candidate.get('label','')[:180])
         except Exception as exc:
             errors.append({'phase':'discovery','query':query,'reason':str(exc)[:350] if isinstance(exc,SearchResponseError) else type(exc).__name__})

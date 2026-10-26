@@ -24,6 +24,15 @@ class OpenWebSetsContract(unittest.TestCase):
         self.assertEqual(_search_links(google,'https://www.google.com/search',10)[0]['url'],'https://example.org/music')
         self.assertEqual(_search_links(mojeek,'https://www.mojeek.com/search',10)[0]['url'],'https://example.org/report')
         self.assertEqual(_search_links('<a href="https://notbing.com/test">ok</a>','https://www.bing.com/search',10)[0]['url'],'https://notbing.com/test')
+    def test_search_engine_navigation_is_never_evidence(self):
+        from runtime.open_web_sets import _search_links
+        html=''.join('<a href="https://www.mojeek.com/'+p+'">'+p+'</a>' for p in
+                     ('','images','news','blogs','about/','services/search/web-search-api/'))
+        self.assertEqual(_search_links(html,'https://www.mojeek.com/search',12),[])
+        self.assertEqual(_search_links('<a href="https://www.google.com/search?q=test">G</a>',
+                                        'https://www.google.com/search',12),[])
+        with self.assertRaises(SearchResponseError):
+            search_web('song',get=lambda url:html)
     def test_multi_engine_fallback_after_empty_html(self):
         calls=[]
         def mock_get(url):
