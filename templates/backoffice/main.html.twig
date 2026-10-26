@@ -1,0 +1,83 @@
+{% extends 'base.html.twig' %}
+{% block title %}Back-office — EZStudioLab Assistant MAIN{% endblock %}
+{% block body %}
+<h1>Back-office Assistant MAIN</h1>
+<p>Contrôle du runtime et recherche documentaire. Les résultats ne constituent pas des verdicts musicaux.</p>
+<div class="grid">
+    <section class="card">
+        <h2>Inférence Qwen CUDA</h2>
+        <p id="inference-state">Contrôle en cours…</p>
+        <p id="inference-model">—</p>
+        <button id="refresh-inference" type="button">Actualiser</button>
+    </section>
+    <section class="card">
+        <h2>Workflow métier</h2>
+        <p>LAB → Orchestrator → Assistant → LAB</p>
+        <p>Transport de runs et retour métier : non raccordés.</p>
+        <p>Persistance : LAB uniquement.</p>
+    </section>
+</div>
+<section class="card" style="margin-top:16px">
+    <h2>Rechercher un enregistrement réel</h2>
+    <form id="recording-search">
+        <label for="recording-title">Titre</label>
+        <input id="recording-title" required maxlength="120" value="Breakfast in America">
+        <label for="recording-artist">Artiste</label>
+        <input id="recording-artist" required maxlength="120" value="Supertramp">
+        <button type="submit">Rechercher MusicBrainz</button>
+    </form>
+    <p id="recording-status" role="status">Aucune recherche effectuée.</p>
+    <ul id="recording-results"></ul>
+    <p>Les candidats MusicBrainz ne prouvent ni la version exacte ni les valeurs musicales.</p>
+</section>
+<script>
+(function () {
+    'use strict';
+    const $ = (id) => document.getElementById(id);
+    async function status() {
+        $('inference-state').textContent = 'Vérification…';
+        try {
+            const response = await fetch('/api/backoffice/inference', {cache: 'no-store'});
+            const data = await response.json();
+            $('inference-state').textContent = data.state || 'INDISPONIBLE';
+            $('inference-model').textContent = data.model || 'Modèle non disponible';
+        } catch (error) {
+            $('inference-state').textContent = 'Connexion impossible';
+            $('inference-model').textContent = String(error);
+        }
+    }
+    $('refresh-inference').addEventListener('click', status);
+    $('recording-search').addEventListener('submit', async function (event) {
+        event.preventDefault();
+        $('recording-results').replaceChildren();
+        $('recording-status').textContent = 'Recherche en cours…';
+        const params = new URLSearchParams({
+            title: $('recording-title').value,
+            artist: $('recording-artist').value
+        });
+        try {
+            const response = await fetch('/api/backoffice/recordings?' + params.toString(), {cache: 'no-store'});
+            const result = await response.json();
+            if (!response.ok || !result.ok) {
+                $('recording-status').textContent = 'Recherche indisponible : ' + (result.error || response.status);
+                return;
+            }
+            $('recording-status').textContent = result.candidates.length + ' enregistrement(s) candidat(s), identité non confirmée';
+            for (const item of result.candidates) {
+                const li = document.createElement('li');
+                const link = document.createElement('a');
+                link.href = item.source_url;
+                link.target = '_blank';
+                link.rel = 'noopener noreferrer';
+                link.textContent = item.title + ' — ' + item.artist + ' (' + item.mbid + ')';
+                li.appendChild(link);
+                $('recording-results').appendChild(li);
+            }
+        } catch (error) {
+            $('recording-status').textContent = 'Erreur réseau : ' + String(error);
+        }
+    });
+    status();
+}());
+</script>
+{% endblock %}
