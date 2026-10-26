@@ -1,0 +1,15 @@
+.git
+.gitignore
+.env
+.env.*
+runtime
+logs
+models
+vendor
+var
+__pycache__
+*.pyc
+*.gguf
+*.zip
+*.log
+H_temp

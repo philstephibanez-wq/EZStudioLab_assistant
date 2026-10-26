@@ -1,0 +1,25 @@
+# Explicit profile: never starts as part of normal orchestrator lifecycle.
+name: ezstudio-assistant-main-smoke
+services:
+  assistant-web-smoke:
+    profiles: ["smoke"]
+    build:
+      context: ../..
+      dockerfile: docker/main/Dockerfile
+    image: ezstudio-assistant-main-web:smoke
+    init: true
+    restart: "no"
+    environment:
+      APP_ENV: prod
+      APP_DEBUG: "0"
+      APP_SECRET: "smoke-only-not-for-production"
+    ports:
+      - "127.0.0.1:18713:8713"
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /opt/ezstudio-assistant/var:uid=33,gid=33
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
