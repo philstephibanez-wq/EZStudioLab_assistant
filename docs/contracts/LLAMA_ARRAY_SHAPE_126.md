@@ -1,0 +1,1 @@
+v1.6a(126): correction de la forme des tableaux retournes par Invoke-RestMethod sous Windows PowerShell 5.1. Ne pas entourer Invoke-RestMethod de @(...): parcourir directement la valeur JSON deja materialisee. Test sur fixture locale + test API reel, parseur requis. Aucun changement main XPS, LAB, modele, preset ou ACL.

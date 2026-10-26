@@ -3,7 +3,7 @@ $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $script = [IO.File]::ReadAllText((Join-Path $root 'scripts\install-main.ps1'))
 if ($script -notmatch 'if\(\$candidate\.draft\)\{continue\}') { throw 'DRAFT_FILTER_MISSING' }
 if ($script -match '\$candidate\.prerelease') { throw 'OFFICIAL_BUILDS_EXCLUDED' }
-$releases = @(Invoke-RestMethod -Uri 'https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=20' -Headers @{'User-Agent'='EZStudioLab-MAIN-CONTRACT'} -TimeoutSec 30)
+$releases = Invoke-RestMethod -Uri 'https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=20' -Headers @{'User-Agent'='EZStudioLab-MAIN-CONTRACT'} -TimeoutSec 30
 $found = $null
 foreach ($candidate in $releases) {
     if ($candidate.draft) { continue }

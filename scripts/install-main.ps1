@@ -49,7 +49,7 @@ if(-not $local.ContainsKey('EZSTUDIOLAB_REVIEW_PRESET_PATH') -or -not $local['EZ
 if(-not (Test-Path -LiteralPath $local['EZSTUDIOLAB_REVIEW_PRESET_PATH'] -PathType Leaf)){throw 'REVIEW_PRESET_MISSING'}
 if(-not $exeOK){
     # Official GitHub release API; install only verified win-cpu-x64 ZIP in disposable H:\temp.
-    $releases=@(Invoke-RestMethod -Uri 'https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=20' -Headers @{'User-Agent'='EZStudioLab-MAIN'} -TimeoutSec 30)
+    $releases=Invoke-RestMethod -Uri 'https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=20' -Headers @{'User-Agent'='EZStudioLab-MAIN'} -TimeoutSec 30
     $release=$null
     $asset=$null
     foreach($candidate in $releases){
