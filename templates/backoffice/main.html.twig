@@ -1,83 +1,120 @@
 {% extends 'base.html.twig' %}
-{% block title %}Back-office — EZStudioLab Assistant MAIN{% endblock %}
+{% block title %}Assistant MAIN — Suivi documentaire{% endblock %}
 {% block body %}
-<h1>Back-office Assistant MAIN</h1>
-<p>Contrôle du runtime et recherche documentaire. Les résultats ne constituent pas des verdicts musicaux.</p>
-<div class="grid">
-    <section class="card">
-        <h2>Inférence Qwen CUDA</h2>
-        <p id="inference-state">Contrôle en cours…</p>
-        <p id="inference-model">—</p>
-        <button id="refresh-inference" type="button">Actualiser</button>
-    </section>
-    <section class="card">
-        <h2>Workflow métier</h2>
-        <p>LAB → Orchestrator → Assistant → LAB</p>
-        <p>Transport de runs et retour métier : non raccordés.</p>
-        <p>Persistance : LAB uniquement.</p>
-    </section>
+<style>
+  .stage-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:9px;margin:16px 0}
+  .stage{border:1px solid #29404a;border-radius:10px;padding:12px;background:#111d23}
+  .stage strong{display:block;margin-bottom:6px}.stage small{color:#9fb5c1}
+  .stage[data-state="running"]{border-color:#e6ba66}
+  .stage[data-state="done"]{border-color:#65c59b}
+  .mono{font-family:Consolas,monospace}.small{color:#9fb5c1;font-size:.88rem}
+  .compact{width:100%;border-collapse:collapse}.compact td,.compact th{border-bottom:1px solid #29404a;text-align:left;padding:9px}
+  .panels{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:14px}
+  .card{margin-bottom:14px}input{padding:9px;margin:6px 10px 6px 0;color:#edf4f7;background:#12242b;border:1px solid #41606c;border-radius:6px}
+  button{padding:9px 12px;border-radius:7px;background:#284953;color:#f4f8fa;border:1px solid #54717c;cursor:pointer}
+  a{color:#9fd8fd}
+</style>
+<h1>EZStudioLab Assistant — Suivi de contre-expertise</h1>
+<p class="small">Pipeline documentaire conforme au contrat canonique. Les étapes sans données sont explicitement indiquées « non démarrée » ; aucune recherche ou validation n'est simulée.</p>
+<section class="card">
+  <h2>État du système</h2>
+  <div class="grid">
+    <div><strong>Modèle CUDA</strong><p id="engine-state">Vérification…</p><p id="engine-model" class="small">—</p></div>
+    <div><strong>Run LAB</strong><p id="run-state">Aucun run reçu</p></div>
+    <div><strong>Résultat métier</strong><p id="result-state">Aucune contre-expertise effectuée</p></div>
+  </div>
+</section>
+<h2>Étapes du workflow</h2>
+<div class="stage-grid" id="stages">
+{% for label in ['Réception LAB','Découverte Web','Ensembles','Identité','Extraction','Recoupement','Verdicts','Retour LAB'] %}
+  <div class="stage" data-state="pending"><strong>{{ loop.index }}. {{ label }}</strong><small>Non démarrée</small></div>
+{% endfor %}
 </div>
-<section class="card" style="margin-top:16px">
-    <h2>Rechercher un enregistrement réel</h2>
-    <form id="recording-search">
-        <label for="recording-title">Titre</label>
-        <input id="recording-title" required maxlength="120" value="Breakfast in America">
-        <label for="recording-artist">Artiste</label>
-        <input id="recording-artist" required maxlength="120" value="Supertramp">
-        <button type="submit">Rechercher MusicBrainz</button>
-    </form>
-    <p id="recording-status" role="status">Aucune recherche effectuée.</p>
-    <ul id="recording-results"></ul>
-    <p>Les candidats MusicBrainz ne prouvent ni la version exacte ni les valeurs musicales.</p>
+<div class="panels">
+  <section class="card">
+    <h2>Journal d'exécution</h2>
+    <p class="small">Événements réellement observés dans cette session navigateur ; pas de persistance ni de faux journal.</p>
+    <ol id="journal"><li>Interface ouverte. En attente d'un run LAB.</li></ol>
+  </section>
+  <section class="card">
+    <h2>Théorie des ensembles</h2>
+    <p>Les ensembles sont indexés dynamiquement par les assertions reçues.</p>
+    <table class="compact"><thead><tr><th>Ensemble</th><th>Ressources</th></tr></thead>
+      <tbody id="sets"><tr><td>S<sub>total</sub></td><td>0 — aucun document de recherche ouvert</td></tr></tbody>
+    </table>
+    <p id="intersections" class="small">Intersections : non calculables sans documents analysés.</p>
+  </section>
+</div>
+<section class="card">
+  <h2>Assertions musicales et verdicts</h2>
+  <table class="compact"><thead><tr><th>Caractéristique</th><th>Valeur LAB</th><th>Sources retenues</th><th>Assistant</th></tr></thead>
+    <tbody id="assertions"><tr><td colspan="4">Aucune assertion finale reçue de LAB.</td></tr></tbody>
+  </table>
+  <p class="small">BON / FAUX uniquement avec preuves indépendantes de la version exacte. Sans preuve : NON TROUVÉ. Confiance non calibrée : aucune valeur affichée.</p>
+</section>
+<section class="card">
+  <h2>Consultation documentaire — identification uniquement</h2>
+  <p class="small">Ce contrôle MusicBrainz existant n'est pas le moteur de recherche ouverte contractuel. Les candidats ne sont ni des sources musicales qualifiées ni des membres des ensembles de preuves.</p>
+  <form id="recording-search">
+    <label for="recording-title">Titre</label><input id="recording-title" required maxlength="120" value="Breakfast in America">
+    <label for="recording-artist">Artiste</label><input id="recording-artist" required maxlength="120" value="Supertramp">
+    <button type="submit">Consulter les identités candidates</button>
+  </form>
+  <p id="recording-status" role="status">Aucune consultation lancée.</p>
+  <ul id="recording-results"></ul>
 </section>
 <script>
 (function () {
     'use strict';
-    const $ = (id) => document.getElementById(id);
-    async function status() {
-        $('inference-state').textContent = 'Vérification…';
+    const el = (id) => document.getElementById(id);
+    function log(message) {
+        const li = document.createElement('li');
+        li.textContent = new Date().toLocaleTimeString('fr-FR') + ' · ' + message;
+        el('journal').appendChild(li);
+    }
+    async function runtime() {
         try {
             const response = await fetch('/api/backoffice/inference', {cache: 'no-store'});
             const data = await response.json();
-            $('inference-state').textContent = data.state || 'INDISPONIBLE';
-            $('inference-model').textContent = data.model || 'Modèle non disponible';
+            el('engine-state').textContent = data.state || 'INDISPONIBLE';
+            el('engine-model').textContent = data.model || 'Modèle non identifié';
+            log(data.ok ? 'Sonde CUDA opérationnelle.' : 'Sonde CUDA indisponible.');
         } catch (error) {
-            $('inference-state').textContent = 'Connexion impossible';
-            $('inference-model').textContent = String(error);
+            el('engine-state').textContent = 'INDISPONIBLE';
+            log('Impossible de consulter la sonde CUDA.');
         }
     }
-    $('refresh-inference').addEventListener('click', status);
-    $('recording-search').addEventListener('submit', async function (event) {
+    el('recording-search').addEventListener('submit', async (event) => {
         event.preventDefault();
-        $('recording-results').replaceChildren();
-        $('recording-status').textContent = 'Recherche en cours…';
-        const params = new URLSearchParams({
-            title: $('recording-title').value,
-            artist: $('recording-artist').value
-        });
+        el('recording-results').replaceChildren();
+        el('recording-status').textContent = 'Consultation en cours…';
+        const params = new URLSearchParams({title: el('recording-title').value, artist: el('recording-artist').value});
+        log('Consultation du catalogue d’identification MusicBrainz lancée.');
         try {
             const response = await fetch('/api/backoffice/recordings?' + params.toString(), {cache: 'no-store'});
-            const result = await response.json();
-            if (!response.ok || !result.ok) {
-                $('recording-status').textContent = 'Recherche indisponible : ' + (result.error || response.status);
+            const data = await response.json();
+            if (!response.ok || !data.ok) {
+                el('recording-status').textContent = 'Catalogue indisponible : ' + (data.error || response.status);
+                log('Consultation échouée, aucun document musical validé.');
                 return;
             }
-            $('recording-status').textContent = result.candidates.length + ' enregistrement(s) candidat(s), identité non confirmée';
-            for (const item of result.candidates) {
+            el('recording-status').textContent = data.candidates.length + ' identité(s) candidate(s), aucune vérifiée.';
+            for (const entry of data.candidates) {
                 const li = document.createElement('li');
-                const link = document.createElement('a');
-                link.href = item.source_url;
-                link.target = '_blank';
-                link.rel = 'noopener noreferrer';
-                link.textContent = item.title + ' — ' + item.artist + ' (' + item.mbid + ')';
-                li.appendChild(link);
-                $('recording-results').appendChild(li);
+                const a = document.createElement('a');
+                a.href = entry.source_url;
+                a.rel = 'noopener noreferrer';
+                a.target = '_blank';
+                a.textContent = entry.title + ' — ' + entry.artist + ' [' + entry.mbid + ']';
+                li.appendChild(a);el('recording-results').appendChild(li);
             }
+            log(data.candidates.length + ' candidat(s) d’identification reçus ; pas de preuve musicale.');
         } catch (error) {
-            $('recording-status').textContent = 'Erreur réseau : ' + String(error);
+            el('recording-status').textContent = 'Erreur de consultation.';
+            log('Erreur réseau pendant la consultation.');
         }
     });
-    status();
+    runtime();
 }());
 </script>
 {% endblock %}
