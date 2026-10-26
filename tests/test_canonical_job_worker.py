@@ -1,5 +1,5 @@
 import unittest
-from runtime.canonical_job_worker import consume, record_intake
+from runtime.canonical_job_worker import consume, record_intake, scan_queued
 CONTEXT={'schema':'ezstudio.assistant-final-job.v1','job_id':181,'run_id':143,'song_id':42,'status':'queued',
 'recording':{'title':'Inch Allah - Salvatore Adamo','artist':'Salvatore Adamo','version':None,'track_id':'42'},
 'assertions':[{'id':'tempo','characteristic':'tempo','value':112.347}]}
@@ -23,7 +23,23 @@ class CheckpointClient(Client):
     return {'ok':True,'event':self.event}
    return {'schema':'ezstudio.assistant-checkpoint-history.v1','job_id':181,'events':[self.event]}
   return super().request(path,data)
+class QueueClient:
+ def request(self,path,data=None):
+  return {'schema':'ezstudio.profile-ai-history.v1','jobs':[
+   {'job_id':182,'status':'queued'},{'job_id':181,'status':'queued'},
+   {'job_id':180,'status':'completed'}]}
 class WorkerTests(unittest.TestCase):
+ def test_batch_scans_only_queued_jobs(self):
+  seen=[]
+  def process(job_id,client):
+   seen.append(job_id)
+   if job_id==182:raise ValueError('metadata_missing')
+   return {'job_id':job_id,'status':'intake_checkpoint_persisted'}
+  result=scan_queued(QueueClient(),intake=process)
+  self.assertEqual(seen,[181,182])
+  self.assertEqual(result['queued_seen'],2)
+  self.assertEqual(result['results'][1]['status'],'intake_failed')
+
  def test_intake_persisted_and_read_back_without_claim(self):
   c=CheckpointClient()
   result=record_intake(181,c)

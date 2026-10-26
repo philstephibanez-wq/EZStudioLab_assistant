@@ -101,19 +101,48 @@ def record_intake(job_id, client):
             'status':'intake_checkpoint_persisted','event_id':matches[0]['id'],
             'claimed':False,'finished':False,'review_persisted':False}
 
+def scan_queued(client, *, limit=80, intake=record_intake):
+    """Process each queued canonical job independently; never claim or finish."""
+    history=client.request(PATH+'/recent?limit='+str(limit))
+    if history.get('schema')!='ezstudio.profile-ai-history.v1' or not isinstance(history.get('jobs'),list):
+        raise RuntimeError('canonical_history_invalid')
+    results=[]
+    seen=set()
+    for job in reversed(history['jobs']):
+        if not isinstance(job,dict) or job.get('status')!='queued':
+            continue
+        job_id=job.get('job_id')
+        if not isinstance(job_id,int) or job_id<1 or job_id in seen:
+            continue
+        seen.add(job_id)
+        try:
+            results.append(intake(job_id,client))
+        except Exception as exc:
+            # Do not log tokens, HTTP bodies or provenance.
+            results.append({'job_id':job_id,'status':'intake_failed',
+                            'reason':type(exc).__name__,'claimed':False,'finished':False})
+    return {'schema':'ezstudio.assistant-queued-scan.v1',
+            'queued_seen':len(seen),'results':results,
+            'claimed':False,'finished':False}
+
 def main():
     parser=argparse.ArgumentParser()
-    parser.add_argument('--job-id',type=int,required=True)
+    parser.add_argument('--job-id',type=int)
+    parser.add_argument('--scan-queued',action='store_true',help='Record intake checkpoints for queued jobs without claim/finish')
     parser.add_argument('--lab-root',default=r'H:\EZStudio_lab')
     parser.add_argument('--execute',action='store_true',help='Moves canonical queued job to error on no verified review')
     parser.add_argument('--record-intake',action='store_true',help='Persist and reread intake only; no claim/finish')
     args=parser.parse_args()
+    if args.scan_queued and (args.execute or args.record_intake or args.job_id is not None):
+        parser.error('--scan-queued cannot be combined with other job options')
+    if not args.scan_queued and args.job_id is None:
+        parser.error('--job-id is required unless --scan-queued is selected')
     if args.record_intake and args.execute:
         parser.error('--record-intake and --execute are mutually exclusive')
     client=LabClient(load_token(args.lab_root))
-    result=record_intake(args.job_id,client) if args.record_intake else consume(args.job_id,client,execute=args.execute)
+    result=scan_queued(client) if args.scan_queued else (record_intake(args.job_id,client) if args.record_intake else consume(args.job_id,client,execute=args.execute))
     print(json.dumps(result,ensure_ascii=False))
-    return 0 if result['status'] in ('preflight_only','intake_checkpoint_persisted') else 2
+    return (0 if all(r['status']=='intake_checkpoint_persisted' for r in result['results']) else 2) if args.scan_queued else (0 if result['status'] in ('preflight_only','intake_checkpoint_persisted') else 2)
 
 if __name__=='__main__':
     raise SystemExit(main())

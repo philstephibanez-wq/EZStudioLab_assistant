@@ -1,0 +1,3 @@
+# Scan des jobs en attente — v1.6a(142)
+
+`python -m runtime.canonical_job_worker --scan-queued --lab-root H:\EZStudio_lab` lit la file canonique (historique authentifié), ne considère que les jobs `queued`, et écrit/revérifie leur checkpoint `intake-v1` un par un. Un job invalide n'empêche pas les suivants. Aucune valeur musicale n'est inventée, aucun claim/finish et aucun requeue. Les opérations sont idempotentes et n'écrivent que les checkpoints techniques LAB. Cette commande est ponctuelle et non un worker résident : le vrai traitement documentaire et la clôture `completed` restent non livrés. La liste vient du serveur, sans identifiant de morceau codé en dur. Tests et essai MAIN requis.
