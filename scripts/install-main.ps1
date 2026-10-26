@@ -53,7 +53,7 @@ if(-not $exeOK){
     $release=$null
     $asset=$null
     foreach($candidate in $releases){
-        if($candidate.draft -or $candidate.prerelease){continue}
+        if($candidate.draft){continue}
         $items=@($candidate.assets | Where-Object { $_.name -match '^llama-b[0-9]+-bin-win-cpu-x64\.zip$' })
         if($items.Count -eq 1){$release=$candidate; $asset=$items[0]; break}
     }
