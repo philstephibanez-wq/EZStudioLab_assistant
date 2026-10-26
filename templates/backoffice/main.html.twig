@@ -53,15 +53,9 @@
   <p class="small">BON / FAUX uniquement avec preuves indépendantes de la version exacte. Sans preuve : NON TROUVÉ. Confiance non calibrée : aucune valeur affichée.</p>
 </section>
 <section class="card">
-  <h2>Consultation documentaire — identification uniquement</h2>
-  <p class="small">Ce contrôle MusicBrainz existant n'est pas le moteur de recherche ouverte contractuel. Les candidats ne sont ni des sources musicales qualifiées ni des membres des ensembles de preuves.</p>
-  <form id="recording-search">
-    <label for="recording-title">Titre</label><input id="recording-title" required maxlength="120" value="Breakfast in America">
-    <label for="recording-artist">Artiste</label><input id="recording-artist" required maxlength="120" value="Supertramp">
-    <button type="submit">Consulter les identités candidates</button>
-  </form>
-  <p id="recording-status" role="status">Aucune consultation lancée.</p>
-  <ul id="recording-results"></ul>
+  <h2>Recherche Web documentaire autonome</h2>
+  <p role="status">Moteur non raccordé. Aucun fournisseur de recherche généraliste n'est configuré dans ce runtime.</p>
+  <p class="small">Conformément au contrat #11, aucune recherche sur un catalogue unique ne remplace la découverte ouverte des ressources. Aucun résultat ni source ne sont inventés.</p>
 </section>
 <script>
 (function () {
@@ -84,36 +78,6 @@
             log('Impossible de consulter la sonde CUDA.');
         }
     }
-    el('recording-search').addEventListener('submit', async (event) => {
-        event.preventDefault();
-        el('recording-results').replaceChildren();
-        el('recording-status').textContent = 'Consultation en cours…';
-        const params = new URLSearchParams({title: el('recording-title').value, artist: el('recording-artist').value});
-        log('Consultation du catalogue d’identification MusicBrainz lancée.');
-        try {
-            const response = await fetch('/api/backoffice/recordings?' + params.toString(), {cache: 'no-store'});
-            const data = await response.json();
-            if (!response.ok || !data.ok) {
-                el('recording-status').textContent = 'Catalogue indisponible : ' + (data.error || response.status);
-                log('Consultation échouée, aucun document musical validé.');
-                return;
-            }
-            el('recording-status').textContent = data.candidates.length + ' identité(s) candidate(s), aucune vérifiée.';
-            for (const entry of data.candidates) {
-                const li = document.createElement('li');
-                const a = document.createElement('a');
-                a.href = entry.source_url;
-                a.rel = 'noopener noreferrer';
-                a.target = '_blank';
-                a.textContent = entry.title + ' — ' + entry.artist + ' [' + entry.mbid + ']';
-                li.appendChild(a);el('recording-results').appendChild(li);
-            }
-            log(data.candidates.length + ' candidat(s) d’identification reçus ; pas de preuve musicale.');
-        } catch (error) {
-            el('recording-status').textContent = 'Erreur de consultation.';
-            log('Erreur réseau pendant la consultation.');
-        }
-    });
     runtime();
 }());
 </script>
