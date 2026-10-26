@@ -9,6 +9,8 @@ services:
     image: ezstudio-assistant-main-web:smoke
     init: true
     restart: "no"
+    # Match the uid/gid owning the isolated Symfony var tmpfs.
+    user: "33:33"
     environment:
       APP_ENV: prod
       APP_DEBUG: "0"
