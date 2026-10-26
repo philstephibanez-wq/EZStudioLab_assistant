@@ -32,3 +32,7 @@ Le comparateur `app/profile_model_comparator.py` compare un serveur de référen
 ## v1.6a(112) — Candidat Qwen3-1.7B, stockage MAIN
 
 Candidat GGUF Q4_K_M vérifié sur le catalogue Hugging Face Unsloth; aucun gain de qualité présumé. Le script d'acquisition ne fait rien en lecture seule par défaut, ne télécharge qu'avec --download, exige taille/SHA256 upstream et refuse l'écrasement. Écriture exclusivement sur `\\\\EZSTUDIO-MAIN\\EZModels`; aucune copie ni cache durable sur XPS. Ne lancer **aucun deuxième serveur** tant que les capacités de la machine et la stratégie de benchmark séquentiel n'ont pas été validées. Port 8720 et Qwen de référence intacts.
+
+## v1.6a(113) — Correctif intégrité Hugging Face Xet
+
+Lorsque la liste de fichiers n'expose pas `lfs.sha256`, effectuer une requête HEAD sur le lien `resolve/main`, relever `X-Linked-Etag` (empreinte SHA-256) et `X-Linked-Size`, vérifier leur format et la concordance de taille avec la liste d'origine. Un champ manquant ou incohérent est une erreur bloquante ; ne jamais désactiver la vérification. Le téléchargement garde sa validation SHA-256 complète avant publication sur MAIN ; ne change pas l'inférence XPS.

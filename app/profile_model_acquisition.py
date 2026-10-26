@@ -19,7 +19,18 @@ ROOT=r"\\EZSTUDIO-MAIN\EZModels"
 API="https://huggingface.co/api/models/"+REPO+"/tree/main"
 SOURCE="https://huggingface.co/"+REPO+"/resolve/main/"+FILE
 
-def metadata(fetch=None):
+def resolve_integrity_head(url=SOURCE):
+    """Xet files often omit lfs.sha256 in the model tree; resolve HEAD exposes the actual content ETag."""
+    request=urllib.request.Request(url,method="HEAD",headers={"User-Agent":"EZStudioLab-assistant-model-preflight"})
+    with urllib.request.urlopen(request,timeout=30) as response:
+        headers=response.headers
+        sha=str(headers.get("X-Linked-Etag") or headers.get("ETag") or "").strip('"').lower()
+        size=int(headers.get("X-Linked-Size") or headers.get("Content-Length") or 0)
+    if not re.fullmatch(r"[0-9a-f]{64}",sha) or size<=500_000_000:
+        raise RuntimeError("UPSTREAM_XET_SHA256_UNAVAILABLE")
+    return size,sha
+
+def metadata(fetch=None,integrity=None):
     if fetch is None:
         def fetch(url):
             with urllib.request.urlopen(url,timeout=25) as response:
@@ -30,6 +41,9 @@ def metadata(fetch=None):
     entry=matches[0]
     size=int(entry.get("size") or 0)
     sha=str((entry.get("lfs") or {}).get("sha256") or "").lower()
+    if not re.fullmatch(r"[0-9a-f]{64}",sha):
+        head_size,sha=(integrity or resolve_integrity_head)()
+        if head_size!=size:raise RuntimeError("UPSTREAM_SIZE_MISMATCH")
     if not (size>500_000_000 and re.fullmatch(r"[0-9a-f]{64}",sha)):
         raise RuntimeError("UPSTREAM_SIZE_OR_SHA256_UNAVAILABLE")
     return {"repository":REPO,"file":FILE,"size":size,"sha256":sha,"source":SOURCE}
