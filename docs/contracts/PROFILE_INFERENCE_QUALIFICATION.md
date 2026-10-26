@@ -24,3 +24,7 @@ Le script `app/profile_inference_live_benchmark.py` est un test volontaire (opt-
 ## v1.6a(110) — Contrôle JSON contraint
 
 Nouveau benchmark explicitement opt-in avec `response_format=json_schema`, exemple court, validation stricte des identifiants, champs et valeurs mesurées contenues dans les citations. Même corpus de 109 pour comparaison directe. Aucun remplacement d'inférence sans benchmark XPS. Il subsiste une limite : une citation contenant un nom instrumental ne démontre pas, par elle-même, qu'il constitue un crédit exact de la bonne version.
+
+## v1.6a(111) — Comparaison à deux moteurs, isolée
+
+Le comparateur `app/profile_model_comparator.py` compare un serveur de référence à `127.0.0.1:8720` et un modèle candidat **déjà démarré** sur un autre port local, à schéma/consigne/corpus identiques. Il n'installe, ne copie, ne démarre ni n'arrête de modèle. Un essai en erreur est marqué invalide. Le serveur de production n'est pas reconfiguré. L'opérateur doit d'abord inventorier les modèles réellement présents sur MAIN et confirmer les ressources XPS avant tout lancement du candidat ; éviter toute saturation mémoire. Les résultats des trois textes synthétiques ne sont pas une expertise Web et ne suffisent pas à la sélection définitive du moteur. Les mêmes données doivent ultérieurement être évaluées sur corpus documentaire annoté et indépendant.
