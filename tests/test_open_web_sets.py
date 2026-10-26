@@ -15,6 +15,24 @@ class OpenWebSetsContract(unittest.TestCase):
         self.assertEqual(len(calls),2)
         with self.assertRaises(SearchResponseError):
             search_web('song',get=lambda url:'<html>no results</html>')
+    def test_engine_redirects_and_public_links(self):
+        from runtime.open_web_sets import _search_links
+        duck='<a href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.org%2Frecord">Song</a>'
+        google='<a href="/url?q=https%3A%2F%2Fexample.org%2Fmusic&sa=U">Music</a>'
+        mojeek='<a href="https://example.org/report">Report</a>'
+        self.assertEqual(_search_links(duck,'https://lite.duckduckgo.com/lite/',10)[0]['url'],'https://example.org/record')
+        self.assertEqual(_search_links(google,'https://www.google.com/search',10)[0]['url'],'https://example.org/music')
+        self.assertEqual(_search_links(mojeek,'https://www.mojeek.com/search',10)[0]['url'],'https://example.org/report')
+        self.assertEqual(_search_links('<a href="https://notbing.com/test">ok</a>','https://www.bing.com/search',10)[0]['url'],'https://notbing.com/test')
+    def test_multi_engine_fallback_after_empty_html(self):
+        calls=[]
+        def mock_get(url):
+            calls.append(url)
+            return '<a href="https://example.org/a">A</a>' if 'mojeek.com' in url else '<html>blocked</html>'
+        result=search_web('song',get=mock_get)
+        self.assertEqual(result[0]['url'],'https://example.org/a')
+        self.assertEqual(len(calls),4)
+
     def test_filename_identity_query_is_normalized(self):
         self.assertIn('"Inch Allah" "Salvatore Adamo"',query_for(P['recording']))
     def test_dynamic_queries(self):

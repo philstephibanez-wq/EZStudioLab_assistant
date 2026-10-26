@@ -90,24 +90,32 @@ def query_for(recording, assertion=None):
 class SearchResponseError(RuntimeError):
     pass
 
+def _engine_host(host, suffix):
+    return host == suffix or host.endswith('.' + suffix)
+
+def _unwrap_search_url(href, engine):
+    if href.startswith('//'):
+        href = 'https:' + href
+    elif href.startswith('/'):
+        href = urljoin(engine, href)
+    p = urlsplit(href)
+    host = (p.hostname or '').lower()
+    if _engine_host(host, 'duckduckgo.com'):
+        wrapped = parse_qs(p.query).get('uddg', [])
+        return wrapped[0] if wrapped else None
+    if _engine_host(host, 'google.com'):
+        return parse_qs(p.query).get('q', [None])[0] if p.path == '/url' else None
+    if _engine_host(host, 'bing.com'):
+        return None
+    return href
+
 def _search_links(html, engine, limit):
     document = Document()
     document.feed(html)
     results, seen = [], set()
     for href, title in document.links:
-        if href.startswith('//'):
-            href = 'https:' + href
-        elif href.startswith('/'):
-            href = urljoin(engine, href)
-        parsed = urlsplit(href)
-        host = (parsed.hostname or '').lower()
-        if host.endswith('duckduckgo.com'):
-            wrapped = parse_qs(parsed.query).get('uddg', [])
-            if not wrapped:
-                continue
-            href = unquote(wrapped[0])
-        elif host.endswith('bing.com'):
-            # Never treat search-engine navigation as documentary evidence.
+        href = _unwrap_search_url(href, engine)
+        if not href:
             continue
         if public_https(href) and href not in seen:
             seen.add(href)
@@ -124,6 +132,9 @@ def search_web(query, *, get=fetch_public, limit=12):
     endpoints = [
         'https://html.duckduckgo.com/html/?q=' + quote(query),
         'https://www.bing.com/search?q=' + quote(query),
+        'https://lite.duckduckgo.com/lite/?q=' + quote(query),
+        'https://www.mojeek.com/search?q=' + quote(query),
+        'https://www.google.com/search?q=' + quote(query),
     ]
     reasons = []
     for endpoint in endpoints:
