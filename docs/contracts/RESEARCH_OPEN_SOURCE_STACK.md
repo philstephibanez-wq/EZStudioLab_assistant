@@ -1,0 +1,7 @@
+# Contrat expérimental — Recherche open source sans API payante (v1.6a(118))
+
+Sélection: Local Deep Researcher (langchain-ai/local-deep-researcher) pour le cycle discovery/reflection, SearXNG (searxng/searxng) pour la recherche Web, llama.cpp local, moteur de preuves propriétaire EZStudioLab pour E_i et verdicts. SearXNG est AGPL-3.0 : conserver ses obligations de licence et ne pas recopier son code dans l'Assistant. Le moteur LangChain possède sa propre licence à vérifier au verrouillage de la version amont avant incorporation. URLs de référence: https://github.com/langchain-ai/local-deep-researcher et https://github.com/searxng/searxng .
+
+Invariants: zéro clé API commerciale, zéro requête vers API d'IA facturée, modèles GGUF sur MAIN, aucun arrêt ni changement du serveur :8720, LAB read-only / assertions publiques uniquement, aucune modification scientifique. SearXNG s'écoute en loopback sur port dédié; JSON doit être activé explicitement dans settings.yml (403 si absent). Ne jamais pointer l'adaptateur vers une instance distante. L'accès Web lui-même reste soumis aux conditions des sites interrogés (429, CAPTCHA, robots et droits).
+
+Livraison 118: adaptateur de découverte SearXNG en lecture seule, résultats dédoublonnés, contrôle loopback, pas d'installation, pas de hook sur worker, aucune validation musicale automatique. Le framework Local Deep Researcher n'est PAS encore installé ni relié aux moteurs; cela relève d'une tranche suivante après préflight XPS/MAIN. Les sorties ne sont pas des preuves suffisantes pour BON/FAUX.
