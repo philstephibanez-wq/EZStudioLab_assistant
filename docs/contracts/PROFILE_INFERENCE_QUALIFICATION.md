@@ -20,3 +20,7 @@ Fournir un corpus documentaire réel annoté et indépendant, un outil de lancem
 ## v1.6a(109) : qualification du modèle réellement servi
 
 Le script `app/profile_inference_live_benchmark.py` est un test volontaire (opt-in) de localhost:8720 avec trois textes SYNTHÉTIQUES (ES/FR/EN, variantes studio/live) et un oracle documentaire indépendant. Chaque texte est exploré pour tous les items, les citations sont comparées littéralement et les métriques sont publiées dans la console. Aucune mesure n'est revendiquée avant son exécution sur XPS. Pas de bascule du worker, ni de modification de presets, ni de transfert de modèles. Un corpus Web annoté et un candidat concurrent restent nécessaires avant toute décision de modèle.
+
+## v1.6a(110) — Contrôle JSON contraint
+
+Nouveau benchmark explicitement opt-in avec `response_format=json_schema`, exemple court, validation stricte des identifiants, champs et valeurs mesurées contenues dans les citations. Même corpus de 109 pour comparaison directe. Aucun remplacement d'inférence sans benchmark XPS. Il subsiste une limite : une citation contenant un nom instrumental ne démontre pas, par elle-même, qu'il constitue un crédit exact de la bonne version.
