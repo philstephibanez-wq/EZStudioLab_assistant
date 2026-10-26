@@ -8,7 +8,7 @@ use Symfony\Component\Process\Process;
 use Symfony\Component\Routing\Attribute\Route;
 final class DashboardController extends AbstractController {
     public function __construct(private readonly LoggerInterface $logger) {}
-    #[Route('/', name: 'assistant_dashboard', methods: ['GET'])]
+    #[Route('/historique', name: 'assistant_dashboard_legacy', methods: ['GET'])]
     public function index(): Response {
         $root = dirname(__DIR__, 2);
         return $this->render('dashboard/index.html.twig', ['version' => trim((string) @file_get_contents($root.'/VERSION'))]);

@@ -11,6 +11,7 @@ use Symfony\Component\Routing\Attribute\Route;
 
 final class MainBackofficeController extends AbstractController
 {
+    #[Route('/', name: 'assistant_main_home', methods: ['GET'])]
     #[Route('/backoffice', name: 'assistant_main_backoffice', methods: ['GET'])]
     public function index(): Response
     {
