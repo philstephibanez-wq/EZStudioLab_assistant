@@ -1,0 +1,35 @@
+# Optional standalone CUDA smoke; explicitly opt in, never part of WEB lifecycle.
+name: ezstudio-assistant-main-cuda
+services:
+  llama-cuda-smoke:
+    profiles: ["cuda-smoke"]
+    image: ghcr.io/ggml-org/llama.cpp:server-cuda
+    init: true
+    restart: "no"
+    gpus: all
+    ports:
+      - "127.0.0.1:18720:8080"
+    volumes:
+      - type: bind
+        source: ${EZS_ASSISTANT_MODEL_DIR:?Set EZS_ASSISTANT_MODEL_DIR to an existing MAIN model directory}
+        target: /models
+        read_only: true
+    environment:
+      CUDA_VISIBLE_DEVICES: "0"
+    command:
+      - "-m"
+      - "/models/${EZS_ASSISTANT_MODEL_FILE:?Set EZS_ASSISTANT_MODEL_FILE to a GGUF filename in the mounted directory}"
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8080"
+      - "--ctx-size"
+      - "2048"
+      - "--parallel"
+      - "1"
+      - "--n-gpu-layers"
+      - "20"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
