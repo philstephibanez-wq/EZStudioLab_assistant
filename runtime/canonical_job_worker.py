@@ -125,24 +125,63 @@ def scan_queued(client, *, limit=80, intake=record_intake):
             'queued_seen':len(seen),'results':results,
             'claimed':False,'finished':False}
 
+def record_discovery(job_id, client, *, research=analyze):
+    """Read-only research followed by an auditable LAB checkpoint. No claim or finish."""
+    context=client.request(PATH+'/'+str(job_id)+'/context')
+    if (context.get('schema')!='ezstudio.assistant-final-job.v1'
+        or context.get('job_id')!=job_id or context.get('status')!='queued'):
+        raise RuntimeError('canonical_context_invalid')
+    normalize({'recording':context['recording'],'assertions':context['assertions']})
+    try:
+        discovery=research(context)
+        if discovery.get('job_id')!=job_id or discovery.get('run_id')!=context['run_id']:
+            raise RuntimeError('research_identity_mismatch')
+        n=int(discovery.get('discovered_count',0))
+        m=int(discovery.get('read_count',0))
+        if not (0<=n<=100000 and 0<=m<=100000):
+            raise ValueError('invalid_research_counts')
+        failed=discovery.get('status')=='discovery_failed'
+        reason='web_discovery_failed' if failed else 'documentary_verification_unavailable'
+    except Exception:
+        n=m=0
+        failed=True
+        reason='web_discovery_exception'
+    endpoint=PATH+'/'+str(job_id)+'/checkpoints'
+    payload={'schema':'ezstudio.assistant-checkpoint.v1',
+             'event_key':'discovery-v1','phase':'discovery',
+             'outcome':'failed' if failed else 'blocked',
+             'detail':{'discovered_count':n,'read_count':m,'reason_code':reason}}
+    saved=client.request(endpoint,payload)
+    events=client.request(endpoint)
+    matching=[e for e in events.get('events',[]) if e.get('event_key')=='discovery-v1']
+    if (saved.get('ok') is not True or len(matching)!=1
+        or matching[0].get('run_id')!=context['run_id']
+        or matching[0].get('detail')!=payload['detail']
+        or (saved.get('event') or {}).get('id')!=matching[0].get('id')):
+        raise RuntimeError('discovery_checkpoint_unconfirmed')
+    return {'job_id':job_id,'run_id':context['run_id'],'status':'discovery_failed' if failed else 'verification_blocked',
+            'discovered_count':n,'read_count':m,'checkpoint_id':matching[0]['id'],
+            'reason':reason,'claimed':False,'finished':False,'review_persisted':False}
+
 def main():
     parser=argparse.ArgumentParser()
     parser.add_argument('--job-id',type=int)
+    parser.add_argument('--record-discovery',action='store_true',help='Research and checkpoint without claim/finish')
     parser.add_argument('--scan-queued',action='store_true',help='Record intake checkpoints for queued jobs without claim/finish')
     parser.add_argument('--lab-root',default=r'H:\EZStudio_lab')
     parser.add_argument('--execute',action='store_true',help='Moves canonical queued job to error on no verified review')
     parser.add_argument('--record-intake',action='store_true',help='Persist and reread intake only; no claim/finish')
     args=parser.parse_args()
-    if args.scan_queued and (args.execute or args.record_intake or args.job_id is not None):
+    if args.scan_queued and (args.execute or args.record_intake or args.record_discovery or args.job_id is not None):
         parser.error('--scan-queued cannot be combined with other job options')
     if not args.scan_queued and args.job_id is None:
         parser.error('--job-id is required unless --scan-queued is selected')
-    if args.record_intake and args.execute:
+    if sum((args.record_intake,args.record_discovery,args.execute))>1:
         parser.error('--record-intake and --execute are mutually exclusive')
     client=LabClient(load_token(args.lab_root))
-    result=scan_queued(client) if args.scan_queued else (record_intake(args.job_id,client) if args.record_intake else consume(args.job_id,client,execute=args.execute))
+    result=scan_queued(client) if args.scan_queued else (record_discovery(args.job_id,client) if args.record_discovery else (record_intake(args.job_id,client) if args.record_intake else consume(args.job_id,client,execute=args.execute)))
     print(json.dumps(result,ensure_ascii=False))
-    return (0 if all(r['status']=='intake_checkpoint_persisted' for r in result['results']) else 2) if args.scan_queued else (0 if result['status'] in ('preflight_only','intake_checkpoint_persisted') else 2)
+    return (0 if all(r['status']=='intake_checkpoint_persisted' for r in result['results']) else 2) if args.scan_queued else (0 if result['status'] in ('preflight_only','intake_checkpoint_persisted','discovery_failed','verification_blocked') else 2)
 
 if __name__=='__main__':
     raise SystemExit(main())
