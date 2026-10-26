@@ -40,3 +40,7 @@ Lorsque la liste de fichiers n'expose pas `lfs.sha256`, effectuer une requête H
 ## v1.6a(114) — Racine UNC Windows
 
 Le dossier `\\\\EZSTUDIO-MAIN\\EZModels` est une racine de partage (`PureWindowsPath.anchor`) et non un dossier final (`Path.name` vide). Vérification stricte de l'égalité au partage autorisé, même après normalisation casse et séparateurs, sans laisser passer des sous-chemins arbitraires. Aucune modification du SHA-256 ou du téléchargement opt-in.
+
+## v1.6a(115) — Transfert résumable et observable
+
+Suite au défaut réel sur XPS : `DOWNLOAD_SHA256_MISMATCH` après un transfert bloqué sur un premier bloc de 4 Mio, le téléchargeur doit requérir des plages HTTP exactes (`206`, `Content-Range`), journaliser la progression, reprendre exclusivement un `.part` sur MAIN et refuser toute publication d'un fichier de taille ou SHA-256 incorrect. Un serveur qui refuse Range provoque une erreur explicite. Les fragments restent sous MAIN à des fins de reprise ; un lock empêche deux téléchargements concurrents. Aucun cache modèle sur XPS, aucun redémarrage d'inférence. Si `.part` est complet mais invalide, arrêter : contrôle manuel nécessaire, jamais contourner le SHA-256.

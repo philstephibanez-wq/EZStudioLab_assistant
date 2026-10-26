@@ -73,26 +73,74 @@ def preflight(root=ROOT,fetch=None):
     if usage.free<info["size"]*2 and status=="missing":raise RuntimeError("INSUFFICIENT_MAIN_FREE_SPACE")
     return info,target,status
 
-def download(info,target):
+def download(info,target,*,opener=None,chunk_size=8*1024*1024,max_attempts=3):
+    """Resumable exact HTTP ranges; fail closed on wrong range/size/hash.
+
+    Partial bytes stay on MAIN after a network failure. No download cache on XPS.
+    """
+    import time
+    opener=opener or urllib.request.urlopen
     target.parent.mkdir(parents=True,exist_ok=True)
     part=target.with_name(target.name+".part")
+    lock=target.with_name(target.name+".download.lock")
     if target.exists():raise RuntimeError("REFUSE_OVERWRITE_EXISTING")
-    if part.exists():raise RuntimeError("PARTIAL_FILE_EXISTS_CHECK_MANUALLY")
-    req=urllib.request.Request(info["source"],headers={"User-Agent":"EZStudioLab-assistant-model-preflight"})
+    if not 0<chunk_size<=64*1024*1024 or not 1<=max_attempts<=8:
+        raise ValueError("INVALID_DOWNLOAD_BUDGET")
+    with open(lock,"xb"):
+        pass
     try:
-        with urllib.request.urlopen(req,timeout=90) as response,open(part,"xb") as output:
-            h=hashlib.sha256()
-            total=0
-            while True:
-                data=response.read(4*1024*1024)
-                if not data:break
-                output.write(data);h.update(data);total+=len(data)
-        if total!=info["size"] or h.hexdigest()!=info["sha256"]:
-            raise RuntimeError("DOWNLOAD_SHA256_MISMATCH")
+        size=int(info["size"])
+        if part.exists() and part.stat().st_size>size:
+            raise RuntimeError("PARTIAL_FILE_EXCEEDS_EXPECTED_SIZE")
+        if not part.exists():
+            with open(part,"xb"):
+                pass
+        while True:
+            position=part.stat().st_size
+            if position>=size:break
+            end=min(position+chunk_size,size)-1
+            failure=None
+            for attempt in range(1,max_attempts+1):
+                position=part.stat().st_size
+                if position>end:break
+                req=urllib.request.Request(info["source"],headers={
+                    "User-Agent":"EZStudioLab-assistant-model-preflight",
+                    "Range":f"bytes={position}-{end}",
+                    "Accept-Encoding":"identity"})
+                try:
+                    with opener(req,timeout=35) as response:
+                        status=response.getcode()
+                        header=str(response.headers.get("Content-Range") or "")
+                        expected=f"bytes {position}-{end}/{size}"
+                        if status!=206 or header.strip()!=expected:
+                            raise RuntimeError("UPSTREAM_RANGE_UNSUPPORTED_OR_MISMATCH:"+str(status)+":"+header[:100])
+                        remaining=end-position+1
+                        with open(part,"ab") as output:
+                            while remaining:
+                                data=response.read(min(256*1024,remaining))
+                                if not data:raise OSError("PREMATURE_EOF")
+                                output.write(data)
+                                remaining-=len(data)
+                    failure=None
+                    break
+                except RuntimeError:
+                    raise
+                except (OSError,TimeoutError) as exc:
+                    failure=exc
+                    print(f"RETRY download position={part.stat().st_size} attempt={attempt}/{max_attempts} error={type(exc).__name__}",flush=True)
+                    if attempt<max_attempts:time.sleep(min(attempt,3))
+            if failure is not None:
+                raise RuntimeError("DOWNLOAD_INTERRUPTED_RESUMABLE_AT:"+str(part.stat().st_size)) from failure
+            progress=part.stat().st_size
+            print(f"DOWNLOAD_MAIN_PROGRESS {progress}/{size} ({progress*100/size:.1f}%)",flush=True)
+        actual=sha256(part)
+        if part.stat().st_size!=size:
+            raise RuntimeError("DOWNLOAD_SIZE_MISMATCH:"+str(part.stat().st_size)+"/"+str(size))
+        if actual!=info["sha256"]:
+            raise RuntimeError("DOWNLOAD_SHA256_MISMATCH:actual="+actual+" expected="+info["sha256"]+" ; PARTIAL_RETAINED")
         os.replace(part,target)
-    except Exception:
-        if part.exists():part.unlink()
-        raise
+    finally:
+        lock.unlink(missing_ok=True)
 
 def main():
     p=argparse.ArgumentParser()
