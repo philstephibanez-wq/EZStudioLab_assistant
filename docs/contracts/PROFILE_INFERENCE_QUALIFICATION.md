@@ -36,3 +36,7 @@ Candidat GGUF Q4_K_M vérifié sur le catalogue Hugging Face Unsloth; aucun gain
 ## v1.6a(113) — Correctif intégrité Hugging Face Xet
 
 Lorsque la liste de fichiers n'expose pas `lfs.sha256`, effectuer une requête HEAD sur le lien `resolve/main`, relever `X-Linked-Etag` (empreinte SHA-256) et `X-Linked-Size`, vérifier leur format et la concordance de taille avec la liste d'origine. Un champ manquant ou incohérent est une erreur bloquante ; ne jamais désactiver la vérification. Le téléchargement garde sa validation SHA-256 complète avant publication sur MAIN ; ne change pas l'inférence XPS.
+
+## v1.6a(114) — Racine UNC Windows
+
+Le dossier `\\\\EZSTUDIO-MAIN\\EZModels` est une racine de partage (`PureWindowsPath.anchor`) et non un dossier final (`Path.name` vide). Vérification stricte de l'égalité au partage autorisé, même après normalisation casse et séparateurs, sans laisser passer des sous-chemins arbitraires. Aucune modification du SHA-256 ou du téléchargement opt-in.

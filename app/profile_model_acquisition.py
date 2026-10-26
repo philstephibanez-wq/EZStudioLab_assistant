@@ -8,7 +8,7 @@ import argparse
 import hashlib
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 import re
 import shutil
 import urllib.request
@@ -49,10 +49,12 @@ def metadata(fetch=None,integrity=None):
     return {"repository":REPO,"file":FILE,"size":size,"sha256":sha,"source":SOURCE}
 
 def dest(root):
-    root=Path(root)
-    if root.name.casefold()!="ezmodels" or not str(root).startswith("\\\\"):
+    # On Windows a UNC share root is an anchor: Path.name is empty.
+    canonical=PureWindowsPath(ROOT)
+    candidate=PureWindowsPath(str(root))
+    if str(candidate).rstrip("\\\\/").casefold()!=str(canonical).rstrip("\\\\/").casefold():
         raise ValueError("MAIN_MODEL_SHARE_REQUIRED")
-    return root/"assistant"/"bench"/"qwen3-1.7b-q4_k_m"/FILE
+    return Path(root)/"assistant"/"bench"/"qwen3-1.7b-q4_k_m"/FILE
 
 def sha256(path):
     h=hashlib.sha256()
