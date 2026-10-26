@@ -14,7 +14,7 @@ from pathlib import Path
 from datetime import datetime, timezone
 import subprocess
 
-ROOT = Path(r'C:\EZStudioLab_assistant')
+ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT/'app'))
 import main as assistant_main
 from profile_review import normalize_track_identity

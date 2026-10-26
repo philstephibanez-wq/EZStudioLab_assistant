@@ -1,128 +1,106 @@
-# Installation MAIN pour le workflow canonique existant. PowerShell 5.1.
-# Par defaut: controle sans modification. -Apply: prepare les dependances locales.
-param(
-    [switch]$Apply,
-    [switch]$Start,
-    [string]$LlamaServer = ''
-)
-$ErrorActionPreference = 'Stop'
+# MAIN: installation contrôlée sur H:, PowerShell 5.1.
+param([switch]$Apply,[switch]$Start)
+$ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
-$root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$expectedRoot = 'H:\EZStudioLab_assistant'
-$alias = 'C:\EZStudioLab_assistant'
-$runtime = Join-Path $root 'runtime'
-$launcher = Join-Path $runtime 'start_profile_ai_requests.ps1'
-$exe = Join-Path $runtime 'ai\bin\llama-server.exe'
-$modelRelative = 'assistant\bench\qwen2.5-1.5b-instruct-q4_k_m'
-$modelName = 'qwen2.5-1.5b-instruct-q4_k_m.gguf'
-$modelLink = Join-Path $runtime ('models-cache\' + $modelRelative)
-$modelFile = Join-Path $modelLink $modelName
-$share = Get-SmbShare -Name EZModels -ErrorAction Stop
-$modelPhysical = Join-Path $share.Path $modelRelative
-$modelSource = Join-Path $modelPhysical $modelName
-function Assert-DirTarget([string]$link, [string]$target) {
-    if (-not (Test-Path -LiteralPath $link)) { return $false }
-    $item = Get-Item -LiteralPath $link -Force
-    if (-not $item.LinkType -or @($item.Target).Count -ne 1 -or
-        -not [string]::Equals([string](@($item.Target)[0]), $target, [StringComparison]::OrdinalIgnoreCase)) {
-        throw "LINK_CONFLICT:$link"
-    }
+$root=(Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+if (-not [string]::Equals($root,'H:\EZStudioLab_assistant',[StringComparison]::OrdinalIgnoreCase)) { throw "ROOT_UNEXPECTED:$root" }
+$runtime=Join-Path $root 'runtime'
+$exe=Join-Path $runtime 'ai\bin\llama-server.exe'
+$modelRelative='assistant\bench\qwen2.5-1.5b-instruct-q4_k_m'
+$modelLink=Join-Path $runtime ('models-cache\'+$modelRelative)
+$modelName='qwen2.5-1.5b-instruct-q4_k_m.gguf'
+$launcher=Join-Path $runtime 'start_profile_ai_requests.ps1'
+$share=Get-SmbShare -Name EZModels -ErrorAction Stop
+$modelPhysical=Join-Path $share.Path $modelRelative
+if (-not (Test-Path -LiteralPath (Join-Path $modelPhysical $modelName) -PathType Leaf)) { throw 'QWEN_MODEL_MISSING' }
+if (-not (Test-Path -LiteralPath 'H:\Caddy\caddy.exe' -PathType Leaf)) { throw 'SHARED_CADDY_MISSING' }
+if (-not (Test-Path -LiteralPath (Join-Path $root 'vendor\autoload_runtime.php'))) { throw 'VENDOR_MISSING' }
+if (-not (Test-Path -LiteralPath (Join-Path $root '.env.local'))) { throw 'ENV_LOCAL_MISSING' }
+$python='C:\Users\steph\AppData\Local\Programs\Python\Python313\python.exe'
+if (-not (Test-Path -LiteralPath $python -PathType Leaf)) { throw 'PYTHON_MISSING' }
+function Test-ExpectedJunction([string]$Path,[string]$Target) {
+    if (-not (Test-Path -LiteralPath $Path)) { return $false }
+    $i=Get-Item -LiteralPath $Path -Force
+    if ($i.LinkType -ne 'Junction' -or @($i.Target).Count -ne 1 -or
+        -not [string]::Equals([string](@($i.Target)[0]),$Target,[StringComparison]::OrdinalIgnoreCase)) { throw "EXISTING_PATH_CONFLICT:$Path" }
     return $true
 }
-function Assert-FreePort([int]$port) {
-    if (Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue) {
-        throw "PORT_OCCUPIED:$port"
+$linkOK=Test-ExpectedJunction $modelLink $modelPhysical
+$exeOK=Test-Path -LiteralPath $exe -PathType Leaf
+$launcherOK=Test-Path -LiteralPath $launcher -PathType Leaf
+Write-Output "MODEL_LINK=$linkOK LLAMA_SERVER=$exeOK PROFILE_LAUNCHER=$launcherOK"
+if (-not $Apply) { Write-Output 'MAIN_PREFLIGHT_READ_ONLY_OK'; exit 0 }
+foreach($port in @(8712,8713,8720,2022)){
+    if (Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue) { throw "PORT_OCCUPIED:$port" }
+}
+# Validation du secret sans divulgation
+$required=@('EZSTUDIOLAB_ASSISTANT_TOKEN','EZSTUDIOLAB_REVIEW_PRESET_PATH')
+$local=@{}
+foreach($line in [IO.File]::ReadAllLines((Join-Path $root '.env.local'))){
+    if($line -match '^\s*(EZSTUDIOLAB_ASSISTANT_TOKEN|EZSTUDIOLAB_ASSISTANT_BASE_URL|EZSTUDIOLAB_REVIEW_PRESET_PATH)\s*=\s*(.*)$'){
+        $v=$matches[2].Trim()
+        if($v.Length -gt 1 -and (($v.StartsWith('"') -and $v.EndsWith('"')) -or ($v.StartsWith("'") -and $v.EndsWith("'")))){$v=$v.Substring(1,$v.Length-2)}
+        $local[$matches[1]]=$v
     }
 }
-function Report([string]$name, [bool]$ok) {
-    Write-Output ("{0}={1}" -f $name, $(if($ok){'OK'}else{'MISSING'}))
+foreach($key in $required){if(-not $local.ContainsKey($key) -or -not $local[$key]){throw "LOCAL_CONFIG_REQUIRED:$key"}}
+if(-not (Test-Path -LiteralPath $local['EZSTUDIOLAB_REVIEW_PRESET_PATH'] -PathType Leaf)){throw 'REVIEW_PRESET_MISSING'}
+if(-not $exeOK){
+    # Official GitHub release API; install only verified win-cpu-x64 ZIP in disposable H:\temp.
+    $release=Invoke-RestMethod -Uri 'https://api.github.com/repos/ggml-org/llama.cpp/releases/latest' -Headers @{'User-Agent'='EZStudioLab-MAIN'} -TimeoutSec 30
+    $items=@($release.assets | Where-Object { $_.name -match '^llama-.*win-cpu-x64\.zip$' })
+    if($items.Count -ne 1){throw 'LLAMA_RELEASE_ASSET_AMBIGUOUS'}
+    $asset=$items[0]
+    if([string]$asset.digest -notmatch '^sha256:([0-9a-fA-F]{64})$'){throw 'LLAMA_RELEASE_SHA256_MISSING'}
+    $sha=$matches[1].ToLowerInvariant()
+    $stage=Join-Path 'H:\temp' ('EZStudio_Llama_' + [string]$release.tag_name)
+    New-Item -ItemType Directory -Path $stage -Force | Out-Null
+    $zip=Join-Path $stage $asset.name
+    if(-not (Test-Path -LiteralPath $zip -PathType Leaf)){
+        Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $zip -UseBasicParsing -TimeoutSec 600
+    }
+    if((Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant() -ne $sha){throw 'LLAMA_SHA256_MISMATCH'}
+    $unpack=Join-Path $stage 'unpacked'
+    if(-not (Test-Path -LiteralPath $unpack -PathType Container)){
+        Expand-Archive -LiteralPath $zip -DestinationPath $unpack -ErrorAction Stop
+    }
+    $matchesExe=@(Get-ChildItem -LiteralPath $unpack -Recurse -Filter 'llama-server.exe' -File)
+    if($matchesExe.Count -ne 1){throw 'LLAMA_EXE_NOT_UNIQUE'}
+    $sourceDir=$matchesExe[0].DirectoryName
+    $destination=Split-Path -Parent $exe
+    New-Item -ItemType Directory -Path $destination -Force | Out-Null
+    # Runtime distribution exe + sibling DLLs, never models.
+    Copy-Item -LiteralPath $matchesExe[0].FullName -Destination $exe -ErrorAction Stop
+    Get-ChildItem -LiteralPath $sourceDir -Filter '*.dll' -File | ForEach-Object {
+        Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $destination $_.Name) -ErrorAction Stop
+    }
+    Write-Output ('LLAMA_INSTALLED_SHA256_VERIFIED release='+$release.tag_name)
 }
-if (-not [string]::Equals($root,$expectedRoot,[StringComparison]::OrdinalIgnoreCase)) {
-    throw "ROOT_UNEXPECTED:$root"
+if(-not $linkOK){
+    New-Item -ItemType Directory -Path (Split-Path -Parent $modelLink) -Force | Out-Null
+    New-Item -ItemType Junction -Path $modelLink -Target $modelPhysical | Out-Null
 }
-if (-not (Test-Path -LiteralPath $modelSource -PathType Leaf)) { throw "MODEL_SOURCE_MISSING:$modelSource" }
-if (-not (Test-Path -LiteralPath (Join-Path $root 'vendor\autoload_runtime.php'))) { throw 'COMPOSER_VENDOR_MISSING' }
-if (-not (Test-Path -LiteralPath (Join-Path $root '.env.local'))) { throw 'ENV_LOCAL_MISSING' }
-$python = 'C:\Users\steph\AppData\Local\Programs\Python\Python313\python.exe'
-if (-not (Test-Path -LiteralPath $python -PathType Leaf)) { throw 'PYTHON_MISSING' }
-$caddy = if (Test-Path 'H:\Caddy\caddy.exe') { 'H:\Caddy\caddy.exe' } elseif (Test-Path 'C:\Caddy\caddy.exe') { 'C:\Caddy\caddy.exe' } else {
-    $command = Get-Command caddy.exe -ErrorAction SilentlyContinue
-    if ($command) { $command.Source } else { '' }
-}
-if (-not $caddy) { throw 'CADDY_MISSING: H:\Caddy\caddy.exe introuvable' }
-if (-not (Get-Command php.exe -ErrorAction SilentlyContinue)) { throw 'PHP_MISSING' }
-if ($LlamaServer -and -not (Test-Path -LiteralPath $LlamaServer -PathType Leaf)) {
-    throw 'LLAMA_SERVER_SOURCE_MISSING'
-}
-$aliasOk = Assert-DirTarget $alias $root
-$linkOk = Assert-DirTarget $modelLink $modelPhysical
-Report 'MAIN_ALIAS' $aliasOk
-Report 'MODEL_LINK' $linkOk
-Report 'LLAMA_SERVER' (Test-Path -LiteralPath $exe -PathType Leaf)
-Report 'PROFILE_LAUNCHER' (Test-Path -LiteralPath $launcher -PathType Leaf)
-if (-not $Apply) {
-    Write-Output 'PREFLIGHT_READ_ONLY_OK'
-    exit 0
-}
-if (-not (Test-Path -LiteralPath $exe -PathType Leaf) -and -not $LlamaServer) {
-    throw 'LLAMA_SERVER_REQUIRED: definir -LlamaServer vers un executable deja present sur MAIN'
-}
-foreach ($port in @(8712,8713,8720,2022)) { Assert-FreePort $port }
-if (-not $aliasOk) {
-    New-Item -ItemType Junction -Path $alias -Target $root -ErrorAction Stop | Out-Null
-}
-if (-not $linkOk) {
-    $parent = Split-Path -Parent $modelLink
-    New-Item -ItemType Directory -Path $parent -Force | Out-Null
-    New-Item -ItemType Junction -Path $modelLink -Target $modelPhysical -ErrorAction Stop | Out-Null
-}
-if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) {
-    if (-not $LlamaServer) { throw 'LLAMA_SERVER_REQUIRED: fournir -LlamaServer vers executable EXISTANT' }
-    New-Item -ItemType Directory -Path (Split-Path -Parent $exe) -Force | Out-Null
-    Copy-Item -LiteralPath $LlamaServer -Destination $exe -ErrorAction Stop
-    # Attention: distribuer aussi les DLL associees si necessaires; ne pas supprimer le source.
-    Get-ChildItem -LiteralPath (Split-Path -Parent $LlamaServer) -Filter '*.dll' -File | ForEach-Object {
-        Copy-Item -LiteralPath $_.FullName -Destination (Join-Path (Split-Path -Parent $exe) $_.Name) -ErrorAction Stop
+if(-not $launcherOK){
+    $content=@'
+$ErrorActionPreference='Stop'
+$root='H:\EZStudioLab_assistant'
+foreach($line in [IO.File]::ReadAllLines((Join-Path $root '.env.local'))){
+    if($line -match '^\s*(EZSTUDIOLAB_ASSISTANT_TOKEN|EZSTUDIOLAB_ASSISTANT_BASE_URL|EZSTUDIOLAB_REVIEW_PRESET_PATH)\s*=\s*(.*)$'){
+        $value=$matches[2].Trim()
+        if($value.Length -gt 1 -and (($value.StartsWith('"') -and $value.EndsWith('"')) -or ($value.StartsWith("'") -and $value.EndsWith("'")))){$value=$value.Substring(1,$value.Length-2)}
+        [Environment]::SetEnvironmentVariable($matches[1],$value,'Process')
     }
 }
-if (-not (Test-Path -LiteralPath $launcher -PathType Leaf)) {
-    $contents = @'
-$ErrorActionPreference = 'Stop'
-$root = 'H:\EZStudioLab_assistant'
-$envPath = Join-Path $root '.env.local'
-# Charger seulement les cles necessaires, sans evaluer le fichier et sans les afficher.
-foreach ($line in [IO.File]::ReadAllLines($envPath)) {
-    if ($line -match '^\s*(EZSTUDIOLAB_ASSISTANT_TOKEN|EZSTUDIOLAB_ASSISTANT_BASE_URL|EZSTUDIOLAB_REVIEW_PRESET_PATH)\s*=\s*(.*)\s*$') {
-        $key = $matches[1]
-        $value = $matches[2].Trim()
-        if ($value.Length -ge 2 -and (($value[0] -eq '"' -and $value[-1] -eq '"') -or
-             ($value[0] -eq "'" -and $value[-1] -eq "'"))) {
-            $value = $value.Substring(1,$value.Length-2)
-        }
-        [Environment]::SetEnvironmentVariable($key,$value,'Process')
-    }
-}
-if (-not $env:EZSTUDIOLAB_ASSISTANT_TOKEN) { throw 'PROFILE_TOKEN_MISSING: config locale' }
-if (-not $env:EZSTUDIOLAB_REVIEW_PRESET_PATH) { throw 'PROFILE_PRESET_PATH_MISSING: config locale' }
-$python = 'C:\Users\steph\AppData\Local\Programs\Python\Python313\python.exe'
+if(-not $env:EZSTUDIOLAB_ASSISTANT_TOKEN){throw 'TOKEN_MISSING'}
+$python='C:\Users\steph\AppData\Local\Programs\Python\Python313\python.exe'
 & $python -u (Join-Path $root 'runtime\profile_ai_requests_worker.py')
 exit $LASTEXITCODE
 '@
-    [IO.File]::WriteAllText($launcher,$contents,(New-Object System.Text.UTF8Encoding($false)))
+    [IO.File]::WriteAllText($launcher,$content,(New-Object System.Text.UTF8Encoding($false)))
 }
-if (-not (Test-Path -LiteralPath $modelFile -PathType Leaf)) { throw 'MODEL_LINK_INVALID' }
-Write-Output 'MAIN_PREPARED: execution non demarree'
-if ($Start) {
-    # Etablir le token et le preset pour le process guardian, sans jamais les afficher.
-    $local = [IO.File]::ReadAllLines((Join-Path $root '.env.local'))
-    foreach ($line in $local) {
-        if ($line -match '^\s*(EZSTUDIOLAB_ASSISTANT_TOKEN|EZSTUDIOLAB_ASSISTANT_BASE_URL|EZSTUDIOLAB_REVIEW_PRESET_PATH)\s*=\s*(.*)\s*$') {
-            $value = $matches[2].Trim().Trim('"').Trim("'")
-            [Environment]::SetEnvironmentVariable($matches[1],$value,'Process')
-        }
-    }
-    if (-not $env:EZSTUDIOLAB_ASSISTANT_TOKEN) { throw 'PROFILE_TOKEN_MISSING' }
-    if (-not $env:EZSTUDIOLAB_REVIEW_PRESET_PATH) { throw 'PROFILE_PRESET_PATH_MISSING' }
+Write-Output 'MAIN_INSTALL_READY'
+if($Start){
+    foreach($k in $local.Keys){[Environment]::SetEnvironmentVariable($k,$local[$k],'Process')}
     & (Join-Path $root 'scripts\start.ps1')
-    if (-not $?) { throw 'CANONICAL_START_FAILED' }
+    if(-not $?){throw 'MAIN_START_FAILED'}
 }
