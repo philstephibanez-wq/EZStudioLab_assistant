@@ -79,32 +79,63 @@ def fetch_public(url):
     return raw.decode('utf-8',errors='replace')
 
 def query_for(recording, assertion=None):
-    query = '"' + recording['title'] + '" "' + recording['artist'] + '"'
+    title, artist = recording['title'], recording['artist']
+    if title.casefold().endswith(' - ' + artist.casefold()):
+        title = title[:-(len(artist)+3)].strip()
+    query = '"' + title + '" "' + artist + '"'
     if recording.get('version'):
         query += ' "' + recording['version'] + '"'
     return query + (' ' + assertion['characteristic'] if assertion else ' music recording')
 
-def search_web(query, *, get=fetch_public, limit=12):
-    """Open discovery via general Web search. No music-site allowlist."""
+class SearchResponseError(RuntimeError):
+    pass
+
+def _search_links(html, engine, limit):
     document = Document()
-    document.feed(get('https://html.duckduckgo.com/html/?q='+quote(query)))
-    result, seen = [], set()
+    document.feed(html)
+    results, seen = [], set()
     for href, title in document.links:
         if href.startswith('//'):
-            href='https:'+href
+            href = 'https:' + href
         elif href.startswith('/'):
-            href=urljoin('https://html.duckduckgo.com',href)
-        parsed=urlsplit(href)
-        if parsed.hostname and parsed.hostname.endswith('duckduckgo.com'):
-            wrapped=parse_qs(parsed.query).get('uddg',[])
+            href = urljoin(engine, href)
+        parsed = urlsplit(href)
+        host = (parsed.hostname or '').lower()
+        if host.endswith('duckduckgo.com'):
+            wrapped = parse_qs(parsed.query).get('uddg', [])
             if not wrapped:
                 continue
-            href=unquote(wrapped[0])
+            href = unquote(wrapped[0])
+        elif host.endswith('bing.com'):
+            # Never treat search-engine navigation as documentary evidence.
+            continue
         if public_https(href) and href not in seen:
             seen.add(href)
-            result.append({'url':href,'label':title[:180]})
-            if len(result)>=limit:break
-    return result
+            results.append({'url':href,'label':title[:180]})
+            if len(results) >= limit:
+                break
+    return results
+
+def search_web(query, *, get=fetch_public, limit=12):
+    """General Web search with two independent public HTML interfaces.
+
+    Lack of links is an explicit failure, not a successful empty result.
+    """
+    endpoints = [
+        'https://html.duckduckgo.com/html/?q=' + quote(query),
+        'https://www.bing.com/search?q=' + quote(query),
+    ]
+    reasons = []
+    for endpoint in endpoints:
+        try:
+            html = get(endpoint)
+            found = _search_links(html, endpoint, limit)
+            if found:
+                return found
+            reasons.append(urlsplit(endpoint).hostname + ':html_without_external_links')
+        except Exception as exc:
+            reasons.append(urlsplit(endpoint).hostname + ':' + type(exc).__name__)
+    raise SearchResponseError('; '.join(reasons))
 
 def analyze(payload, *, search=search_web, fetch=fetch_public, max_pages=18):
     # Strict projection: do not send or echo scientific data from LAB.
@@ -120,7 +151,9 @@ def analyze(payload, *, search=search_web, fetch=fetch_public, max_pages=18):
                 if public_https(url):
                     found.setdefault(url,candidate.get('label','')[:180])
         except Exception as exc:
-            errors.append({'phase':'discovery','query':query,'reason':type(exc).__name__})
+            errors.append({'phase':'discovery','query':query,'reason':str(exc)[:350] if isinstance(exc,SearchResponseError) else type(exc).__name__})
+    if not found and not errors:
+        errors.append({'phase':'discovery','reason':'zero_candidates_from_search'})
     sets={a['id']:set() for a in assertions}
     pages=[]
     for url,title in list(found.items())[:max_pages]:
@@ -150,7 +183,7 @@ def analyze(payload, *, search=search_web, fetch=fetch_public, max_pages=18):
     return {'schema':'ezs.open-web-sets.v1','job_id':payload.get('job_id'),
             'run_id':payload.get('run_id'),'song_id':payload.get('song_id'),
             'recording':recording,'assertions':assertions,
-            'status':'candidate_coverage_only_no_musical_verdict',
+            'status':('discovery_failed' if not found else 'candidate_coverage_only_no_musical_verdict'),
             's_total':[p['url'] for p in pages],
             'discovered_count':len(found),'read_count':len(pages),
             'sets':{k:sorted(v) for k,v in sets.items()},

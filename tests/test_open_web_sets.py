@@ -1,11 +1,22 @@
 import unittest
-from runtime.open_web_sets import analyze, query_for, public_https
+from runtime.open_web_sets import analyze, query_for, public_https, search_web, SearchResponseError
 
 P={'job_id':181,'run_id':143,'song_id':42,
    'recording':{'title':'Inch Allah - Salvatore Adamo','artist':'Salvatore Adamo','version':None,'track_id':'42'},
    'assertions':[{'id':'tempo','characteristic':'tempo','value':112.347},
                  {'id':'mesure','characteristic':'mesure','value':'4/4'}]}
 class OpenWebSetsContract(unittest.TestCase):
+    def test_search_fallback_and_explicit_failure(self):
+        calls=[]
+        def get(url):
+            calls.append(url)
+            return '<a href="https://example.org/proof">External article</a>' if 'bing.com' in url else '<html>no results</html>'
+        self.assertEqual(search_web('song',get=get)[0]['url'],'https://example.org/proof')
+        self.assertEqual(len(calls),2)
+        with self.assertRaises(SearchResponseError):
+            search_web('song',get=lambda url:'<html>no results</html>')
+    def test_filename_identity_query_is_normalized(self):
+        self.assertIn('"Inch Allah" "Salvatore Adamo"',query_for(P['recording']))
     def test_dynamic_queries(self):
         self.assertIn('mesure',query_for(P['recording'],P['assertions'][1]))
     def test_real_set_intersection_from_page_contents(self):
