@@ -12,6 +12,15 @@ class TestQueuePass(unittest.TestCase):
   self.assertEqual(result['queued_found'],2)
   self.assertEqual([r['job_id'] for r in result['results']],[181,182])
   self.assertTrue(all(r['status']=='queued_preview' for r in result['results']))
+ def test_research_pass_without_claim(self):
+  seen=[]
+  def research(job_id,client):
+   seen.append(job_id)
+   return {'job_id':job_id,'status':'discovery_failed','claimed':False,'finished':False}
+  result=run_queue(Client(),research=True,researcher=research)
+  self.assertEqual(seen,[181,182])
+  self.assertEqual(result['mode'],'research')
+  self.assertTrue(all(r['claimed'] is False for r in result['results']))
  def test_execute_isolates_errors(self):
   visited=[]
   def worker(job_id,client,execute):

@@ -18,6 +18,7 @@ class TestDiscoveryCheckpoint(unittest.TestCase):
   r=record_discovery(181,c,research=lambda ctx:{'job_id':181,'run_id':143,'status':'discovery_failed','discovered_count':0,'read_count':0})
   self.assertEqual(r['status'],'discovery_failed')
   self.assertEqual(r['checkpoint_id'],3)
+  self.assertTrue(c.saved['event_key'].startswith('discovery-v2-'))
   self.assertEqual([x[0].rsplit('/',1)[-1] for x in c.calls],['context','checkpoints','checkpoints'])
   self.assertFalse(r['claimed'])
  def test_coverage_is_not_a_success_verdict(self):
@@ -25,4 +26,11 @@ class TestDiscoveryCheckpoint(unittest.TestCase):
   r=record_discovery(181,c,research=lambda ctx:{'job_id':181,'run_id':143,'status':'candidate_coverage_only_no_musical_verdict','discovered_count':6,'read_count':4})
   self.assertEqual(r['status'],'verification_blocked')
   self.assertFalse(r['review_persisted'])
+ def test_changed_result_changes_checkpoint_identity(self):
+  a=Client()
+  record_discovery(181,a,research=lambda ctx:{'job_id':181,'run_id':143,'status':'discovery_failed'})
+  first=a.saved['event_key']
+  b=Client()
+  record_discovery(181,b,research=lambda ctx:{'job_id':181,'run_id':143,'status':'candidate_coverage_only_no_musical_verdict','discovered_count':3,'read_count':1})
+  self.assertNotEqual(first,b.saved['event_key'])
 if __name__=='__main__':unittest.main()

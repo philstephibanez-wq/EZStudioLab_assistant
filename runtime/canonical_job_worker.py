@@ -2,6 +2,7 @@
 --execute claims job; records explicit error unless verified external review is persisted.
 """
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -147,13 +148,17 @@ def record_discovery(job_id, client, *, research=analyze):
         failed=True
         reason='web_discovery_exception'
     endpoint=PATH+'/'+str(job_id)+'/checkpoints'
+    detail={'discovered_count':n,'read_count':m,'reason_code':reason}
+    outcome='failed' if failed else 'blocked'
+    # Different outcomes are independent immutable events; identical outcomes are idempotent.
+    signature=json.dumps({'outcome':outcome,'detail':detail},sort_keys=True,separators=(',',':'))
+    event_key='discovery-v2-'+hashlib.sha256(signature.encode('utf-8')).hexdigest()[:16]
     payload={'schema':'ezstudio.assistant-checkpoint.v1',
-             'event_key':'discovery-v1','phase':'discovery',
-             'outcome':'failed' if failed else 'blocked',
-             'detail':{'discovered_count':n,'read_count':m,'reason_code':reason}}
+             'event_key':event_key,'phase':'discovery',
+             'outcome':outcome,'detail':detail}
     saved=client.request(endpoint,payload)
     events=client.request(endpoint)
-    matching=[e for e in events.get('events',[]) if e.get('event_key')=='discovery-v1']
+    matching=[e for e in events.get('events',[]) if e.get('event_key')==event_key]
     if (saved.get('ok') is not True or len(matching)!=1
         or matching[0].get('run_id')!=context['run_id']
         or matching[0].get('detail')!=payload['detail']
