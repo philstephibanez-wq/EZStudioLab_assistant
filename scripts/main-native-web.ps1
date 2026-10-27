@@ -43,8 +43,10 @@ function Preflight {
     if ($null -ne $owner -and ($null -eq $ours -or $owner -ne [int]$ours.ProcessId)) {
         throw "MAIN_NATIVE_PORT_IN_USE_18813: pid=$owner"
     }
-    & $binary -v | Select-Object -First 1
-    if ($LASTEXITCODE -ne 0) { throw 'MAIN_NATIVE_PHP_INVALID' }
+    $phpVersionLines = @(& $binary -v)
+    $phpExitCode = $LASTEXITCODE
+    if ($phpExitCode -ne 0 -or $phpVersionLines.Count -eq 0) { throw 'MAIN_NATIVE_PHP_INVALID' }
+    Write-Output ([string]$phpVersionLines[0])
     $gpu = Get-Command nvidia-smi -ErrorAction SilentlyContinue
     if ($null -eq $gpu) { Write-Output 'MAIN_NATIVE_GPU_PROBE_NOT_FOUND' }
     else { Write-Output "MAIN_NATIVE_GPU_PROBE=$($gpu.Source)" }
