@@ -101,3 +101,7 @@ Chaque commit publié doit être intelligible sans ouvrir le diff. Rédiger **en
 - Si une contrainte du dépôt exige de modifier `VERSION`, la respecter, y compris pour les livraisons documentaires.
 
 Cette règle s'applique aux contributions humaines, assistants et automatisations sur tous les dépôts du projet.
+
+## EZS STACK V1 — CONTRAT TRANSVERSAL
+
+Appliquer `docs/contracts/EZS_STACK_V1_PLATEFORME_UNIFIEE.md` : MAIN uniquement, Orchestrator + LAB + Assistant ; EZScore reporté. Unification Symfony/PHP, PHPUnit dans chaque dépôt, Python pour IA. Les contrats métier existants prévalent. Ne jamais activer Messenger ni remplacer les queues sans test de non-régression et contrôle de la ressource GPU.
