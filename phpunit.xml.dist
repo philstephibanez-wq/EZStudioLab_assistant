@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="https://schema.phpunit.de/13.0/phpunit.xsd"
+         bootstrap="vendor/autoload.php"
+         colors="true"
+         failOnWarning="true">
+    <testsuites>
+        <testsuite name="Assistant contractual PHP tests">
+            <directory suffix="Test.php">tests/PhpUnit</directory>
+            <file>tests/AssistantLlamaStopIdentity165Test.php</file>
+            <file>tests/AssistantPlatformHostStatePolicyTest.php</file>
+        </testsuite>
+    </testsuites>
+</phpunit>
