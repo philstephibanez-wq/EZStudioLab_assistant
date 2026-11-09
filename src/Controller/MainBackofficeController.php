@@ -39,15 +39,15 @@ final class MainBackofficeController extends AbstractController
     #[Route('/api/backoffice/inference', name: 'assistant_main_inference', methods: ['GET'])]
     public function inference(): JsonResponse
     {
-        // Fixed Docker host address; callers cannot choose an arbitrary URL.
-        $health = $this->readJson('http://host.docker.internal:18720/health');
+        // Local native llama.cpp Vulkan endpoint. Monitoring must be read-only.
+        $health = $this->readJson('http://127.0.0.1:8720/health');
         $ready = ($health['status'] ?? null) === 'ok';
-        $models = $ready ? $this->readJson('http://host.docker.internal:18720/v1/models') : null;
+        $models = $ready ? $this->readJson('http://127.0.0.1:8720/v1/models') : null;
         $model = $models['data'][0]['id'] ?? null;
         return $this->json([
             'ok' => $ready,
             'state' => $ready ? 'READY' : 'UNAVAILABLE',
-            'engine' => 'llama.cpp CUDA MAIN',
+            'engine' => 'llama.cpp Vulkan NVIDIA MAIN',
             'model' => is_string($model) ? $model : null,
             'musical_verdict' => null,
         ], $ready ? 200 : 503);
