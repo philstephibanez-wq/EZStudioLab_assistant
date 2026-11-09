@@ -327,3 +327,32 @@ Cette section est normative pour **EZS_orchestrator, EZStudio_lab, EZStudioLab_a
 - Préflight, application, recette, validation, publication sont des étapes distinctes. Aucun rollback automatique ni étape de rollback dans la séquence d'application normale.
 - Préserver les sauvegardes nécessaires **hors dépôt**, sans les réappliquer tant qu'une restauration n'est pas explicitement décidée.
 - Toute refactorisation transversale est livrée par lots atomiques testés, sous version canonique propre à chaque projet et commit/push effectué par le mainteneur.
+
+## Concordance documentaire avec le code publié — 1.6a(167)
+
+### Autorité de source et portée de la réconciliation
+
+Le runtime exploité sur MAIN est celui de la branche `assistant-main`, au minimum le code validé en `1.6a(165)` : commande Symfony `assistant:platform:host`, hôte PHP WinSW qui lance FrankenPHP partagé, puis démarrage de Llama en dépendance de l'Assistant, et arrêt vérifié du PID Llama. Cette description est un **état de code**, non la validation de toute l'architecture cible. `main` reste une branche historique divergente : ses neuf commits exclusifs sont documentaires, mais leur contenu n'est pas intégralement compatible avec cette topologie.
+
+La présente réconciliation concerne seulement la documentation GitHub. Elle ne modifie ni source PHP/Python, ni script PowerShell, ni Caddyfile, ni service Windows, ni route, ni queue, ni test, ni modèle, ni donnée. Elle ne change pas non plus la branche GitHub par défaut.
+
+### Règles compatibles conservées des documents historiques
+
+1. L'Assistant expertise exclusivement les assertions musicales finales produites par LAB, avec références documentaires et identité de l'enregistrement ; aucun audit des algorithmes, moteurs ou presets de LAB.
+2. Symfony Console constitue le point d'entrée contractuel des commandes applicatives. L'unicité de la responsabilité métier demeure : LAB possède ses jobs scientifiques, Assistant possède Llama et son travail documentaire, Orchestrator supervise et orchestre au niveau plateforme sans réparer directement les composants internes.
+3. Les sondes HARD et SOFT sont distinctes, bornées et en lecture seule. Un port TCP ou HTTP 200 ne prouve pas la santé métier ; une sonde ne démarre pas de modèle, worker, réparation ou analyse.
+4. Le SOFT cible une réponse REST versionnée avec identité, version, horodatage UTC, état global et composants vitaux déclarés honnêtement. `NON_IMPLEMENTE` pour un endpoint encore absent (notamment EZScore) est un constat non bloquant, différent du `KO` métier. Une erreur de transport ou JSON invalide n'est ni un `OK` ni une absence volontaire.
+5. Les diagnostics bruts sont fidèles, horodatés, expurgés de secrets et distingués des badges opérationnels. Les erreurs répétées doivent être agrégées sans perdre l'historique des résolutions ; ceci reste un objectif jusqu'à démonstration.
+6. Une seule réservation/exécution de job à la fois. Un job ANALYSE ou EXPERTISE ne doit pas immobiliser définitivement la FIFO : états terminaux `COMPLETED`, `FAILED`, `CANCELLED`, annulation sûre des jobs en attente et attestation d'arrêt de l'exécuteur pour les jobs actifs. Timeout et absence de heartbeat ne prouvent jamais la libération du GPU. **Ce résultat n'est pas encore implémenté ni validé de bout en bout.**
+7. Conserver PHP/Symfony, Twig et l'outillage de tests existant ; Python reste propriétaire des moteurs IA/scientifiques. Bootstrap/jQuery et Messenger ne sont pas des autorisations de remplacer les interfaces ou queues fonctionnelles sans tests de parité.
+
+### Hypothèses historiques explicitement non réactivées
+
+- Les dispositions de `main` imposant un runtime FrankenPHP PROD indépendant, la relance automatique de PROD, des démarrages site par site par Orchestrator, ou le lancement immédiat de Messenger ne décrivent pas l'état actuellement démontré ; elles ne peuvent pas écraser la configuration FrankenPHP partagée.
+- La bascule PROD/Maintenance appartient à `EZS_orchestrator` et nécessite une étude d'impact isolée : aucun protocole historique ne peut arrêter le FrankenPHP partagé sous prétexte de maintenance PROD.
+- Les documents de `main` `docs/contracts/EZS_STACK_V1_PLATEFORME_UNIFIEE.md` et `docs/contracts/EZS_WEB_UI_AND_NATIVE_OPTIMIZATION_STANDARD_2026_10_27.md` ont été relus pour leurs principes utiles ; ils ne sont pas copiés tels quels ni activés. Les instructions qui contrediraient la mission de l'Assistant ou le code réellement installé ne prévalent pas.
+- Les 9 commits propres à `main` et l'historique restent intacts. Ne pas effectuer de merge, rebase, reset, force-push ou suppression de branche pour réconcilier cette documentation.
+
+### Preuves et limites
+
+Comparaison GitHub des refs `main` / `assistant-main` et lecture des contrats et commandes de `assistant-main`. Révision documentaire uniquement : **aucune suite PHPUnit/Python et aucun essai Windows n'ont été exécutés pour cette révision**. Le cycle R6 a été validé antérieurement, sans présumer de la fiabilité de l'expertise. Changement éventuel de branche par défaut uniquement après contrôle des clients et accord explicite.

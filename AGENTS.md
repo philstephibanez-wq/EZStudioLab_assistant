@@ -101,3 +101,11 @@ Chaque commit publié doit être intelligible sans ouvrir le diff. Rédiger **en
 - Si une contrainte du dépôt exige de modifier `VERSION`, la respecter, y compris pour les livraisons documentaires.
 
 Cette règle s'applique aux contributions humaines, assistants et automatisations sur tous les dépôts du projet.
+
+## Branche de référence et conformité au runtime — 1.6a(167)
+
+- La source opérationnelle MAIN est `assistant-main` ; `main` est une branche historique divergente et reste, temporairement, le défaut GitHub. Toute lecture de code pour une livraison MAIN doit préciser `ref=assistant-main`.
+- Conserver sans changement les sources Python/PHP, le cycle WinSW/FrankenPHP/Llama R6, les composants métier et les tests de la branche opérationnelle. Les contrats qui décrivent un runtime PROD dédié, un autre ordre de démarrage, une nouvelle queue/Messenger, ou un redémarrage automatique sont des orientations historiques : ils ne prouvent pas une implantation effective.
+- Pour la mission, la priorité absolue demeure : expertiser les assertions musicales finales reçues de LAB, jamais les moteurs scientifiques.
+- La synthèse documentaire établie après l'audit des neuf commits propres à `main` figure dans `CONTRAT DE DÉVELOPPEMENT.md` sous « Concordance documentaire avec le code publié » et dans `docs/assistant/BRANCH_AUTHORITY_166.md`.
+- Aucune fusion, suppression de branche, changement automatique de défaut, ni mise à jour de code n'est autorisé par ces documents ; la conformité GitHub administrative requiert une opération distincte.
