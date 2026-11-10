@@ -46,6 +46,7 @@ final class AssistantLlamaLifecycle
                 throw new \RuntimeException('PORT_8720_OCCUPIED_UNHEALTHY_REFUSED');
             }
             [$exe, $args] = $this->originalGpuCommand();
+            $args = $this->resolveNvidiaDevice($exe, $args);
             if ($this->serviceState($wmi) !== 'Running') {
                 $this->log('SKIP_SERVICE_CHANGED_BEFORE_START');
                 return 0;
@@ -132,7 +133,7 @@ final class AssistantLlamaLifecycle
         // Check the listening endpoint, selected GPU and model cache. No other Llama.
         return preg_match('~(?:^|\s)--host\s+127\.0\.0\.1(?:\s|$)~i', $commandLine) === 1
             && preg_match('~(?:^|\s)--port\s+8720(?:\s|$)~i', $commandLine) === 1
-            && preg_match('~(?:^|\s)-dev\s+Vulkan1(?:\s|$)~i', $commandLine) === 1
+            && preg_match('~(?:^|\s)-dev\s+Vulkan[0-9]+(?:\s|$)~i', $commandLine) === 1
             && (self::hasConfiguredLocalModel($commandLine)
                 || stripos($commandLine, self::ROOT.'\\runtime\\models-cache\\assistant\\') !== false);
     }
@@ -229,6 +230,69 @@ final class AssistantLlamaLifecycle
             throw new \RuntimeException('AI_INTENT_INVALID_REFUSED');
         }
         return $intent['state'] === 'RUNNING';
+    }
+
+    /** Resolve the NVIDIA device from llama.cpp, never assume Vulkan numeric order. */
+    private function resolveNvidiaDevice(string $exe, string $args): string
+    {
+        $descriptors = [
+            0 => ['pipe', 'r'],
+            1 => ['pipe', 'w'],
+            2 => ['pipe', 'w'],
+        ];
+        // Execute only our verified binary. Never call a shell or a second server.
+        $process = @proc_open([$exe, '--list-devices'], $descriptors, $pipes,
+            self::ROOT, null, ['bypass_shell' => true, 'create_new_console' => false]);
+        if (!is_resource($process)) {
+            throw new \RuntimeException('LLAMA_GPU_DEVICE_PROBE_FAILED');
+        }
+        fclose($pipes[0]);
+        stream_set_blocking($pipes[1], false);
+        stream_set_blocking($pipes[2], false);
+        $output = '';
+        $deadline = microtime(true) + 10.0;
+        $exitCode = null;
+        do {
+            foreach ([1, 2] as $fd) {
+                $chunk = stream_get_contents($pipes[$fd]);
+                if (is_string($chunk)) $output .= $chunk;
+            }
+            if (strlen($output) > 16384) {
+                @proc_terminate($process);
+                break;
+            }
+            $status = proc_get_status($process);
+            if (!$status['running']) {
+                $exitCode = (int) $status['exitcode'];
+                break;
+            }
+            usleep(100000);
+        } while (microtime(true) < $deadline);
+        if ($exitCode === null) @proc_terminate($process);
+        foreach ([1, 2] as $fd) fclose($pipes[$fd]);
+        proc_close($process);
+        if ($exitCode !== 0) {
+            throw new \RuntimeException('LLAMA_GPU_DEVICE_PROBE_UNAVAILABLE');
+        }
+        $device = self::nvidiaDeviceFromList($output);
+        $args = preg_replace('~(?<!\\S)-dev\\s+Vulkan1(?=\\s|$)~i',
+            '-dev '.$device, $args, 1, $count);
+        if ($count !== 1 || !is_string($args)) {
+            throw new \RuntimeException('LLAMA_GPU_DEVICE_REWRITE_FAILED');
+        }
+        $this->log('LLAMA_GPU_SELECTED='.$device.' name=NVIDIA GeForce RTX 2060');
+        return $args;
+    }
+
+    /** Pure parser: refuse missing, duplicate or ambiguous NVIDIA GPUs. */
+    private static function nvidiaDeviceFromList(string $output): string
+    {
+        preg_match_all('~^\\s*(Vulkan[0-9]+):\\s*NVIDIA GeForce RTX 2060\\s*\\(~im',
+            $output, $matches);
+        if (count($matches[1]) !== 1) {
+            throw new \RuntimeException('LLAMA_NVIDIA_DEVICE_NOT_UNIQUE_OR_MISSING');
+        }
+        return $matches[1][0];
     }
 
     /** @return array{string,string} */
