@@ -495,7 +495,7 @@ class LocalAIProvider(AIReviewProvider):
         cache_root = str(config.local_cache_root or "").strip() or str(Path(__file__).resolve().parents[1] / "runtime" / "models-cache")
         self.cache_root = cache_root
         relative = _model_relative_path(config.shared_model_root, self.canonical_model_path)
-        self.model_path = str(Path(cache_root) / Path(*relative.parts))
+        self.model_path = self.canonical_model_path
         self.endpoint = str(config.local_endpoint or "http://127.0.0.1:8720").rstrip("/")
 
     def _health(self) -> tuple[bool, str | None]:

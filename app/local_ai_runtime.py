@@ -79,8 +79,9 @@ def config_from_env() -> LocalAIRuntimeConfig:
 
 
 def local_model_path(config: LocalAIRuntimeConfig) -> Path:
-    rel = _relative_model_path(config.shared_model_root, config.canonical_model)
-    return config.cache_root / Path(*rel.parts)
+    # Canonical model on MAIN, no second copy and no reliance on obsolete XPS cache.
+    _relative_model_path(config.shared_model_root, config.canonical_model)
+    return Path(config.canonical_model)
 
 
 def _manifest_path(config): return config.runtime_root / "cache-manifest.json"
@@ -109,86 +110,20 @@ def _valid_cached_model(cfg: LocalAIRuntimeConfig, manifest: dict[str, Any]) -> 
 
 
 def sync_local_model_cache(config: LocalAIRuntimeConfig | None = None) -> dict[str, Any]:
+    # Compatibility API: attest central file; NEVER copy GGUF to runtime.
     cfg = config or config_from_env()
-    source, target = Path(cfg.canonical_model), local_model_path(cfg)
-    manifest = _read_json(_manifest_path(cfg))
-    cached_ok, _, cached_size = _valid_cached_model(cfg, manifest)
-
+    source = local_model_path(cfg)
     try:
-        source_is_file = source.is_file()
-        source_stat = source.stat() if source_is_file else None
+        if not source.is_file():
+            raise RuntimeError("local_ai_canonical_model_missing")
+        size = source.stat().st_size
     except OSError as exc:
-        if cached_ok:
-            return {
-                "schema": "EZStudioLab_assistant.local-ai-cache.v1",
-                "status": "cached_offline",
-                "canonical_model": str(cfg.canonical_model),
-                "local_model": str(target),
-                "size": cached_size,
-                "copied": False,
-                "source_error": f"{type(exc).__name__}:{exc}"[:300],
-            }
-        raise RuntimeError(f"local_ai_canonical_model_unavailable:{type(exc).__name__}:{exc}") from exc
-
-    if not source_is_file or source_stat is None:
-        if cached_ok:
-            return {
-                "schema": "EZStudioLab_assistant.local-ai-cache.v1",
-                "status": "cached_offline",
-                "canonical_model": str(cfg.canonical_model),
-                "local_model": str(target),
-                "size": cached_size,
-                "copied": False,
-                "source_error": "canonical_model_not_visible",
-            }
-        raise RuntimeError(f"local_ai_canonical_model_missing:{source}")
-
-    unchanged = (
-        target.is_file()
-        and target.stat().st_size == source_stat.st_size
-        and manifest.get("canonical_model") == str(source)
-        and int(manifest.get("size") or -1) == source_stat.st_size
-        and int(manifest.get("mtime_ns") or -1) == source_stat.st_mtime_ns
-    )
-    if unchanged:
-        return {
-            "schema":"EZStudioLab_assistant.local-ai-cache.v1",
-            "status":"cached",
-            "canonical_model":str(source),
-            "local_model":str(target),
-            "size":source_stat.st_size,
-            "copied":False,
-        }
-
-    target.parent.mkdir(parents=True, exist_ok=True)
-    cfg.runtime_root.mkdir(parents=True, exist_ok=True)
-    temp = target.with_suffix(target.suffix + ".part")
-    temp.unlink(missing_ok=True)
-    started = time.perf_counter()
-    with source.open("rb") as src, temp.open("wb") as dst:
-        while True:
-            block = src.read(8 * 1024 * 1024)
-            if not block:
-                break
-            dst.write(block)
-        dst.flush()
-        os.fsync(dst.fileno())
-    if temp.stat().st_size != source_stat.st_size:
-        temp.unlink(missing_ok=True)
-        raise RuntimeError("local_ai_cache_size_mismatch")
-    temp.replace(target)
-    elapsed = time.perf_counter() - started
-    m = {
-        "schema":"EZStudioLab_assistant.local-ai-cache.v1",
-        "canonical_model":str(source),
-        "local_model":str(target),
-        "size":source_stat.st_size,
-        "mtime_ns":source_stat.st_mtime_ns,
-        "copied_at_epoch":time.time(),
-    }
-    _manifest_path(cfg).write_text(json.dumps(m, ensure_ascii=True, indent=2), encoding="utf-8", newline="\n")
-    return {**m, "status":"copied", "copied":True, "copy_seconds":round(elapsed, 3)}
-
+        raise RuntimeError("local_ai_canonical_model_unavailable") from exc
+    if size <= 0:
+        raise RuntimeError("local_ai_canonical_model_empty")
+    return {"schema": "EZStudioLab_assistant.local-ai-cache.v1",
+            "status": "canonical_direct", "canonical_model": str(source),
+            "local_model": str(source), "size": size, "copied": False}
 
 def _health(endpoint: str, timeout: float = 1.0):
     req = urllib.request.Request(endpoint.rstrip("/") + "/health", headers={"Accept":"application/json"}, method="GET")

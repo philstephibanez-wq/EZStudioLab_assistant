@@ -128,7 +128,8 @@ final class AssistantLlamaLifecycle
         return preg_match('~(?:^|\s)--host\s+127\.0\.0\.1(?:\s|$)~i', $commandLine) === 1
             && preg_match('~(?:^|\s)--port\s+8720(?:\s|$)~i', $commandLine) === 1
             && preg_match('~(?:^|\s)-dev\s+Vulkan1(?:\s|$)~i', $commandLine) === 1
-            && stripos($commandLine, self::ROOT.'\\runtime\\models-cache\\assistant\\') !== false;
+            && (stripos($commandLine, '\\\\EZSTUDIO-MAIN\\EZModels\\assistant\\') !== false
+                || stripos($commandLine, self::ROOT.'\\runtime\\models-cache\\assistant\\') !== false);
     }
 
     /** Requery by PID just before taskkill, to reject stale/reused PIDs. */
@@ -234,9 +235,18 @@ final class AssistantLlamaLifecycle
             throw new \RuntimeException('GPU_MODEL_ARGUMENT_MISSING');
         }
         $model = ($match[1] ?? '') !== '' ? $match[1] : ($match[2] ?? '');
-        $prefix = self::ROOT.'\\runtime\\models-cache\\assistant\\';
-        if (stripos($model, $prefix) !== 0 || !str_ends_with(strtolower($model), '.gguf') || !is_file($model)) {
-            throw new \RuntimeException('GPU_MODEL_FILE_INVALID');
+        $legacy = self::ROOT.'\\runtime\\models-cache\\assistant\\';
+        $canonical = '\\\\EZSTUDIO-MAIN\\EZModels\\assistant\\';
+        if (stripos($model, $legacy) === 0) {
+            $relative = substr($model, strlen($legacy));
+            $model = $canonical.$relative;
+            // Preserve GPU flags and replace only the -m model token.
+            $args = preg_replace_callback('~(?<!\\S)-m\\s+(?:"[^"]+"|\\S+)~i', static fn ($m) => '-m "'.$model.'"', $args, 1, $count);
+            if ($count !== 1 || !is_string($args)) throw new \RuntimeException('GPU_MODEL_REWRITE_FAILED');
+        }
+        if (stripos($model, $canonical) !== 0 || strpos(substr($model, strlen($canonical)), '..') !== false
+            || !str_ends_with(strtolower($model), '.gguf') || !is_file($model)) {
+            throw new \RuntimeException('GPU_CANONICAL_MODEL_INVALID');
         }
         return [$exe, $args];
     }
