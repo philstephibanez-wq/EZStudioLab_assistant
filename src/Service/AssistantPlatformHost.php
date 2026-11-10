@@ -121,7 +121,13 @@ final class AssistantPlatformHost
             return 3;
         }
         $this->webPid = $pid;
-        $identity = $this->identity($pid);
+        // WMI may publish a freshly launched process a little after proc_open.
+        // Verify the very same owned process; never accept an unverified PID.
+        $identity = self::attestStartedWebProcess(
+            static fn (): bool => (proc_get_status($proc)['running'] ?? false) === true,
+            fn (): ?string => $this->identity($pid),
+            static function (): void { usleep(200000); }
+        );
         if ($identity === null) {
             $this->log('WEB_PROCESS_IDENTITY_NOT_ATTESTED pid='.$pid);
             // Refuse to kill a process with unverified identity.
@@ -215,6 +221,30 @@ final class AssistantPlatformHost
         $state = is_string($raw) ? json_decode($raw,true) : null;
         return is_array($state) && ($state['schema']??'')==='ezs.assistant.platform-host.v1' &&
             is_int($state['pid']??null) && is_string($state['created']??null) ? $state : null;
+    }
+
+    /** Bounded startup attestation; no restart, PID adoption, or identity bypass.
+     *  The current proc_open handle must still be running on every probe.
+     *  Only a nonempty, original WMI identity may be persisted as web ownership.
+     */
+    public static function attestStartedWebProcess(
+        callable $running,
+        callable $identify,
+        callable $pause,
+        int $maxAttempts = 21
+    ): ?string {
+        if ($maxAttempts < 1 || $maxAttempts > 21) {
+            throw new \InvalidArgumentException('WEB_IDENTITY_ATTEMPTS_INVALID');
+        }
+        for ($attempt = 1; $attempt <= $maxAttempts; ++$attempt) {
+            if (!$running()) return null;
+            $created = $identify();
+            if (is_string($created) && $created !== '' && $running()) {
+                return $created;
+            }
+            if ($attempt < $maxAttempts) $pause();
+        }
+        return null;
     }
 
     private function identity(int $pid): ?string
