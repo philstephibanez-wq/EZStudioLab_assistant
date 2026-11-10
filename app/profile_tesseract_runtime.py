@@ -1,4 +1,4 @@
-"""Locate OCR binary on XPS and tessdata models over MAIN SMB; never copy models."""
+"""Resolve OCR tessdata models locally on MAIN; never copy models."""
 from __future__ import annotations
 import os
 import shutil
@@ -6,15 +6,32 @@ import subprocess
 from pathlib import Path
 
 DEFAULT_EXE = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
-DEFAULT_TESSDATA = r"\\EZSTUDIO-MAIN\EZModels\tesseract\tessdata_best"
+DEFAULT_TESSDATA = r"H:\EZSModels\tesseract\tessdata_best"
 
+
+
+def _ezs_local_tessdata_default():
+    cfg_path = Path(__file__).resolve().parents[1] / 'runtime' / 'state' / 'local-model.json'
+    try:
+        import json
+        cfg = json.loads(cfg_path.read_text(encoding='utf-8'))
+        root = str(cfg.get('root') or '') if cfg.get('schema') == 'ezs.assistant.model-location.v1' else ''
+        from pathlib import PureWindowsPath
+        p = PureWindowsPath(root)
+        if p.is_absolute() and not str(p).startswith(chr(92)*2) and '..' not in p.parts:
+            return str(p / 'tesseract' / 'tessdata_best')
+    except (OSError, ValueError, AttributeError):
+        pass
+    return DEFAULT_TESSDATA
 
 def resolve_tesseract():
-    """Fail closed when a required model is missing or the share is inaccessible."""
+    """Fail closed when a required local OCR model is unavailable."""
     exe = os.environ.get("EZS_TESSERACT_EXE") or shutil.which("tesseract") or DEFAULT_EXE
     if not Path(exe).is_file():
         return {"status": "executable_missing"}
-    data_path = os.environ.get("EZS_TESSDATA_DIR") or DEFAULT_TESSDATA
+    data_path = os.environ.get("EZS_TESSDATA_DIR") or _ezs_local_tessdata_default()
+    if data_path.startswith(chr(92) * 2) or data_path.startswith("//"):
+        return {"status": "network_model_path_refused"}
     data = Path(data_path)
     if not (data / "eng.traineddata").is_file():
         return {"status": "english_model_unavailable", "tessdata_dir": data_path}

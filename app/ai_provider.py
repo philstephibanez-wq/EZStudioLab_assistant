@@ -12,7 +12,7 @@ from profile_trace import emit as trace_emit, snap as trace_snap
 from typing import Any
 from declarative_review import load_review_preset
 
-DEFAULT_SHARED_MODEL_ROOT = r"\\EZSTUDIO-MAIN\EZModels"
+DEFAULT_SHARED_MODEL_ROOT = r"H:\EZSModels"
 DEFAULT_OPENAI_MODEL = "gpt-6-luna"
 
 
@@ -942,6 +942,12 @@ def _env_bool(name: str, default: bool = False) -> bool:
 def _model_relative_path(root: str, model: str):
     from pathlib import PureWindowsPath
     rt, mt = str(root).strip(), str(model).strip()
+    if rt.startswith(chr(92) * 2) or mt.startswith(chr(92) * 2) or rt.startswith("//") or mt.startswith("//"):
+        raise RuntimeError("local_ai_smb_forbidden")
+    if not PureWindowsPath(rt).is_absolute() or not PureWindowsPath(mt).is_absolute():
+        raise RuntimeError("local_ai_absolute_windows_path_required")
+    if ".." in PureWindowsPath(mt).parts:
+        raise RuntimeError("local_ai_parent_traversal_forbidden")
     if rt.startswith("\\\\") or "\\" in rt or ":" in rt:
         rp, mp = PureWindowsPath(rt), PureWindowsPath(mt)
     else:
@@ -957,7 +963,31 @@ def _is_model_under_root(root: str, model: str) -> bool:
     except Exception:
         return False
 
+
+def _ezs_local_model_config():
+    # Persistent Assistant configuration, NOT a model/cache directory.
+    from pathlib import PureWindowsPath
+    settings_path = Path(__file__).resolve().parents[1] / 'runtime' / 'state' / 'local-model.json'
+    try:
+        cfg = json.loads(settings_path.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(cfg, dict) or cfg.get('schema') != 'ezs.assistant.model-location.v1':
+        return {}
+    root = str(cfg.get('root') or '')
+    model = str(cfg.get('model') or '')
+    rp, mp = PureWindowsPath(root), PureWindowsPath(model)
+    if not rp.is_absolute() or not mp.is_absolute() or str(rp).startswith(chr(92)*2) or str(mp).startswith(chr(92)*2) or '..' in mp.parts:
+        return {}
+    try:
+        if not mp.relative_to(rp).parts or mp.suffix.lower() != '.gguf':
+            return {}
+    except ValueError:
+        return {}
+    return {'root': root, 'model': model}
+
 def config_from_env() -> AIProviderConfig:
+    local_settings = _ezs_local_model_config()
     provider = str(os.getenv("EZSTUDIOLAB_AI_PROVIDER", "off")).strip().casefold()
     if provider not in {"off", "openai", "local"}:
         raise RuntimeError(f"unsupported_ai_provider:{provider}")
@@ -972,10 +1002,10 @@ def config_from_env() -> AIProviderConfig:
         web_search=_env_bool("EZSTUDIOLAB_OPENAI_WEB_SEARCH", False),
         timeout_seconds=max(10.0, min(180.0, timeout)),
         shared_model_root=(
-            str(os.getenv("EZSTUDIO_SHARED_MODEL_ROOT", DEFAULT_SHARED_MODEL_ROOT)).strip()
+            str(os.getenv("EZSTUDIO_SHARED_MODEL_ROOT", local_settings.get("root", DEFAULT_SHARED_MODEL_ROOT))).strip()
             or DEFAULT_SHARED_MODEL_ROOT
         ),
-        local_model_path=(str(os.getenv("EZSTUDIOLAB_LOCAL_AI_MODEL", "")).strip() or None),
+        local_model_path=(str(os.getenv("EZSTUDIOLAB_LOCAL_AI_MODEL", local_settings.get("model", ""))).strip() or None),
         local_cache_root=(str(os.getenv("EZSTUDIOLAB_LOCAL_AI_CACHE_ROOT", "")).strip() or None),
         local_endpoint=(
             str(os.getenv("EZSTUDIOLAB_LOCAL_AI_ENDPOINT", "http://127.0.0.1:8720")).strip()

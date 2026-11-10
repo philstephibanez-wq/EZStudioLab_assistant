@@ -51,7 +51,12 @@ final class AssistantLlamaLifecycle
                 return 0;
             }
             $shell = new \COM('WScript.Shell');
-            $line = '"'.$exe.'" '.$args;
+            $logFile = self::ROOT.'\\runtime\\state\\assistant-llama-native-'.gmdate('Ymd_His').'.log';
+            if (preg_match('~(?:^|\s)--log-file(?:\s|=)~i', $args) === 1) {
+                throw new \RuntimeException('LLAMA_LOG_ARGUMENT_CONFLICT');
+            }
+            $line = '"'.$exe.'" '.$args.' --log-file "'.$logFile.'" -lv 4';
+            $this->log('LLAMA_NATIVE_LOG='.$logFile);
             // 0 = SW_HIDE, false = asynchronous, native process remains independent.
             // Use PHP COM, not an external VBS or PowerShell bootstrap.
             $shell->Run($line, 0, false);
@@ -128,8 +133,26 @@ final class AssistantLlamaLifecycle
         return preg_match('~(?:^|\s)--host\s+127\.0\.0\.1(?:\s|$)~i', $commandLine) === 1
             && preg_match('~(?:^|\s)--port\s+8720(?:\s|$)~i', $commandLine) === 1
             && preg_match('~(?:^|\s)-dev\s+Vulkan1(?:\s|$)~i', $commandLine) === 1
-            && (stripos($commandLine, '\\\\EZSTUDIO-MAIN\\EZModels\\assistant\\') !== false
+            && (self::hasConfiguredLocalModel($commandLine)
                 || stripos($commandLine, self::ROOT.'\\runtime\\models-cache\\assistant\\') !== false);
+    }
+
+    private static function hasConfiguredLocalModel(string $commandLine): bool
+    {
+        $file = self::ROOT.'\\runtime\\state\\local-model.json';
+        if (!is_file($file)) return false;
+        $cfg = json_decode((string) file_get_contents($file), true);
+        if (!is_array($cfg) || ($cfg['schema'] ?? '') !== 'ezs.assistant.model-location.v1') return false;
+        $model = (string) ($cfg['model'] ?? '');
+        $root = rtrim((string) ($cfg['root'] ?? ''), '\\');
+        $local = static function(string $p): bool {
+            return strlen($p) >= 4 && ctype_alpha($p[0]) && $p[1] === ':' && $p[2] === '\\'
+                && !str_contains($p, '..') && !str_contains($p, '/')
+                && !str_starts_with($p, '\\\\');
+        };
+        if (!$local($root) || !$local($model) || stripos($model, $root.'\\') !== 0
+            || !str_ends_with(strtolower($model), '.gguf')) return false;
+        return stripos($commandLine, $model) !== false;
     }
 
     /** Requery by PID just before taskkill, to reject stale/reused PIDs. */
@@ -236,14 +259,28 @@ final class AssistantLlamaLifecycle
         }
         $model = ($match[1] ?? '') !== '' ? $match[1] : ($match[2] ?? '');
         $legacy = self::ROOT.'\\runtime\\models-cache\\assistant\\';
-        $canonical = '\\\\EZSTUDIO-MAIN\\EZModels\\assistant\\';
-        if (stripos($model, $legacy) === 0) {
-            $relative = substr($model, strlen($legacy));
-            $model = $canonical.$relative;
-            // Preserve GPU flags and replace only the -m model token.
-            $args = preg_replace_callback('~(?<!\\S)-m\\s+(?:"[^"]+"|\\S+)~i', static fn ($m) => '-m "'.$model.'"', $args, 1, $count);
-            if ($count !== 1 || !is_string($args)) throw new \RuntimeException('GPU_MODEL_REWRITE_FAILED');
+        $configFile = self::ROOT.'\\runtime\\state\\local-model.json';
+        if (!is_file($configFile)) throw new \RuntimeException('GPU_LOCAL_MODEL_CONFIG_MISSING');
+        $settings = json_decode((string) file_get_contents($configFile), true, 16);
+        if (!is_array($settings) || ($settings['schema'] ?? '') !== 'ezs.assistant.model-location.v1') {
+            throw new \RuntimeException('GPU_LOCAL_MODEL_CONFIG_INVALID');
         }
+        $canonical = rtrim((string) ($settings['root'] ?? ''), '\\');
+        $selected = (string) ($settings['model'] ?? '');
+        $localAbsolute = static function (string $p): bool {
+            return strlen($p) >= 4 && ctype_alpha($p[0]) && $p[1] === ':' && $p[2] === '\\'
+                && !str_contains($p, '..') && !str_contains($p, '/')
+                && !str_starts_with($p, '\\\\');
+        };
+        if (!$localAbsolute($canonical) || !$localAbsolute($selected)
+            || stripos($selected, $canonical.'\\') !== 0
+            || !str_ends_with(strtolower($selected), '.gguf')) {
+            throw new \RuntimeException('GPU_LOCAL_MODEL_CONFIG_PATH_INVALID');
+        }
+        $model = $selected;
+        $args = preg_replace_callback('~(?<!\\S)-m\\s+(?:"[^"]+"|\\S+)~i',
+            static fn ($m) => '-m "'.$model.'"', $args, 1, $count);
+        if ($count !== 1 || !is_string($args)) throw new \RuntimeException('GPU_MODEL_REWRITE_FAILED');
         if (stripos($model, $canonical) !== 0 || strpos(substr($model, strlen($canonical)), '..') !== false
             || !str_ends_with(strtolower($model), '.gguf') || !is_file($model)) {
             throw new \RuntimeException('GPU_CANONICAL_MODEL_INVALID');
