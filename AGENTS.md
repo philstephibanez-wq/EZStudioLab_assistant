@@ -48,31 +48,20 @@ Voir aussi `REPOSITORY_HYGIENE.md`.
 
 Le dépôt utilise un fichier canonique `VERSION`.
 
-Format :
-- release : `MAJOR.MINOR` (ex. `1.5`)
-- fix : suffixe lettre minuscule ajouté à la release courante (ex. `1.5a`, `1.5b`, ..., puis `aa`, `ab` si nécessaire)
-- nouvelle release : incrément d'une composante numérique selon la portée et suppression du suffixe
-- rupture majeure : incrément explicite de `MAJOR`
+Format transversal confirmé par le mainteneur le 27 octobre 2026 :
+- release : `MAJOR.MINOR` (ex. `1.7`) ;
+- série corrective : lettre minuscule accolée (ex. `1.7a`) ;
+- révision de la série : compteur entier **sans parenthèses**, à partir de zéro : `1.7a0`, `1.7a1`, `1.7a2` ;
+- série stabilisée : suppression du compteur, par exemple `1.7a`, exclusivement après validation explicite ;
+- release suivante : nouvelle composante mineure, par exemple `1.8a0` ;
+- les anciennes notations avec parenthèses sont **historiques uniquement** et ne doivent figurer dans aucun nouveau `VERSION`, affichage de version ou préfixe de commit.
 
 Règles :
-1. chaque push doit obligatoirement modifier `VERSION` ;
-2. chaque push doit être classé `release` ou `fix` ;
-3. le hash Git n'est jamais la version produit : il est affiché séparément comme `Révision` ;
-4. les interfaces et logs doivent distinguer `Version` et `Révision` ;
-5. pour EZS_orchestrator, la version DEV est canonique ; la PROD reprend cette version lors du déploiement.
-
-
-### Cycle de release avec compteur de correctifs — décision du mainteneur (23 octobre 2026)
-
-Cette précision prime sur les exemples anciens de suffixes successifs et sur la clause contradictoire qui interdisait de mettre à jour VERSION pour un correctif intermédiaire.
-
-- Ouverture d'une release : `vN.Na(0)` (exemple `v1.7a(0)`).
-- Chaque correctif publié : même identifiant de release, compteur incrémenté `vN.Na(1)`, `vN.Na(2)`, etc. Aucun push fonctionnel ne conserve le même numéro.
-- Après validation effective de stabilité : suppression du compteur, `vN.Na` (exemple `v1.7a`). Ne pas annoncer la stabilité sans tests et acceptation.
-- Release suivante : nouvelle composante mineure et compteur remis à zéro, `vN.N(0)` (exemple `v1.8(0)`), puis `vN.N(1)`, etc. Stabilisation : `vN.N`.
-- Le fichier `VERSION` est la source de vérité ; les interfaces affichent version et SHA Git séparément. Le préfixe du message `[vVERSION]` n'altère pas le nom de la version dans le fichier.
-- Historique : conserver les anciens commits et leurs SHA, ne jamais réécrire rétroactivement des versions qui n'existaient pas.
-- En cas de conflit avec les anciennes clauses, appliquer ce cycle explicite tout en conservant les exigences de tests, de messages descriptifs et de handoff.
+1. chaque push modifie `VERSION` ;
+2. chaque push est classé `release` ou `fix` ;
+3. le hash Git est une `Révision` technique distincte de la `Version` produit ;
+4. les interfaces et logs distinguent explicitement `Version` et `Révision` ;
+5. ne jamais modifier rétrospectivement l'identité des anciens commits ni leurs preuves.
 
 ## CONTRAT TRANSVERSAL — UTF-8 ET LISIBILITÉ DES SOURCES
 
@@ -92,7 +81,7 @@ Cette précision prime sur les exemples anciens de suffixes successifs et sur la
 
 Chaque commit publié doit être intelligible sans ouvrir le diff. Rédiger **en français**, avec :
 
-- Format obligatoire du titre : `[vVERSION] type(périmètre): résultat concret`, avec la version identique à `VERSION` dans le même commit ; par exemple `[v1.4a(18)] fix(profile): écarter les comparaisons documentaires invalides`.
+- Format obligatoire du titre : `[vVERSION] type(périmètre): résultat concret`, avec la version identique à `VERSION` dans le même commit ; par exemple `[v1.7a2] fix(version): appliquer le compteur sans parenthèses`.
 - Un **corps de message multiligne** expliquant `Contexte`, `Modifications`, `Validation`, `Impact` et, si nécessaire, `Limites / risques`.
 - Dans `Validation`, distinguer explicitement les tests exécutés des tests seulement ajoutés ou non exécutés. Ne jamais affirmer une réussite non constatée.
 - Dans `Impact`, indiquer les dépôts ou composants touchés, les éventuels redémarrages/déploiements, et si les modèles, presets scientifiques, données et interfaces sont inchangés.

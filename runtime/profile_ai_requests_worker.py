@@ -225,7 +225,16 @@ def process(run_id, client, check_cancel=None):
         'faux': sum(x['verdict']=='faux' for x in verification['assertions']),
         'non_trouve': sum(x['verdict']=='non_trouve' for x in verification['assertions'])
     }
-    scored_count = 0
+    # Score only independent documentary BON/FAUX, never abstentions.
+    verdict_counts = payload['consensus']['final_verification_summary']
+    scored_count = verdict_counts['bon'] + verdict_counts['faux']
+    emit('profile.verdict_counts', {
+        'bon': verdict_counts['bon'],
+        'faux': verdict_counts['faux'],
+        'non_trouve': verdict_counts['non_trouve'],
+        'scored_count': scored_count,
+        'assertion_count': len(verification['assertions']),
+    })
     # A completed inference is an advisory DRAFT, never independent validation.
     payload['status'] = 'draft'
     payload['reviewer'] = 'assistant-lab-ui-qwen'
@@ -253,6 +262,8 @@ def process(run_id, client, check_cancel=None):
         'ai_status': 'completed',
         'review_status': 'draft',
         'scored_count': scored_count,
+        'non_trouve_count': verdict_counts['non_trouve'],
+        'assertion_count': len(verification['assertions']),
     }
 
 def once(client, target_job_id=None, target_run_id=None):
@@ -351,6 +362,8 @@ def main():
     parser.add_argument('--job-id', type=int)
     parser.add_argument('--run-id', type=int)
     parser.add_argument('--poll-seconds', type=int, default=8)
+    parser.add_argument('--service-stop-file', type=Path, default=None)
+    # Signal owned by the existing WinSW/PHP service; only read between jobs.
     args = parser.parse_args()
     # One-shot calls MUST be bounded; background polling keeps its previous behavior.
     if args.once:
@@ -358,11 +371,21 @@ def main():
             parser.error('--once requires positive --job-id and --run-id')
     elif args.job_id is not None or args.run_id is not None:
         parser.error('--job-id/--run-id require --once')
+    if args.service_stop_file is not None:
+        expected_dir = (ROOT / 'runtime' / 'state').resolve()
+        requested = args.service_stop_file.resolve()
+        if requested.parent != expected_dir or not requested.name.startswith('profile-service-stop-') or requested.suffix != '.signal':
+            parser.error('invalid_service_stop_file')
+        if args.once:
+            parser.error('--service-stop-file incompatible with --once')
     # History and diagnostic traces are never purged as part of a queue execution.
     global TOKEN
     TOKEN = TOKEN or _load_lab_token()
     client = assistant_main._client_from_args(argparse.Namespace(base_url=BASE, token=TOKEN))
     while True:
+        if args.service_stop_file is not None and args.service_stop_file.is_file():
+            print('SERVICE_STOP_BETWEEN_JOBS', flush=True)
+            return 0
         try:
             once(client, target_job_id=args.job_id, target_run_id=args.run_id) if args.once else once(client)
         except Exception as exc:
@@ -371,7 +394,15 @@ def main():
                 return 2
         if args.once:
             return 0
-        time.sleep(max(5, args.poll_seconds))
+        if args.service_stop_file is not None and args.service_stop_file.is_file():
+            print('SERVICE_STOP_AFTER_JOB', flush=True)
+            return 0
+        # Prompt stop between REST polling intervals, never interrupt a claimed job.
+        for _ in range(max(5, args.poll_seconds)):
+            if args.service_stop_file is not None and args.service_stop_file.is_file():
+                print('SERVICE_STOP_WHILE_IDLE', flush=True)
+                return 0
+            time.sleep(1)
 
 if __name__ == '__main__':
     raise SystemExit(main())

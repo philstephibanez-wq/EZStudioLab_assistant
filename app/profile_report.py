@@ -250,4 +250,12 @@ def publish_report(report):
 
 
 def publish_trace(trace, outcome):
-    return publish_report(make_report(trace, outcome))
+    """Publish a complete redacted trace before the legacy summary.
+
+    The raw archive manifest is committed only after all artifacts pass read-back.
+    Preserve the existing compact report for backward compatibility.
+    """
+    from profile_raw_archive import publish as publish_raw_archive
+    raw_status = publish_raw_archive(trace, outcome, _gh)
+    summary_status = publish_report(make_report(trace, outcome))
+    return 'published' if raw_status in ('raw_published', 'raw_unchanged') and summary_status in ('published', 'unchanged') else raw_status + ':' + summary_status

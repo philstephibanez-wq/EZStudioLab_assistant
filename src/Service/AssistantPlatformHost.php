@@ -17,6 +17,7 @@ final class AssistantPlatformHost
 
     private int $webPid = 0;
     private bool $stopRequested = false;
+    private ?AssistantProfileWorkerProcess $profileWorker = null;
 
     public function __construct(private readonly AssistantLlamaLifecycle $llama) {}
 
@@ -27,6 +28,7 @@ final class AssistantPlatformHost
     {
         if ($this->stopRequested) return true;
         $this->stopRequested = true;
+        $this->profileWorker?->requestStop();
         $this->log('WINSW_STOP_SIGNAL='.$event.' WEB_PID='.$this->webPid);
         if ($this->webPid < 1 || $this->identity($this->webPid) === null) {
             $this->log('STOP_SIGNAL_WEB_NOT_ATTESTED');
@@ -149,6 +151,16 @@ final class AssistantPlatformHost
             // WinSW should have marked the PHP host service Running by now.
             $result = $this->llama->run();
             $this->log('LLAMA_START_RETURN_CODE='.$result);
+            if ($result === 0 && !$this->stopRequested) {
+                // Same WinSW service owns WEB, Llama and PROFILE; no task or second queue.
+                try {
+                    $this->profileWorker = new AssistantProfileWorkerProcess();
+                    $started = $this->profileWorker->start();
+                    $this->log('PROFILE_WORKER_START='.($started ? 'OK' : 'REFUSED_OR_FAILED'));
+                } catch (\Throwable $e) {
+                    $this->log('PROFILE_WORKER_START_EXCEPTION '.get_class($e));
+                }
+            }
         } else {
             $this->log('ASSISTANT_WEB_NOT_READY_LLAMA_NOT_STARTED');
         }
@@ -166,10 +178,18 @@ final class AssistantPlatformHost
             usleep(200000);
         } while (true);
         proc_close($proc); // No longer a blocking process wait.
+        $profileDrained = $this->profileWorker?->drain() ?? true;
+        $this->log('PROFILE_WORKER_DRAIN='.($profileDrained ? 'OK' : 'PENDING'));
         $plannedStop = $this->stopRequested;
         $this->log('WEB_EXIT_CODE='.$exit.' PLANNED_STOP='.($plannedStop ? 'YES' : 'NO'));
-        $llamaStop = $this->llama->stopOwned();
-        $this->log('LLAMA_STOP_RETURN_CODE='.$llamaStop);
+        if ($profileDrained) {
+            $llamaStop = $this->llama->stopOwned();
+            $this->log('LLAMA_STOP_RETURN_CODE='.$llamaStop);
+        } else {
+            // Do not kill inference while a claimed expertise may still be running.
+            $llamaStop = 2;
+            $this->log('LLAMA_STOP_DEFERRED_ACTIVE_PROFILE');
+        }
         // Only remove state that still belongs to our web process.
         $recorded = $this->readState();
         if ($recorded !== null && $recorded['pid'] === $pid && $recorded['created'] === $identity) {
@@ -178,7 +198,7 @@ final class AssistantPlatformHost
         } else {
             $this->log('STATE_CLEANUP_REFUSED_IDENTITY_CHANGED');
         }
-        return ($llamaStop === 0 && ($plannedStop || $exit === 0)) ? 0 : 2;
+        return ($profileDrained && $llamaStop === 0 && ($plannedStop || $exit === 0)) ? 0 : 2;
     }
 
     private function assistantWebReady(): bool
