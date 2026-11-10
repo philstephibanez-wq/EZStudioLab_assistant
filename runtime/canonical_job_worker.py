@@ -33,6 +33,25 @@ class LabClient:
         with self.opener(request,timeout=12) as response:
             return json.loads(response.read(1000000))
 
+def finish_or_ack_cancel(client, job_id, run_id, status, message):
+    """Fence terminal write by exact attempt and prefer safe cancel acknowledgement."""
+    state=client.request(PATH+'/'+str(run_id)+'/state?job_id='+str(job_id))['request']
+    if state.get('job_id')!=job_id or state.get('run_id')!=run_id:
+        raise RuntimeError('canonical_job_identity_mismatch')
+    if state.get('status') in ('cancelling','cancelled'):
+        ack=client.request(PATH+'/'+str(run_id)+'/cancelled',{'job_id':job_id})
+        if ack.get('ok') is not True or (ack.get('request') or {}).get('status')!='cancelled':
+            raise RuntimeError('canonical_cancel_not_confirmed')
+        return 'cancelled',ack
+    if state.get('status')!='running':
+        raise RuntimeError('canonical_job_not_running')
+    response=client.request(PATH+'/'+str(run_id)+'/finish',
+                            {'job_id':job_id,'status':status,'message':message})
+    if response.get('ok') is not True or (response.get('request') or {}).get('status')!=status:
+        raise RuntimeError('canonical_finish_not_confirmed')
+    return status,response
+
+
 def consume(job_id,client,execute=False,research=analyze):
     if not isinstance(job_id,int) or job_id<1:raise ValueError('invalid_job_id')
     context=client.request(PATH+'/'+str(job_id)+'/context')
@@ -56,22 +75,18 @@ def consume(job_id,client,execute=False,research=analyze):
             raise RuntimeError('research_identity_mismatch')
         if discovery.get('status')=='discovery_failed':
             reason='assistant_discovery_failed'
-        finished=client.request(PATH+'/'+str(run_id)+'/finish',
-                                {'status':'error','message':reason})
-        if finished.get('ok') is not True or (finished.get('request') or {}).get('status')!='error':
-            raise RuntimeError('finish_not_confirmed')
-        return {**result,'status':'error','claimed':True,'finished':True,
+        terminal,finished=finish_or_ack_cancel(client,job_id,run_id,'error',reason)
+        return {**result,'status':terminal,'claimed':True,'finished':True,
                 'reason':reason,'read_count':discovery.get('read_count',0),
                 'discovered_count':discovery.get('discovered_count',0),
                 'review_persisted':False,'verdicts':[]}
     except Exception:
         try:
-            finished=client.request(PATH+'/'+str(run_id)+'/finish',
-                                    {'status':'error','message':'assistant_worker_exception'})
-            if finished.get('ok') is not True:
-                raise RuntimeError('error_finish_unconfirmed')
+            terminal,finished=finish_or_ack_cancel(client,job_id,run_id,'error','assistant_worker_exception')
         except Exception:
             raise RuntimeError('error_finish_unconfirmed_job_may_be_running') from None
+        if terminal=='cancelled':
+            return {**result,'status':'cancelled','claimed':True,'finished':True,'review_persisted':False}
         raise RuntimeError('assistant_worker_exception_job_marked_error') from None
 
 def record_intake(job_id, client):

@@ -107,7 +107,24 @@ def require_completed_ai_review(ai):
     # The persisted review remains a draft, never a scientific validation.
     return dimensions
 
-def process(run_id, client):
+class ExpertiseCancelled(Exception):
+    """LAB has recorded cancellation for this exact Assistant attempt."""
+
+
+def assert_running(run_id, job_id):
+    reply = api(PATH + '/' + str(run_id) + '/state?job_id=' + str(job_id))
+    state = reply.get('request') or {}
+    if state.get('job_id') != job_id or state.get('run_id') != run_id:
+        raise RuntimeError('expertise_job_identity_mismatch')
+    if state.get('status') in ('cancelling', 'cancelled'):
+        raise ExpertiseCancelled('expertise_cancel_requested')
+    if state.get('status') != 'running':
+        raise RuntimeError('expertise_job_no_longer_running')
+
+
+def process(run_id, client, check_cancel=None):
+    check_cancel = check_cancel or (lambda: None)
+    check_cancel()
     row = api('/internal/analysis/desktop/profile/reviews/run/' + str(run_id))['item']
     inventory = api('/internal/analysis/desktop/profile/reviews/run/' + str(run_id) + '/final-assertions')
     if inventory.get('schema') != 'ezstudio.profile-final-assertions.v1' or not isinstance(inventory.get('assertions'), list):
@@ -134,20 +151,24 @@ def process(run_id, client):
     started = time.perf_counter_ns()
     emit('research.begin', {'identity': ident})
     try:
+        check_cancel()
         research = research_public_sources(ident, NetworkBudget())
     finally:
         emit('research.duration', start_ns=started)
     snap('research.result', research)
     started = time.perf_counter_ns()
+    check_cancel()
     payload = build_review_payload(row, research, min_confidence=.75)
     emit('review.base_payload.duration', start_ns=started)
     snap('review.base_payload', payload)
     started = time.perf_counter_ns()
     # Independent evidence verification. No module results/presets in verifier inputs.
+    check_cancel()
     verification = verify_final_values(row, ident, research)
     snap('profile.final_verification', verification)
     # Research is an integral part of PROFILE, never a hidden opt-in.
     # Missing provider credentials are reported to LAB, never silently skipped.
+    check_cancel()
     investigation = research_each_assertion(row, ident, source_research=research)
     snap('profile.web_investigation', investigation)
     emit('web.investigation.summary', {
@@ -156,6 +177,7 @@ def process(run_id, client):
         'searched': investigation.get('searched'),
         'web_citations': sum(len(i.get('citation_urls') or []) for i in investigation.get('items') or [])
     })
+    check_cancel()
     local_web_review = review_web_items(investigation, ident)
     verification = attach_documentary_findings(verification, investigation, local_web_review)
     snap('profile.documentary_comparison', verification)
@@ -198,6 +220,7 @@ def process(run_id, client):
     snap('lab.submit.request', payload)
     started = time.perf_counter_ns()
     try:
+        check_cancel()
         submitted = client.submit_profile_review(payload)
     except Exception as exc:
         emit('lab.submit.error', {'type': type(exc).__name__, 'message': str(exc)}, start_ns=started)
@@ -220,6 +243,7 @@ def once(client):
         print('LAB_PROFILE_IA_PENDING=' + str(len(requests)), flush=True)
     for item in requests:
         rid = int(item['run_id'])
+        job_id = int(item['job_id'])
         if not api(PATH + '/' + str(rid) + '/claim', {})['claimed']:
             continue
         status = 'completed'
@@ -236,30 +260,46 @@ def once(client):
             try:
                 emit('job.claimed', {'run_id': rid, 'claim': True})
                 snap('worker.startup_provenance', STARTUP_PROVENANCE)
-                outcome = process(rid, client)
+                outcome = process(rid, client, check_cancel=lambda: assert_running(rid, job_id))
+                assert_running(rid, job_id)
                 message = 'Révision IA #' + str(outcome['revision']) + ' enregistrée'
                 print(json.dumps(outcome), flush=True)
+            except ExpertiseCancelled:
+                status = 'cancelled'
+                message = 'expertise_cancel_requested'
+                emit('job.cancel_observed', {'run_id': rid, 'job_id': job_id})
             except Exception as exc:
                 status = 'error'
                 message = type(exc).__name__ + ': ' + str(exc)[:750]
                 emit('job.error', {'exception': type(exc).__name__, 'message': str(exc), 'traceback': traceback.format_exc()})
                 print(json.dumps({'run_id': rid, 'status': status, 'reason': message}), flush=True)
             finally:
+                # Complete all Assistant-owned I/O and reports BEFORE acknowledging
+                # a cancellation. LAB may then safely admit the next FIFO job.
+                if trace:
+                    trace.finish({'status': status, 'message': message})
+                    try:
+                        published = publish_trace(trace, outcome)
+                        print('PROFILE_REPORT=' + published, flush=True)
+                    except Exception as export_exc:
+                        print('PROFILE_REPORT_ERROR=' + type(export_exc).__name__ + ':' + str(export_exc)[:120], flush=True)
+                    print('PROFILE_TRACE=' + str(trace.folder), flush=True)
                 try:
-                    emit('lab.finish.request', {'status': status, 'message': message})
-                    api(PATH + '/' + str(rid) + '/finish', {'status': status, 'message': message})
+                    if status != 'cancelled':
+                        try:
+                            assert_running(rid, job_id)
+                        except ExpertiseCancelled:
+                            status = 'cancelled'
+                            message = 'expertise_cancel_requested'
+                    if status == 'cancelled':
+                        emit('lab.cancel_ack.request', {'run_id': rid, 'job_id': job_id})
+                        api(PATH + '/' + str(rid) + '/cancelled', {'job_id': job_id})
+                    else:
+                        emit('lab.finish.request', {'status': status, 'message': message})
+                        api(PATH + '/' + str(rid) + '/finish', {'job_id': job_id, 'status': status, 'message': message})
                 except Exception as exc:
                     emit('lab.finish.error', {'type': type(exc).__name__, 'message': str(exc), 'traceback': traceback.format_exc()})
                     raise
-                finally:
-                    if trace:
-                        trace.finish({'status': status, 'message': message})
-                        try:
-                            published = publish_trace(trace, outcome)
-                            print('PROFILE_REPORT=' + published, flush=True)
-                        except Exception as export_exc:
-                            print('PROFILE_REPORT_ERROR=' + type(export_exc).__name__ + ':' + str(export_exc)[:120], flush=True)
-                        print('PROFILE_TRACE=' + str(trace.folder), flush=True)
 
 def main():
     parser = argparse.ArgumentParser()
