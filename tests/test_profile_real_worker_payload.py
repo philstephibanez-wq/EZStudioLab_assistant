@@ -29,7 +29,15 @@ class ActualWorkerIntegration(unittest.TestCase):
             "recording_credits":[]}],"warnings":[],"request_count":1}
         verification={"assertions":[{"key":"genre","verdict":"non_trouve"}]}
         client=FakeClient()
-        with patch.object(worker,"api",return_value={"item":row}), \
+        def fake_api(path, data=None):
+            if path == '/internal/analysis/desktop/profile/reviews/run/113':
+                return {'item': row}
+            if path == '/internal/analysis/desktop/profile/reviews/run/113/final-assertions':
+                return {'schema':'ezstudio.profile-final-assertions.v1',
+                        'run_id':113,'count':1,
+                        'assertions':[{'id':'genre','dimension':'genre','value':'rock'}]}
+            raise AssertionError('unexpected_API_path:' + path)
+        with patch.object(worker,"api",side_effect=fake_api), \
              patch.object(worker,"research_public_sources",return_value=research), \
              patch.object(worker,"build_review_payload",return_value={
                  "run_id":113,"status":"draft","comparison":{"legacy":"intact"},

@@ -1,4 +1,4 @@
-"""LAB-triggered PROFILE review. XPS only, no model files written to MAIN."""
+"""LAB-triggered PROFILE documentary review on MAIN, using the existing LAB FIFO."""
 from __future__ import annotations
 import argparse
 import hashlib
@@ -24,7 +24,7 @@ from profile_auto_review import (
     enrich_review_payload_with_documentary,
 )
 from ai_provider import build_ai_provider_from_env
-from profile_trace import Trace, activate, enabled, emit, snap, purge
+from profile_trace import Trace, activate, enabled, emit, snap
 from profile_report import publish_trace
 from profile_lab_observations import attach_lab_observations
 from profile_identity import resolve_missing_artist
@@ -60,8 +60,26 @@ def _startup_code_provenance():
 
 STARTUP_PROVENANCE = _startup_code_provenance()
 
-BASE = os.environ.get('EZSTUDIOLAB_ASSISTANT_BASE_URL', 'http://EZSTUDIO-MAIN:8702').rstrip('/')
-TOKEN = os.environ.get('EZSTUDIOLAB_ASSISTANT_TOKEN', '')
+BASE = os.environ.get('EZSTUDIOLAB_ASSISTANT_BASE_URL', 'http://127.0.0.1:8701').rstrip('/')
+
+def _load_lab_token():
+    """Reuse LAB's canonical private token without writing or printing it."""
+    token = (os.environ.get('EZSTUDIOLAB_ASSISTANT_TOKEN')
+             or os.environ.get('EZSTUDIO_ANALYSIS_WORKER_TOKEN') or '').strip()
+    if token:
+        return token
+    root = Path(os.environ.get('EZSTUDIO_LAB_ROOT', r'H:\EZStudio_lab'))
+    local = root / '.env.local'
+    if not local.is_file():
+        raise RuntimeError('lab_token_file_unavailable')
+    for line in local.read_text(encoding='utf-8-sig').splitlines():
+        if line.startswith('EZSTUDIO_ANALYSIS_WORKER_TOKEN='):
+            token = line.split('=', 1)[1].strip().strip('"').strip("'")
+            if token:
+                return token
+    raise RuntimeError('lab_token_unavailable')
+
+TOKEN = os.environ.get('EZSTUDIOLAB_ASSISTANT_TOKEN', '').strip()
 PATH = '/internal/analysis/desktop/profile/ai-requests'
 
 def api(path, data=None):
@@ -77,7 +95,7 @@ def api(path, data=None):
         method='GET' if data is None else 'POST',
     )
     begin = time.perf_counter_ns()
-    emit('lab.http.request', {'method': req.get_method(), 'url': BASE + path, 'body': data, 'headers': headers})
+    emit('lab.http.request', {'method': req.get_method(), 'path': path, 'authorization': 'redacted'})
     try:
         with urllib.request.urlopen(req, timeout=25) as res:
             raw = res.read()
@@ -227,8 +245,8 @@ def process(run_id, client, check_cancel=None):
         raise
     emit('lab.submit.duration', start_ns=started)
     snap('lab.submit.response', submitted)
-    if not submitted.get('ok'):
-        raise RuntimeError('revision_non_persistee_' + str(submitted)[:180])
+    if not submitted.get('ok') or not isinstance((submitted.get('revision') or {}).get('id'), int) or (submitted.get('revision') or {}).get('id') < 1:
+        raise RuntimeError('revision_non_confirmee')
     return {
         'run_id': run_id,
         'revision': (submitted.get('revision') or {}).get('id'),
@@ -237,14 +255,29 @@ def process(run_id, client, check_cancel=None):
         'scored_count': scored_count,
     }
 
-def once(client):
+def once(client, target_job_id=None, target_run_id=None):
     requests = api(PATH)['requests']
+    if target_job_id is not None:
+        # Fail closed BEFORE any claim: only one FIFO entry, exact job and run.
+        if not isinstance(requests, list) or len(requests) != 1:
+            raise RuntimeError('one_shot_exclusive_fifo_head_required')
+        first = requests[0]
+        if (not isinstance(first, dict) or
+                type(first.get('job_id')) is not int or
+                type(first.get('run_id')) is not int or
+                first['job_id'] != target_job_id or
+                first['run_id'] != target_run_id):
+            raise RuntimeError('one_shot_fifo_identity_mismatch')
+        # The existing per-job LAB claim/state endpoints remain authoritative.
     if requests:
         print('LAB_PROFILE_IA_PENDING=' + str(len(requests)), flush=True)
     for item in requests:
         rid = int(item['run_id'])
         job_id = int(item['job_id'])
-        if not api(PATH + '/' + str(rid) + '/claim', {})['claimed']:
+        claim = api(PATH + '/' + str(rid) + '/claim', {})
+        if claim.get('claimed') is not True:
+            if target_job_id is not None:
+                raise RuntimeError('one_shot_claim_refused')
             continue
         status = 'completed'
         message = 'Révision IA créée'
@@ -293,30 +326,52 @@ def once(client):
                             message = 'expertise_cancel_requested'
                     if status == 'cancelled':
                         emit('lab.cancel_ack.request', {'run_id': rid, 'job_id': job_id})
-                        api(PATH + '/' + str(rid) + '/cancelled', {'job_id': job_id})
+                        response = api(PATH + '/' + str(rid) + '/cancelled', {'job_id': job_id})
+                        if response.get('ok') is not True or (response.get('request') or {}).get('status') != 'cancelled':
+                            raise RuntimeError('cancellation_not_confirmed')
                     else:
                         emit('lab.finish.request', {'status': status, 'message': message})
-                        api(PATH + '/' + str(rid) + '/finish', {'job_id': job_id, 'status': status, 'message': message})
+                        response = api(PATH + '/' + str(rid) + '/finish', {'job_id': job_id, 'status': status, 'message': message})
+                        if response.get('ok') is not True or (response.get('request') or {}).get('status') != status:
+                            raise RuntimeError('finish_not_confirmed')
                 except Exception as exc:
                     emit('lab.finish.error', {'type': type(exc).__name__, 'message': str(exc), 'traceback': traceback.format_exc()})
                     raise
+        if status == 'error':
+            raise RuntimeError('expertise_failed_after_finish')
+        if target_job_id is not None:
+            return 1
+    if target_job_id is not None:
+        raise RuntimeError('one_shot_target_not_processed')
+    return 0
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--once', action='store_true')
+    parser.add_argument('--job-id', type=int)
+    parser.add_argument('--run-id', type=int)
     parser.add_argument('--poll-seconds', type=int, default=8)
     args = parser.parse_args()
-    if enabled():
-        purge()
+    # One-shot calls MUST be bounded; background polling keeps its previous behavior.
+    if args.once:
+        if not args.job_id or args.job_id < 1 or not args.run_id or args.run_id < 1:
+            parser.error('--once requires positive --job-id and --run-id')
+    elif args.job_id is not None or args.run_id is not None:
+        parser.error('--job-id/--run-id require --once')
+    # History and diagnostic traces are never purged as part of a queue execution.
+    global TOKEN
+    TOKEN = TOKEN or _load_lab_token()
     client = assistant_main._client_from_args(argparse.Namespace(base_url=BASE, token=TOKEN))
     while True:
         try:
-            once(client)
+            once(client, target_job_id=args.job_id, target_run_id=args.run_id) if args.once else once(client)
         except Exception as exc:
-            print('QUEUE_ERROR ' + type(exc).__name__ + ': ' + str(exc)[:500], flush=True)
+            print('QUEUE_ERROR ' + type(exc).__name__, flush=True)
+            if args.once:
+                return 2
         if args.once:
-            break
+            return 0
         time.sleep(max(5, args.poll_seconds))
 
 if __name__ == '__main__':
-    main()
+    raise SystemExit(main())

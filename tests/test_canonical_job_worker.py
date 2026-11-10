@@ -9,6 +9,8 @@ class Client:
   self.calls.append((path,data))
   if path.endswith('/context'):return CONTEXT
   if path.endswith('/claim'):return {'claimed':self.claim}
+  if '/state?job_id=181' in path:
+   return {'request':{'job_id':181,'run_id':143,'status':'running'}}
   if path.endswith('/finish'):return {'ok':True,'request':{'status':data['status']}}
   raise AssertionError(path)
 class CheckpointClient(Client):
@@ -65,8 +67,9 @@ class WorkerTests(unittest.TestCase):
   c=Client();r=consume(181,c,True,lambda context:{'job_id':181,'run_id':143,'status':'discovery_failed'})
   self.assertEqual(r['status'],'error')
   self.assertTrue(c.calls[1][0].endswith('/143/claim'))
-  self.assertTrue(c.calls[2][0].endswith('/143/finish'))
-  self.assertEqual(c.calls[2][1]['status'],'error')
+  self.assertTrue(c.calls[2][0].endswith('/143/state?job_id=181'))
+  self.assertTrue(c.calls[3][0].endswith('/143/finish'))
+  self.assertEqual(c.calls[3][1]['status'],'error')
  def test_refusal_stops_without_finish(self):
   c=Client(False)
   with self.assertRaisesRegex(RuntimeError,'claim_refused'):consume(181,c,True)
