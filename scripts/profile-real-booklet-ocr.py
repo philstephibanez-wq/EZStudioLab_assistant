@@ -1,5 +1,5 @@
 """Read-only documentary OCR acceptance on a public Supertramp release booklet.
-Run only on XPS by explicit command. No LAB, no stems, no DB writes.
+Historical opt-in diagnostic; check MAIN dependencies before use. No LAB, no stems, no DB writes.
 """
 from __future__ import annotations
 import json

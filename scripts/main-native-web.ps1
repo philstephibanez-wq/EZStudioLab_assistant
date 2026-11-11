@@ -1,4 +1,4 @@
-# MAIN native Symfony pilot; intentionally isolated from existing Docker/XPS.
+# MAIN native Symfony pilot; intentionally isolated from other runtimes.
 # Windows PowerShell 5.1 compatible. No Docker lifecycle operations.
 [CmdletBinding()]
 param([ValidateSet('Preflight','Start','Status','Stop')][string]$Action='Preflight')

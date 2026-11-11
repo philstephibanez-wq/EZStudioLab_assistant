@@ -1,4 +1,4 @@
-# Diagnostic non destructif PROFILE XPS (aucun jeton affiché, aucun processus arrêté)
+# Diagnostic non destructif PROFILE (aucun jeton affiché, aucun processus arrêté)
 $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $launcher = Join-Path $root 'runtime\start_profile_ai_requests.ps1'

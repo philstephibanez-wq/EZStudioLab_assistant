@@ -1,4 +1,4 @@
-"""XPS PROFILE debug trace: per-run, high resolution, secret-redacted, opt-in.
+"""PROFILE debug trace: per-run, high resolution, secret-redacted, opt-in.
 
 Enabled by default for debug; disable with EZS_PROFILE_TRACE=0; configure EZS_PROFILE_TRACE_ROOT and
 EZS_PROFILE_TRACE_RETENTION_DAYS. Never emit auth credentials or tokens.

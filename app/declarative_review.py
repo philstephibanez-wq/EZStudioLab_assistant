@@ -7,8 +7,8 @@ from pathlib import Path
 
 PHASES = ('profile', 'stems', 'chords_n', 'lyrics')
 ALLOWED = {'schema', 'id', 'phase', 'provider', 'prompt', 'output_contract', 'dimension_normalization', 'identity_resolution', 'temperature', 'max_tokens', 'context_max_chars'}
-# On XPS this must be an explicitly configured UNC/read-only MAIN path.
-# Never fall back to an XPS-local preset.
+# The review preset path must be explicitly configured and read-only.
+# Never silently fall back to a local preset.
 DEFAULT_PATH = None
 
 

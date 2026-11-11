@@ -1,4 +1,4 @@
-"""XPS read-only OCR + translation preflight: no network document download or LAB.
+"""Read-only OCR + translation preflight: no network document download or LAB.
 Does not start jobs. Prints sanitized JSON and does not claim a successful OCR
 unless the real Tesseract executable and traineddata are available.
 """

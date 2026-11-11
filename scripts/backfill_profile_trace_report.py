@@ -1,4 +1,4 @@
-"""Publish an existing, scrubbed XPS PROFILE audit without running Qwen again."""
+"""Publish an existing, scrubbed legacy PROFILE audit without running Qwen again."""
 from __future__ import annotations
 import argparse
 import json

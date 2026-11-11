@@ -1,4 +1,4 @@
-"""Diagnostic lecture seule de la chaîne XPS PROFILE, sans authentification LAB.
+"""Diagnostic lecture seule de la chaîne PROFILE, sans authentification LAB.
 
 N'envoie aucun résultat à LAB et ne crée aucun job. Le dossier d'essai est
 synthétique, malgré un titre public servant à tester la recherche documentaire.

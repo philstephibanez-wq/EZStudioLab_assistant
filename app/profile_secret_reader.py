@@ -12,7 +12,7 @@ def read_profile_token(*, platform=None) -> str:
     system = os.name if platform is None else platform
     if system == "nt":
         # This script is imported both as app.profile_secret_reader by tests
-        # and as profile_secret_reader by the existing XPS subprocess.
+        # and as profile_secret_reader by the legacy subprocess.
         from web_status import DEFAULT_TOKEN_FILE, _read_dpapi_token
         return _read_dpapi_token(DEFAULT_TOKEN_FILE)
     if system != "posix":
