@@ -91,16 +91,20 @@ def research_assertions(assertions, identity, *, source_research=None):
     # Search broadly once, then reuse relevant sources for every item.
     base_hits=[]
     base_error=None
+    base_errors=[]
     if title and artist:
-        try:
-            base_hits=[h for h in search(artist+" "+title+" song BPM key credits instruments",max_results=12)
-                       if _is_song_related(h,title,artist)]
-            # Dedicated credit query reduces dependence on generic SEO results.
-            more=search(artist+" "+title+" musicbrainz recording credits",max_results=8)
-            base_hits=sorted(base_hits+[h for h in more if _is_song_related(h,title,artist)],
-                             key=lambda h:_source_priority(h)[0])
-        except Exception as exc:
-            base_error=type(exc).__name__+":"+str(exc)[:120]
+        # Preserve successful hits if the other global query fails.
+        for query, limit in (
+            (artist+" "+title+" song BPM key credits instruments", 12),
+            (artist+" "+title+" musicbrainz recording credits", 8),
+        ):
+            try:
+                base_hits.extend(h for h in search(query,max_results=limit)
+                                 if _is_song_related(h,title,artist))
+            except Exception as exc:
+                base_errors.append(type(exc).__name__)
+        base_hits.sort(key=lambda h:_source_priority(h)[0])
+        base_error="; ".join(base_errors) if base_errors else None
     for assertion in assertions:
         key=assertion["key"]
         item={"key":key,"value":assertion["value"],"status":"not_searched","citation_urls":[],
@@ -117,10 +121,15 @@ def research_assertions(assertions, identity, *, source_research=None):
                 specific_hits=search(query,max_results=8)
             except Exception as exc:
                 specific_hits=[]
-                item["specific_search_error"]=type(exc).__name__+":"+str(exc)[:120]
+                item["specific_search_error"]=type(exc).__name__
             hits=sorted(base_hits+specific_hits,key=lambda h:_source_priority(h)[0])
             item["search_hits"]=len(hits)
             if base_error:item["base_search_error"]=base_error
+            search_errors=list(base_errors)
+            if item.get("specific_search_error"):
+                search_errors.append(item["specific_search_error"])
+            item["search_error_count"]=len(search_errors)
+            item["search_query_count"]=3 if title and artist else 1
             seen_urls=set()
             for hit in hits:
                 if not _is_song_related(hit,title,artist):
@@ -150,7 +159,10 @@ def research_assertions(assertions, identity, *, source_research=None):
                     item["citation_urls"].append(doc["url"])
             item["rejected_irrelevant"]=len(hits)-len(item["documents"])
             item["status"]="documents_read" if any(d.get("status")=="read" for d in item["documents"]) else (
+                "error" if search_errors and not hits else
                 "no_results" if not hits else "no_relevant_results" if not item["documents"] else "sources_unreadable")
+            if item["status"]=="error":
+                item["reason"]="web_search_unavailable"
         except Exception as exc:
             item["status"]="error"
             item["reason"]=type(exc).__name__+":"+str(exc)[:180]
@@ -158,9 +170,11 @@ def research_assertions(assertions, identity, *, source_research=None):
         item["ocr_scans"]=ocr_sources
         items.append(item)
     failed=sum(item.get("status")=="error" for item in items)
-    return {"status":"error" if failed==len(items) and items else "partial" if failed else "completed" if items else "no_assertions",
-            "reason":"web_search_failed_for_all_items" if failed==len(items) and items else None,
-            "technical_errors":failed,
+    degraded=sum(bool(item.get("search_error_count")) for item in items)
+    return {"status":"error" if failed==len(items) and items else "partial" if (failed or degraded) else "completed" if items else "no_assertions",
+            "reason":"web_search_failed_for_all_items" if failed==len(items) and items else
+                     "web_search_partially_unavailable" if degraded else None,
+            "technical_errors":sum(item.get("status")=="error" or bool(item.get("search_error_count")) for item in items),
             "unique_documents_fetched":len(document_cache),
             "structured_recording_candidates":structured,
             "ocr_audit":ocr_audit,
