@@ -1,4 +1,4 @@
-"""Point de traitement XPS, appelé par LAB/orchestrateur, sans claim ni requête LAB."""
+"""Traitement PROFILE indépendant de l’hôte, sans claim ni requête LAB."""
 from __future__ import annotations
 import hmac
 import json
@@ -23,11 +23,12 @@ WEB_KEYS = dict(zip(ITEMS, (
 
 def verify(payload):
     request = build_assertions(payload)
+    # A missing LAB value is not an assertion to research or to judge.
     rows = [{"key": WEB_KEYS[key], "value": request["items"][key],
-             "label": key} for key in ITEMS]
+             "label": key} for key in ITEMS if request["items"][key] is not None]
     investigation = research_assertions(
         rows, {"title": request["title"], "artist": request["artist"]}
-    )
+    ) if rows else {"items": [], "status": "no_assertions", "technical_errors": 0}
     by_key = {
         row["key"]: row for row in (investigation.get("items") or [])
         if isinstance(row, dict) and row.get("key") in WEB_KEYS.values()
@@ -147,7 +148,8 @@ def verify(payload):
     }
     # Evidence and verdicts are finalized before advisory AI is consulted.
     result["ai_consultation"] = consult(
-        {"title":request["title"],"artist":request["artist"]}, reviews)
+        {"title":request["title"],"artist":request["artist"]}, reviews
+    ) if rows else {"status": "not_executed_no_assertions"}
     if result["ai_consultation"]["status"] == "error":
         result["technical_status"] = "partial"
         result["technical_errors"] += 1

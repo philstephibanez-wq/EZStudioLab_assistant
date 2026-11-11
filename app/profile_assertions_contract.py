@@ -4,6 +4,7 @@ Module indépendant des moteurs scientifiques. Le raccordement au worker reste d
 """
 from __future__ import annotations
 
+import math
 from urllib.parse import urlsplit
 
 EXPERTISE_TYPES = ("profile", "stems", "chords_n", "lyrics")
@@ -13,16 +14,20 @@ ITEMS = ("duree", "tempo", "mesure", "tonalite", "genre", "instruments",
 ABSENT = {"", "possible", "inconclusive", "not_scored", "indetermine", "indéterminé"}
 
 
-def _value(value):
+def _value(value, *, allow_list=False):
     if value is None or isinstance(value, bool):
         return None
-    if isinstance(value, str) and value.strip().casefold() in ABSENT:
-        return None
-    if isinstance(value, list):
-        usable = [_value(x) for x in value]
-        return [x for x in usable if x is not None] or None
-    return value
-
+    if isinstance(value, str):
+        return None if value.strip().casefold() in ABSENT else value
+    if isinstance(value, (int, float)):
+        if not math.isfinite(value):
+            raise ValueError("profile_item_value_invalid")
+        return value
+    if isinstance(value, list) and allow_list:
+        usable = [_value(entry) for entry in value]
+        return [entry for entry in usable if entry is not None] or None
+    # Never forward objects, nested arrays or non-finite numerics from LAB.
+    raise ValueError("profile_item_value_invalid")
 
 def build_assertions(source):
     """Projection par liste blanche, sans transmettre engine/config/diagnostics."""
@@ -54,7 +59,7 @@ def build_assertions(source):
         "artist": (source.get("artist") or "").strip(),
         "recording_id": source.get("recording_id") if isinstance(source.get("recording_id"), str) else None,
         "version": source.get("version") if isinstance(source.get("version"), str) else None,
-        "items": {item: _value(items[item]) for item in ITEMS},
+        "items": {item: _value(items[item], allow_list=item == "instruments") for item in ITEMS},
     }
 
 
