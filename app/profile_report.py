@@ -1,7 +1,7 @@
 """Export minimal, non-identifying PROFILE telemetry to the private reports repository.
 
 Never export trace payloads, prompts, full model output, URLs, paths or tokens.
-Requires an authenticated gh CLI on XPS; failures are non-fatal and observable.
+Requires an authenticated gh CLI on the executing host; failures are non-fatal and observable.
 """
 from __future__ import annotations
 
@@ -102,7 +102,7 @@ def make_report(trace, outcome):
             us = event.get("duration_us")
             if isinstance(us, int) and 0 <= us <= 10**12:
                 durations[name.replace(".", "_")] = us
-    # Export a strictly allowlisted module audit: the raw trace stays on XPS.
+    # Export a strictly allowlisted module audit: the raw trace remains local.
     module_records = []
     for event in events:
         if event.get("event") != "module.review.completed":

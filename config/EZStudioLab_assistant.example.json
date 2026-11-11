@@ -1,8 +1,8 @@
 {
   "schema": "EZStudioLab_assistant.config.v1",
-  "node_id": "EZStudioLab_assistant-xps9570",
-  "shared_model_root": "\\\\EZSTUDIO-MAIN\\EZModels",
-  "local_model_cache": "C:\\EZStudioLab_assistant\\models",
+  "node_id": "EZStudioLab_assistant-main",
+  "shared_model_root": "H:\\AIModels",
+  "local_model_cache": "H:\\EZStudioLab_assistant\\runtime\\models-cache",
   "policy": {
     "shared_models_read_only": true,
     "cache_on_demand": true,

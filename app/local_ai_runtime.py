@@ -109,7 +109,7 @@ def config_from_env() -> LocalAIRuntimeConfig:
 
 
 def local_model_path(config: LocalAIRuntimeConfig) -> Path:
-    # Canonical model on MAIN, no second copy and no reliance on obsolete XPS cache.
+    # Canonical model on MAIN, no second copy and no remote legacy cache dependency.
     _relative_model_path(config.shared_model_root, config.canonical_model)
     return Path(config.canonical_model)
 

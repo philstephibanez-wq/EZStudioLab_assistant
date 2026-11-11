@@ -6,9 +6,11 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "app"))
 
 from profile_assertions_contract import ITEMS, build_assertions, validate_verdicts
+from app.profile_dynamic_contract_r2 import project_final_assertions, build_final_reviews, validate_final_reviews
 from profile_web_investigator import research_assertions
 from profile_recording_reconciliation import compare_durations
 from profile_document_consultation import consult
@@ -23,16 +25,21 @@ WEB_KEYS = dict(zip(ITEMS, (
 
 def verify(payload):
     request = build_assertions(payload)
-    # A missing LAB value is not an assertion to research or to judge.
-    rows = [{"key": WEB_KEYS[key], "value": request["items"][key],
-             "label": key} for key in ITEMS if request["items"][key] is not None]
+    finals = project_final_assertions(payload)
+    # An explicit public inventory supersedes the legacy search list.
+    if finals is not None:
+        rows = [{"key": item["search_key"], "value": item["search_value"],
+                 "label": item["dimension"]} for item in finals]
+    else:
+        rows = [{"key": WEB_KEYS[key], "value": request["items"][key],
+                 "label": key} for key in ITEMS if request["items"][key] is not None]
     investigation = research_assertions(
         rows, {"title": request["title"], "artist": request["artist"]}
     ) if rows else {"items": [], "status": "no_assertions", "technical_errors": 0}
     by_key = {
         row["key"]: row for row in (investigation.get("items") or [])
         if isinstance(row, dict) and row.get("key") in WEB_KEYS.values()
-    }
+    } if finals is None else {}
     reviews = {}
     for key in ITEMS:
         row = by_key.get(WEB_KEYS[key], {})
@@ -75,6 +82,11 @@ def verify(payload):
         "technical_errors": investigation.get("technical_errors", 0),
     }
     validate_verdicts(request, result)
+    if finals is not None:
+        result["final_assertions_schema"] = "ezstudio.profile-final-assertions.v1"
+        result["final_assertions_count"] = len(finals)
+        result["final_reviews"] = build_final_reviews(finals, investigation)
+        validate_final_reviews(finals, result)
     # Documentary provenance, not scientific evidence. No raw page text stored.
     source_registry = {}
     item_provenance = {}
@@ -149,7 +161,7 @@ def verify(payload):
     # Evidence and verdicts are finalized before advisory AI is consulted.
     result["ai_consultation"] = consult(
         {"title":request["title"],"artist":request["artist"]}, reviews
-    ) if rows else {"status": "not_executed_no_assertions"}
+    ) if rows and finals is None else {"status": "not_executed_dynamic_contract" if finals is not None else "not_executed_no_assertions"}
     if result["ai_consultation"]["status"] == "error":
         result["technical_status"] = "partial"
         result["technical_errors"] += 1

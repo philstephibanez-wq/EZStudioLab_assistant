@@ -1,4 +1,4 @@
-"""Persistent PROFILE launcher on XPS.
+"""Legacy PROFILE guardian; verify prerequisites before opt-in use on MAIN.
 
 Reuses the authenticated PowerShell launcher; never reads/prints any token.
 Mutex prevents two guardians. Existing worker is allowed to finish before any

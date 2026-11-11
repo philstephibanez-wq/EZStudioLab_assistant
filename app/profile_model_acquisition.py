@@ -1,4 +1,4 @@
-"""Conservative MAIN-only GGUF acquisition; no XPS cache or server changes.
+"""Conservative MAIN-only GGUF acquisition; no secondary cache or server changes.
 
 Run without --download for read-only preflight. Explicit --download writes
 only to the existing MAIN share; demands an upstream SHA256 declaration.
@@ -95,7 +95,7 @@ def preflight(root=ROOT,fetch=None):
 def download(info,target,*,opener=None,chunk_size=8*1024*1024,max_attempts=3):
     """Resumable exact HTTP ranges; fail closed on wrong range/size/hash.
 
-    Partial bytes stay on MAIN after a network failure. No download cache on XPS.
+    Partial bytes stay on MAIN after a network failure. No off-host download cache.
     """
     import time
     opener=opener or urllib.request.urlopen
