@@ -26,6 +26,7 @@ from profile_auto_review import (
 from ai_provider import build_ai_provider_from_env
 from profile_trace import Trace, activate, enabled, emit, snap
 from profile_report import publish_trace
+from profile_publication_receipt import publish_with_receipt
 from profile_lab_observations import attach_lab_observations
 from profile_identity import resolve_missing_artist
 from profile_sequential_review import examine_modules
@@ -323,7 +324,7 @@ def once(client, target_job_id=None, target_run_id=None):
                 if trace:
                     trace.finish({'status': status, 'message': message})
                     try:
-                        published = publish_trace(trace, outcome)
+                        published = publish_with_receipt(trace, outcome, publish_trace, job_id=job_id)
                         print('PROFILE_REPORT=' + published, flush=True)
                     except Exception as export_exc:
                         print('PROFILE_REPORT_ERROR=' + type(export_exc).__name__ + ':' + str(export_exc)[:120], flush=True)
