@@ -246,7 +246,14 @@ def _compare_documentary(key, lab, reference):
     if key == "tempo":
         try:
             x,y = (float(z.replace("bpm","").strip().replace(",",".")) for z in (a,b))
-            return "concordant" if abs(x-y) <= max(2.0, 0.03*x) else "discordant"
+            # Reuse the strict tolerance from the official evaluator.
+            if abs(x-y) <= 2:
+                return "concordant"
+            # The beat can be interpreted at half/double tempo. Never report
+            # a misleading provisional discrepancy in this ambiguous case.
+            if any(abs(x-y*k) <= 2 for k in (0.5, 2)):
+                return "indeterminate"
+            return "discordant"
         except ValueError:
             return "indeterminate"
     if key == "meter":
