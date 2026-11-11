@@ -11,6 +11,7 @@ import json
 from pathlib import Path
 import re
 from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
+from profile_archive_contract import validate_manifest
 
 DEST = 'philstephibanez-wq/EZStudio_Run_Reports'
 CHUNK_BYTES = 45000
@@ -306,6 +307,8 @@ def _put_and_verify(path, raw, gh):
 
 def publish(trace, outcome, gh):
     prefix, files, manifest=package(trace, outcome)
+    # Validate every redacted artifact before the first remote upload.
+    validate_manifest(manifest, dict(files))
     for name, raw in files:
         _put_and_verify(prefix+'/'+name,raw,gh)
     # Manifest LAST: incomplete upload never looks complete.
