@@ -61,6 +61,8 @@ def research_each_assertion(row, identity, *, source_research=None, **unused):
 
 
 def research_assertions(assertions, identity, *, source_research=None):
+    from profile_engine_diagnostic import record_item
+    from time import perf_counter_ns as _profile_clock
     # Reuse the real release scans already inspected by the existing Tesseract
     # pipeline. Never OCR a second time, never mistake album credits for song credits.
     ocr_sources=[]
@@ -106,12 +108,14 @@ def research_assertions(assertions, identity, *, source_research=None):
         base_hits.sort(key=lambda h:_source_priority(h)[0])
         base_error="; ".join(base_errors) if base_errors else None
     for assertion in assertions:
+        _profile_assertion_start = _profile_clock()
         key=assertion["key"]
         item={"key":key,"value":assertion["value"],"status":"not_searched","citation_urls":[],
               "documents":[],"eligible_for_verdict":False}
         if not title:
             item["status"]="identity_unavailable"
             items.append(item)
+            record_item("assertion_web_investigator", item, _profile_assertion_start)
             continue
         topic=TERMS.get(key,"instruments credits personnel" if key.startswith("instrument:") else key)
         query=artist+' '+title+' song music '+topic if artist else title+' song music '+topic
@@ -169,6 +173,7 @@ def research_assertions(assertions, identity, *, source_research=None):
         item["evidence_review"]=evaluate_live_documents(assertion,effective_identity,item["documents"])
         item["ocr_scans"]=ocr_sources
         items.append(item)
+        record_item("assertion_web_investigator", item, _profile_assertion_start)
     failed=sum(item.get("status")=="error" for item in items)
     degraded=sum(bool(item.get("search_error_count")) for item in items)
     return {"status":"error" if failed==len(items) and items else "partial" if (failed or degraded) else "completed" if items else "no_assertions",

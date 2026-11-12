@@ -27,6 +27,7 @@ from ai_provider import build_ai_provider_from_env
 from profile_trace import Trace, activate, enabled, emit, snap
 from profile_report import publish_trace
 from profile_publication_receipt import publish_with_receipt
+from profile_engine_diagnostic import call_engine, execution_scope, record_items
 from profile_lab_observations import attach_lab_observations
 from profile_identity import resolve_missing_artist
 from profile_sequential_review import examine_modules
@@ -157,7 +158,7 @@ def process(run_id, client, check_cancel=None):
     if not ident.get('title'):
         raise RuntimeError('titre_musical_absent')
     if not ident.get('artist'):
-        candidate = resolve_missing_artist(ident['title'], build_ai_provider_from_env())
+        candidate = call_engine("identity_resolver", resolve_missing_artist, ident['title'], build_ai_provider_from_env())
         emit('identity.resolution', {'status': candidate['status'], 'candidate_count': candidate['candidate_count']})
         if candidate['status'] == 'resolved':
             ident = {**ident, 'artist': candidate['artist'], 'method': 'assistant_mb_title_artist_match',
@@ -166,29 +167,30 @@ def process(run_id, client, check_cancel=None):
         else:
             # Do not invent a performer: public research returns an abstention.
             row = {**row, 'normalized_identity': ident}
-    ident = {**ident, 'catalog_duration_ms': duration_from_catalog(row)}
+    ident = {**ident, 'catalog_duration_ms': call_engine("recording_duration", duration_from_catalog, row)}
     started = time.perf_counter_ns()
     emit('research.begin', {'identity': ident})
     try:
         check_cancel()
-        research = research_public_sources(ident, NetworkBudget())
+        research = call_engine("public_source_research", research_public_sources, ident, NetworkBudget())
     finally:
         emit('research.duration', start_ns=started)
     snap('research.result', research)
     started = time.perf_counter_ns()
     check_cancel()
-    payload = build_review_payload(row, research, min_confidence=.75)
+    payload = call_engine("review_payload_builder", build_review_payload, row, research, min_confidence=.75)
     emit('review.base_payload.duration', start_ns=started)
     snap('review.base_payload', payload)
     started = time.perf_counter_ns()
     # Independent evidence verification. No module results/presets in verifier inputs.
     check_cancel()
-    verification = verify_final_values(row, ident, research)
+    verification = call_engine("independent_verifier", verify_final_values, row, ident, research)
+    record_items('independent_verifier', verification.get('assertions') or [])
     snap('profile.final_verification', verification)
     # Research is an integral part of PROFILE, never a hidden opt-in.
     # Missing provider credentials are reported to LAB, never silently skipped.
     check_cancel()
-    investigation = research_each_assertion(row, ident, source_research=research)
+    investigation = call_engine("assertion_web_investigator", research_each_assertion, row, ident, source_research=research)
     snap('profile.web_investigation', investigation)
     emit('web.investigation.summary', {
         'status': investigation.get('status'),
@@ -197,9 +199,10 @@ def process(run_id, client, check_cancel=None):
         'web_citations': sum(len(i.get('citation_urls') or []) for i in investigation.get('items') or [])
     })
     check_cancel()
-    local_web_review = review_web_items(investigation, ident)
-    verification = attach_documentary_findings(verification, investigation, local_web_review)
+    local_web_review = call_engine("local_ai_document_review", review_web_items, investigation, ident)
+    verification = call_engine("documentary_verdict_merger", attach_documentary_findings, verification, investigation, local_web_review)
     snap('profile.documentary_comparison', verification)
+    record_items('local_ai_document_review', local_web_review.get('items') or [])
     snap('profile.local_web_review', local_web_review)
     emit('web.local_review.summary', {'status': local_web_review.get('status'), 'items': len(local_web_review.get('items') or [])})
 
@@ -218,8 +221,8 @@ def process(run_id, client, check_cancel=None):
         },
         'coverage': {'independent_verification': True}
     }
-    payload = enrich_review_payload_with_documentary(payload, row, research)
-    payload = enrich_review_payload_with_ai(payload, ai)
+    payload = call_engine("documentary_payload_enricher", enrich_review_payload_with_documentary, payload, row, research)
+    payload = call_engine("ai_draft_payload_enricher", enrich_review_payload_with_ai, payload, ai)
     payload.setdefault('comparison', {})['final_verification'] = verification
     payload.setdefault('consensus', {})['final_verification_summary'] = {
         'bon': sum(x['verdict']=='bon' for x in verification['assertions']),
@@ -249,7 +252,7 @@ def process(run_id, client, check_cancel=None):
     started = time.perf_counter_ns()
     try:
         check_cancel()
-        submitted = client.submit_profile_review(payload)
+        submitted = call_engine("lab_revision_submit", client.submit_profile_review, payload)
     except Exception as exc:
         emit('lab.submit.error', {'type': type(exc).__name__, 'message': str(exc)}, start_ns=started)
         raise
@@ -305,7 +308,8 @@ def once(client, target_job_id=None, target_run_id=None):
             try:
                 emit('job.claimed', {'run_id': rid, 'claim': True})
                 snap('worker.startup_provenance', STARTUP_PROVENANCE)
-                outcome = process(rid, client, check_cancel=lambda: assert_running(rid, job_id))
+                with execution_scope(rid, job_id, trace):
+                    outcome = process(rid, client, check_cancel=lambda: assert_running(rid, job_id))
                 assert_running(rid, job_id)
                 message = 'Révision IA #' + str(outcome['revision']) + ' enregistrée'
                 print(json.dumps(outcome), flush=True)

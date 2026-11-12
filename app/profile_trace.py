@@ -42,7 +42,7 @@ class Trace:
         self.run_id=int(run_id)
         self.trace_id=uuid.uuid4().hex
         self.start_ns=time.perf_counter_ns()
-        self.root=Path(os.getenv('EZS_PROFILE_TRACE_ROOT') or r'C:\temp\EZS_PROFILE_DEBUG')
+        self.root=Path(os.getenv('EZS_PROFILE_TRACE_ROOT') or r'H:\temp\EZS_PROFILE_DEBUG')
         self.folder=self.root/('run-'+str(run_id)+'-'+self.trace_id[:12])
         self.lock=threading.Lock()
         self.folder.mkdir(parents=True,exist_ok=False)
@@ -94,7 +94,7 @@ def snap(event,data):
 
 # Purge is only applied to dedicated per-job directories, never elsewhere.
 def purge():
-    root=Path(os.getenv('EZS_PROFILE_TRACE_ROOT') or r'C:\temp\EZS_PROFILE_DEBUG')
+    root=Path(os.getenv('EZS_PROFILE_TRACE_ROOT') or r'H:\temp\EZS_PROFILE_DEBUG')
     if not root.is_dir():return
     try:days=min(90,max(1,int(os.getenv('EZS_PROFILE_TRACE_RETENTION_DAYS','7'))))
     except ValueError:days=7

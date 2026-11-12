@@ -9,6 +9,8 @@ import urllib.request
 from ai_provider import build_ai_provider_from_env, LocalAIProvider
 
 def review_web_items(investigation, identity, *, provider=None):
+    from profile_engine_diagnostic import record_item
+    from time import perf_counter_ns as _profile_clock
     provider=provider or build_ai_provider_from_env()
     items=investigation.get("items") or []
     if not isinstance(provider,LocalAIProvider):
@@ -18,6 +20,7 @@ def review_web_items(investigation, identity, *, provider=None):
         return {"status":"unavailable","reason":reason or "local_ai_not_ready","items":[]}
     reviews=[]
     for item in items:
+        _profile_assertion_start = _profile_clock()
         documents=[d for d in (item.get("documents") or [])
                    if d.get("status")=="read" and d.get("text")]
         # Exactly the same retrieved sources will be used for grounding.
@@ -26,6 +29,7 @@ def review_web_items(investigation, identity, *, provider=None):
         if not documents:
             reviews.append({"key":item.get("key"),"status":"no_readable_documents",
                             "verdict":"non_trouve","citations":[]})
+            record_item("local_ai_document_review", reviews[-1], _profile_assertion_start)
             continue
         payload={"identity":{"title":identity.get("title"),"artist":identity.get("artist")},
                  "assertion":{"key":item.get("key"),"value":item.get("value")},
@@ -76,8 +80,10 @@ def review_web_items(investigation, identity, *, provider=None):
                 "explanation":str(parsed.get("explanation") or "")[:1500],
                 "citations":verified_urls,"model":str(provider.model_path),
                 "official_verdict":None,"evidence_eligible":False})
+            record_item("local_ai_document_review", reviews[-1], _profile_assertion_start)
         except Exception as exc:
             reviews.append({"key":item.get("key"),"status":"error",
                 "reason":type(exc).__name__,"official_verdict":None})
+            record_item("local_ai_document_review", reviews[-1], _profile_assertion_start)
     return {"status":"completed","model":str(provider.model_path),"items":reviews,
             "official_verdicts":False,"local_inference":True}
